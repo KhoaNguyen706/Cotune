@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: cotune
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/cotune
+    username: cotune
+    password: cotune # dev-only; real environments inject this via env vars
+
+  jpa:
+    hibernate:
+      # validate = Hibernate checks entity mappings against the real schema
+      # at startup and refuses to boot on mismatch. Flyway owns the schema;
+      # letting Hibernate mutate it (ddl-auto=update) makes environments
+      # drift apart in ways nobody reviewed.
+      ddl-auto: validate
+    # OSIV keeps a DB session open for the whole HTTP request so views can
+    # lazy-load. Sounds convenient, but it holds connections hostage under
+    # load and hides missing-fetch bugs until production. Off from day one.
+    open-in-view: false
+
+  graphql:
+    graphiql:
+      # In-browser IDE at /graphiql for exploring the API. Dev convenience;
+      # disable (or gate behind auth) before anything public-facing.
+      enabled: true
+
+logging:
+  level:
+    # Log the SQL Hibernate actually emits — while learning, always check
+    # what your ORM does under the hood (N+1s hide here).
+    org.hibernate.SQL: debug

@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- The parent POM pins tested-together versions of every Spring dependency
+         (dependency management), so we almost never write <version> tags below.
+         Version drift between Spring modules is a classic source of runtime
+         ClassNotFound bugs; the BOM pattern eliminates it. -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.3</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.cotune</groupId>
+    <artifactId>cotune-backend</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>cotune-backend</name>
+    <description>Cotune — real-time collaborative music editor (backend)</description>
+
+    <properties>
+        <java.version>21</java.version>
+    </properties>
+
+    <dependencies>
+        <!-- GraphQL engine + Spring integration. It still needs a transport to
+             ride on, which is why starter-web is here too: GraphQL requests
+             arrive as HTTP POSTs to /graphql. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-graphql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- Bean Validation (Jakarta). Lets us declare constraints on DTOs and
+             have Spring enforce them at the API boundary instead of hand-rolled
+             if/throw blocks scattered through services. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- GraphQL's spec only ships Int/Float/String/Boolean/ID. Real APIs
+             need DateTime, and hand-serializing timestamps as String loses
+             type-safety in generated clients. This adds a spec-compliant
+             RFC-3339 DateTime scalar. -->
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java-extended-scalars</artifactId>
+            <version>24.0</version>
+        </dependency>
+
+        <!-- Lombok generates getters/constructors at COMPILE time (it's an
+             annotation processor, zero runtime cost). Marked optional so it
+             never leaks into consumers' classpaths. House rule for this
+             project: @Getter and @RequiredArgsConstructor are welcome;
+             @Data/@EqualsAndHashCode/@Setter are banned on JPA entities —
+             see Song.java for why. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Schema migrations as versioned SQL files, applied on startup.
+             We deliberately do NOT let Hibernate generate the schema
+             (ddl-auto=validate): generated DDL is non-reviewable and
+             non-reproducible across environments. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.graphql</groupId>
+            <artifactId>spring-graphql-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <!-- Compile-time only tool; keep it out of the runnable jar. -->
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

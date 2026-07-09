@@ -1,0 +1,48 @@
+# Schema-first design: this file is the API contract. Spring parses it at
+# startup and wires each field to a @QueryMapping/@MutationMapping method by
+# name. Frontend codegen (e.g. graphql-codegen for the React client) reads
+# this same file — one source of truth for both sides.
+
+# Declared here, implemented in GraphqlConfig (ExtendedScalars.DateTime).
+scalar DateTime
+
+type Query {
+    # Nullable return + NOT_FOUND entry in "errors" is the GraphQL idiom
+    # for a missing resource. If this were Song!, a miss would nullify the
+    # whole response instead of just this field.
+    song(id: ID!): Song
+    songs: [Song!]!
+}
+
+type Mutation {
+    createSong(input: CreateSongInput!): Song!
+    updateSong(id: ID!, input: UpdateSongInput!): Song!
+    deleteSong(id: ID!): Boolean!
+}
+
+type Song {
+    id: ID!
+    title: String!
+    bpm: Int!
+    timeSignature: String!
+    # Exposed so clients can later send it back for conflict detection
+    # (optimistic concurrency across the wire).
+    version: Int!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+}
+
+# Inputs are distinct types from Song: GraphQL forbids using an output type
+# as an argument, and the shapes genuinely differ (no id/version/timestamps
+# on the way in — the server owns those).
+input CreateSongInput {
+    title: String!
+    bpm: Int!
+    timeSignature: String!
+}
+
+input UpdateSongInput {
+    title: String!
+    bpm: Int!
+    timeSignature: String!
+}

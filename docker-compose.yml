@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cotune-postgres
+    environment:
+      POSTGRES_DB: cotune
+      POSTGRES_USER: cotune
+      POSTGRES_PASSWORD: cotune
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume so data survives `docker compose down` (without -v).
+      - cotune-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cotune -d cotune"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis comes in a later session (pub/sub relay for real-time collab).
+
+volumes:
+  cotune-pgdata:
