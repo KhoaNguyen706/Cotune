@@ -1,0 +1,101 @@
+package com.cotune.track;
+
+import com.cotune.common.exception.ResourceNotFoundException;
+import com.cotune.song.Song;
+import com.cotune.song.SongRepository;
+import com.cotune.track.dto.AddTrackInput;
+import com.cotune.track.dto.TrackDto;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Service tested in isolation: repositories are Mockito mocks, so we test
+ * OUR logic (position assignment, not-found handling) without a database.
+ * This only works because the service depends on interfaces injected via
+ * constructor — the payoff of that design, made concrete.
+ *
+ * Note the mapper is REAL, not mocked: it's a pure function with no I/O,
+ * and mocking it would just restate its implementation in the test.
+ */
+@ExtendWith(MockitoExtension.class)
+class TrackServiceImplTest {
+
+    @Mock
+    private TrackRepository trackRepository;
+
+    @Mock
+    private SongRepository songRepository;
+
+    private TrackServiceImpl service;
+
+    private final UUID songId = UUID.randomUUID();
+    private final Song song = new Song("Test Song", 120, "4/4");
+
+    @BeforeEach
+    void setUp() {
+        service = new TrackServiceImpl(trackRepository, songRepository, new TrackMapper());
+    }
+
+    @Test
+    void addAssignsPositionAfterCurrentMax() {
+        when(songRepository.existsById(songId)).thenReturn(true);
+        when(songRepository.getReferenceById(songId)).thenReturn(song);
+        when(trackRepository.findMaxPositionBySongId(songId)).thenReturn(2);
+        // Echo back the entity passed to save(), like the real repo would.
+        when(trackRepository.save(any(Track.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TrackDto dto = service.add(new AddTrackInput(songId, "Lead Synth", Instrument.SYNTH));
+
+        assertThat(dto.position()).isEqualTo(3);
+        assertThat(dto.name()).isEqualTo("Lead Synth");
+        assertThat(dto.instrument()).isEqualTo(Instrument.SYNTH);
+    }
+
+    @Test
+    void addStartsAtPositionZeroForEmptySong() {
+        when(songRepository.existsById(songId)).thenReturn(true);
+        when(songRepository.getReferenceById(songId)).thenReturn(song);
+        // The COALESCE(..., -1) contract from the repository query.
+        when(trackRepository.findMaxPositionBySongId(songId)).thenReturn(-1);
+        when(trackRepository.save(any(Track.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TrackDto dto = service.add(new AddTrackInput(songId, "Drums", Instrument.DRUMS));
+
+        assertThat(dto.position()).isZero();
+    }
+
+    @Test
+    void addRejectsUnknownSongBeforeTouchingTrackRepository() {
+        when(songRepository.existsById(songId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.add(new AddTrackInput(songId, "Bass", Instrument.BASS)))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(songId.toString());
+
+        // Fail-fast means no partial work: nothing was saved.
+        verify(trackRepository, never()).save(any());
+    }
+
+    @Test
+    void deleteRejectsUnknownTrack() {
+        UUID trackId = UUID.randomUUID();
+        when(trackRepository.existsById(trackId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.delete(trackId))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        verify(trackRepository, never()).deleteById(any());
+    }
+}

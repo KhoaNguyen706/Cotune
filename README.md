@@ -30,20 +30,33 @@ mutation {
 ```
 
 ```graphql
+mutation {
+  addTrack(input: { songId: "<id from createSong>", name: "Lead Synth", instrument: SYNTH }) {
+    id
+    position
+    instrument
+  }
+}
+```
+
+```graphql
 query {
   songs {
     id
     title
     bpm
-    timeSignature
-    updatedAt
+    tracks {        # resolved in ONE batched query for all songs (@BatchMapping)
+      name
+      instrument
+      position
+    }
   }
 }
 ```
 
-## Architecture (session 1)
+## Architecture (sessions 1–2)
 
-Package-by-feature (`com.cotune.song`), classic layering inside each feature:
+Package-by-feature (`com.cotune.song`, `com.cotune.track`), classic layering inside each feature:
 
 ```
 GraphQL request

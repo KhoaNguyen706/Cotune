@@ -1,12 +1,9 @@
 package com.cotune.song;
 
+import com.cotune.common.mapping.Timestamps;
 import com.cotune.song.dto.CreateSongInput;
 import com.cotune.song.dto.SongDto;
 import org.springframework.stereotype.Component;
-
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 
 /**
  * Translates between the persistence model (entity) and the API model (DTO).
@@ -28,8 +25,8 @@ public class SongMapper {
                 song.getBpm(),
                 song.getTimeSignature(),
                 song.getVersion(),
-                toUtc(song.getCreatedAt()),
-                toUtc(song.getUpdatedAt())
+                Timestamps.utc(song.getCreatedAt()),
+                Timestamps.utc(song.getUpdatedAt())
         );
     }
 
@@ -37,13 +34,5 @@ public class SongMapper {
         // Goes through the entity's guarded constructor — the mapper does
         // NOT get to bypass domain invariants with field assignment.
         return new Song(input.title(), input.bpm(), input.timeSignature());
-    }
-
-    private OffsetDateTime toUtc(Instant instant) {
-        // Entities store Instant (an unambiguous point on the timeline);
-        // the API speaks OffsetDateTime because the GraphQL DateTime scalar
-        // is RFC-3339, which requires an explicit offset. We standardize on
-        // UTC at the boundary — clients localize for display.
-        return instant == null ? null : instant.atOffset(ZoneOffset.UTC);
     }
 }

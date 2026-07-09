@@ -19,4 +19,8 @@ public class ResourceNotFoundException extends RuntimeException {
     public static ResourceNotFoundException song(UUID id) {
         return new ResourceNotFoundException("Song not found: " + id);
     }
+
+    public static ResourceNotFoundException track(UUID id) {
+        return new ResourceNotFoundException("Track not found: " + id);
+    }
 }

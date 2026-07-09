@@ -18,6 +18,10 @@ type Mutation {
     createSong(input: CreateSongInput!): Song!
     updateSong(id: ID!, input: UpdateSongInput!): Song!
     deleteSong(id: ID!): Boolean!
+
+    addTrack(input: AddTrackInput!): Track!
+    updateTrack(id: ID!, input: UpdateTrackInput!): Track!
+    deleteTrack(id: ID!): Boolean!
 }
 
 type Song {
@@ -30,6 +34,34 @@ type Song {
     version: Int!
     createdAt: DateTime!
     updatedAt: DateTime!
+    # Resolved by @BatchMapping in TrackGraphqlController — NOT stored on
+    # the Song entity. The graph shape lives in the schema; the Java object
+    # graph stays flat. Non-null list: a song with no tracks returns [].
+    tracks: [Track!]!
+}
+
+type Track {
+    id: ID!
+    songId: ID!
+    name: String!
+    instrument: Instrument!
+    # 0-based slot, server-assigned, gaps allowed after deletes —
+    # clients must sort by it, never assume contiguity.
+    position: Int!
+    version: Int!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+}
+
+# Type-checked at the edge: a typo'd instrument never reaches Java code.
+# Constants must match the Java enum names exactly (binding is by name).
+enum Instrument {
+    SYNTH
+    PIANO
+    DRUMS
+    BASS
+    GUITAR
+    STRINGS
 }
 
 # Inputs are distinct types from Song: GraphQL forbids using an output type
@@ -45,4 +77,17 @@ input UpdateSongInput {
     title: String!
     bpm: Int!
     timeSignature: String!
+}
+
+# No position field: the server appends at the end. Reordering will be a
+# dedicated operation in the collaboration sessions.
+input AddTrackInput {
+    songId: ID!
+    name: String!
+    instrument: Instrument!
+}
+
+input UpdateTrackInput {
+    name: String!
+    instrument: Instrument!
 }
