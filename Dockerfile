@@ -1,7 +1,16 @@
-# Multi-stage build: stage 1 needs Maven + JDK (~700MB of toolchain);
-# stage 2 ships only a JRE + the jar. The build tools never reach
-# production — smaller image, smaller attack surface.
-#
+# Multi-stage build, now with THREE stages: the frontend is compiled by a
+# Node stage and baked into the jar's classpath:/static, so ONE container
+# serves the whole app (see SpaForwardingController). Neither Node nor
+# Maven reaches the runtime image — smaller, smaller attack surface.
+FROM node:22-alpine AS frontend
+WORKDIR /fe
+# Same layer-caching idea as Maven below: lockfile first, deps cached,
+# source last.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
 # We use the maven image's own `mvn` instead of COPYing ./mvnw: the wrapper
 # script is checked out with CRLF line endings on Windows hosts, and a CRLF
 # shebang breaks inside a Linux container ("bad interpreter") — a classic
@@ -17,6 +26,9 @@ COPY pom.xml .
 RUN mvn -q dependency:go-offline
 
 COPY src src
+# The built SPA lands in classpath:/static — Spring Boot serves files
+# there at the web root automatically.
+COPY --from=frontend /fe/dist src/main/resources/static
 # Tests don't run here: the image build has no database, and CI/dev is
 # where tests belong. Build the artifact, test the artifact — separately.
 RUN mvn -q package -DskipTests

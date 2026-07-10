@@ -135,3 +135,30 @@ resolvers. The bearer-token filter validates JWTs on both surfaces and
 populates the SecurityContext those checks read.
 
 Schema contract: `src/main/resources/graphql/schema.graphqls`.
+
+## CI/CD & deploying
+
+Every push runs backend tests + the frontend build (`.github/workflows/ci.yml`).
+Pushes to `main` additionally publish the production image to
+`ghcr.io/khoanguyen706/cotune` (`:latest` + `:<sha>` for rollbacks).
+
+The production image is **self-contained**: a Node stage builds the React app
+and bakes it into the jar's `classpath:/static`, so one container serves
+frontend + API from one origin (no CORS, no separate static host).
+`SpaForwardingController` handles deep-link refreshes — **new frontend routes
+must be added there**, or hard refreshes on them 404.
+
+To deploy (e.g. [Render](https://render.com) free tier — Railway/Fly work the
+same way):
+
+1. New **Web Service** → connect this GitHub repo → runtime **Docker** (it
+   finds the Dockerfile). Port: 8080.
+2. Environment variables:
+   - `JWT_SECRET` — fresh key: `openssl rand -base64 32` (never the dev one)
+   - `SPRING_DATASOURCE_URL` — `jdbc:postgresql://aws-0-ca-central-1.pooler.supabase.com:5432/postgres?sslmode=require`
+   - `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` — Supabase creds
+3. (Optional, full CD) copy the service's **deploy hook URL** into the repo
+   secret `DEPLOY_HOOK_URL` → every green build on `main` goes live.
+
+Before real users: disable GraphiQL in prod (`spring.graphql.graphiql.enabled`),
+and put the app in the same region as the database.

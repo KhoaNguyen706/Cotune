@@ -379,3 +379,45 @@ select {
   border-radius: 0 3px 3px 0;
   background: rgba(255, 255, 255, 0.25);
 }
+
+.note.selected {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
+.ms {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.ms-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.7rem;
+  padding: 0.15rem 0.45rem;
+}
+
+.ms-btn.active-m {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #101116;
+}
+
+.ms-btn.active-s {
+  background: #e8c765;
+  border-color: #e8c765;
+  color: #101116;
+}
+
+.velocity {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.velocity input[type="range"] {
+  width: 8rem;
+  padding: 0;
+}

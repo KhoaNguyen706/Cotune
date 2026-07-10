@@ -2,6 +2,7 @@
 # never reaches the Docker daemon, so changing it can't invalidate layers.
 target/
 .git/
+.github/
 .claude/
 .mvn/
 mvnw
@@ -9,3 +10,8 @@ mvnw.cmd
 *.md
 .gitignore
 docker-compose.yml
+# Secrets must never enter a build context — layers are cached and shipped.
+.env
+# The image builds these itself (npm ci / vite build).
+frontend/node_modules/
+frontend/dist/

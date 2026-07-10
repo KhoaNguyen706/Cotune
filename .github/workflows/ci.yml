@@ -1,0 +1,86 @@
+# CI/CD: every push and PR runs the tests; pushes to main additionally
+# build the production Docker image (frontend + backend in one) and publish
+# it to GitHub Container Registry, then poke the host's deploy hook if one
+# is configured. "CI proves the code, CD ships the artifact CI proved."
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          # Caches ~/.m2 keyed on pom.xml — the dependency download happens
+          # once per pom change, not once per push.
+          cache: maven
+      # -B (batch) silences the interactive progress spam that makes CI
+      # logs unreadable. These are the same unit tests you run locally —
+      # no database needed, by design (mocked edges).
+      - run: ./mvnw -B test
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # npm ci (not install): installs EXACTLY package-lock.json or fails —
+      # reproducible builds, no "works on my machine" drift.
+      - run: npm ci
+      # tsc --noEmit + vite build: the frontend's whole compile gate.
+      - run: npm run build
+
+  # Only after both gates pass, and only on main (a PR must never publish).
+  publish-image:
+    needs: [backend-tests, frontend-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # allows pushing to ghcr.io under this repo's owner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN is minted per-run by Actions — no long-lived
+          # registry password stored anywhere.
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # :latest for humans, :<sha> for rollbacks — every main commit
+          # stays deployable forever by its exact hash.
+          tags: |
+            ghcr.io/khoanguyen706/cotune:latest
+            ghcr.io/khoanguyen706/cotune:${{ github.sha }}
+
+      # Optional continuous DEPLOYMENT: hosts like Render expose a "deploy
+      # hook" URL — an authenticated poke meaning "pull and restart". Add it
+      # as the repo secret DEPLOY_HOOK_URL and every green main goes live;
+      # leave the secret unset and this step is a silent no-op.
+      - name: Trigger deploy hook (if configured)
+        env:
+          HOOK: ${{ secrets.DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$HOOK" ]; then
+            curl -fsS -X POST "$HOOK" && echo "deploy triggered"
+          else
+            echo "DEPLOY_HOOK_URL not set - skipping deploy trigger"
+          fi

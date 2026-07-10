@@ -46,6 +46,8 @@ interface DragState {
   mode: "move" | "resize";
   grabOffset: number; // move only: steps between note.step and the grabbed cell
   rect: DOMRect; // roll geometry captured at drag start
+  moved: boolean; // false until the mouse leaves the starting cell — a
+  // "click" is a drag that never moved; we use it for note selection
 }
 
 function pitchOf(row: number, octave: number): string {
@@ -65,7 +67,10 @@ export function BeatMakerPage() {
   const [notesByTrack, setNotesByTrack] = useState<Record<string, Step[]>>({});
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedNote, setSelectedNote] = useState<number | null>(null);
   const [octaves, setOctaves] = useState<Record<string, number>>({});
+  const [muted, setMuted] = useState<Set<string>>(new Set());
+  const [soloed, setSoloed] = useState<Set<string>>(new Set());
   const [playing, setPlaying] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +89,10 @@ export function BeatMakerPage() {
   const rollRef = useRef<HTMLDivElement | null>(null);
   const octavesRef = useRef(octaves);
   octavesRef.current = octaves;
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  const soloedRef = useRef(soloed);
+  soloedRef.current = soloed;
 
   const load = useCallback(async () => {
     try {
@@ -122,6 +131,16 @@ export function BeatMakerPage() {
     };
   }, [load]);
 
+  // Unsaved work guard: the browser shows a "leave site?" prompt while any
+  // track is dirty. Cheap insurance against losing a beat to a reflexive
+  // tab-close — and it disappears the moment you save.
+  useEffect(() => {
+    if (dirty.size === 0) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   function updateNote(trackId: string, index: number, changes: Partial<Step>) {
     setNotesByTrack((prev) => {
       const notes = [...(prev[trackId] ?? [])];
@@ -138,8 +157,8 @@ export function BeatMakerPage() {
     setDirty((prev) => new Set(prev).add(trackId));
   }
 
-  function preview(trackId: string, pitch: string) {
-    instrumentsRef.current.get(trackId)?.trigger(undefined, pitch, 0.9);
+  function preview(trackId: string, pitch: string, velocity = 0.9) {
+    instrumentsRef.current.get(trackId)?.trigger(undefined, pitch, velocity);
   }
 
   // ---- piano roll mouse interactions -----------------------------------
@@ -154,6 +173,7 @@ export function BeatMakerPage() {
     // Only empty-cell presses land here — notes stop propagation.
     if (!selectedId || e.button !== 0 || !rollRef.current) return;
     e.preventDefault();
+    setSelectedNote(null);
     const rect = rollRef.current.getBoundingClientRect();
     const { col, row } = cellFromEvent(e, rect);
     const pitch = pitchOf(row, octaves[selectedId] ?? 4);
@@ -168,7 +188,7 @@ export function BeatMakerPage() {
     preview(selectedId, pitch);
     // FL-style: the fresh note is immediately in resize mode — press,
     // drag right, release = a note exactly as long as you dragged.
-    dragRef.current = { trackId: selectedId, index: notes.length, mode: "resize", grabOffset: 0, rect };
+    dragRef.current = { trackId: selectedId, index: notes.length, mode: "resize", grabOffset: 0, rect, moved: false };
   }
 
   function onNoteMouseDown(e: React.MouseEvent, index: number, note: Step, resize: boolean) {
@@ -183,6 +203,7 @@ export function BeatMakerPage() {
       mode: resize ? "resize" : "move",
       grabOffset: col - note.step,
       rect,
+      moved: false,
     };
   }
 
@@ -190,6 +211,7 @@ export function BeatMakerPage() {
     // Right-click deletes — the DAW convention.
     e.preventDefault();
     if (!selectedId) return;
+    setSelectedNote(null);
     setNotesByTrack((prev) => ({
       ...prev,
       [selectedId]: (prev[selectedId] ?? []).filter((_, i) => i !== index),
@@ -208,18 +230,30 @@ export function BeatMakerPage() {
       const { col, row } = cellFromEvent(e, drag.rect);
       if (drag.mode === "resize") {
         const length = Math.max(1, Math.min(STEPS - note.step, col - note.step + 1));
-        if (length !== note.length) updateNote(drag.trackId, drag.index, { length });
+        if (length !== note.length) {
+          drag.moved = true;
+          updateNote(drag.trackId, drag.index, { length });
+        }
       } else {
         const octave = octavesRef.current[drag.trackId] ?? 4;
         const step = Math.max(0, Math.min(STEPS - note.length, col - drag.grabOffset));
         const pitch = pitchOf(row, octave);
         if (step !== note.step || pitch !== note.pitch) {
+          drag.moved = true;
           updateNote(drag.trackId, drag.index, { step, pitch });
-          if (pitch !== note.pitch) preview(drag.trackId, pitch);
+          if (pitch !== note.pitch) preview(drag.trackId, pitch, note.velocity);
         }
       }
     }
-    const onUp = () => (dragRef.current = null);
+    function onUp() {
+      const drag = dragRef.current;
+      // A press-and-release that never moved is a CLICK — select the note
+      // so the velocity slider (and Delete key) target it.
+      if (drag && !drag.moved && drag.mode === "move") {
+        setSelectedNote(drag.index);
+      }
+      dragRef.current = null;
+    }
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
     return () => {
@@ -247,6 +281,12 @@ export function BeatMakerPage() {
       const current = step % STEPS;
       const sixteenth = Tone.Time("16n").toSeconds();
       for (const track of tracksRef.current) {
+        // Solo wins over mute, DAW-standard: if ANY track is soloed, only
+        // soloed tracks sound; otherwise everything not muted sounds.
+        const audible = soloedRef.current.size > 0
+          ? soloedRef.current.has(track.id)
+          : !mutedRef.current.has(track.id);
+        if (!audible) continue;
         for (const note of notesRef.current[track.id] ?? []) {
           if (note.step === current) {
             instrumentsRef.current
@@ -261,6 +301,39 @@ export function BeatMakerPage() {
     Tone.getTransport().start();
     setPlaying(true);
   }
+
+  // Spacebar = play/stop, Delete/Backspace = remove the selected note.
+  // The handler reads through a ref because it's attached once, but
+  // togglePlay closes over fresh state on every render.
+  const togglePlayRef = useRef(togglePlay);
+  togglePlayRef.current = togglePlay;
+  const selectedNoteRef = useRef<{ trackId: string | null; index: number | null }>({ trackId: null, index: null });
+  selectedNoteRef.current = { trackId: selectedId, index: selectedNote };
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      // Never hijack keys while the user is typing in a form field.
+      if (["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+      if (e.code === "Space") {
+        e.preventDefault(); // spacebar scrolls the page by default
+        void togglePlayRef.current();
+      }
+      if ((e.code === "Delete" || e.code === "Backspace")) {
+        const { trackId, index } = selectedNoteRef.current;
+        if (trackId !== null && index !== null) {
+          setNotesByTrack((prev) => ({
+            ...prev,
+            [trackId]: (prev[trackId] ?? []).filter((_, i) => i !== index),
+          }));
+          setDirty((prev) => new Set(prev).add(trackId));
+          setSelectedNote(null);
+        }
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   async function save() {
     setSaving(true);
@@ -305,6 +378,13 @@ export function BeatMakerPage() {
     }
   }
 
+  function toggleIn(set: Set<string>, id: string): Set<string> {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  }
+
   // ---- render -------------------------------------------------------------
 
   if (!song) {
@@ -320,6 +400,8 @@ export function BeatMakerPage() {
   const hiddenNotes = selected
     ? selectedNotes.filter((n) => rowOf(n.pitch, octave) === null).length
     : 0;
+  const currentNote =
+    selected !== null && selectedNote !== null ? selectedNotes[selectedNote] ?? null : null;
 
   return (
     <main className="wide">
@@ -343,6 +425,8 @@ export function BeatMakerPage() {
         {sortedTracks.length === 0 && <p>No tracks yet — add one below, then paint notes.</p>}
         {sortedTracks.map((track) => {
           const notes = notesByTrack[track.id] ?? [];
+          const isMuted = muted.has(track.id);
+          const isSolo = soloed.has(track.id);
           return (
             <div
               key={track.id}
@@ -352,6 +436,28 @@ export function BeatMakerPage() {
               <div className="seq-label">
                 <strong>{track.name}</strong>
                 <span>{track.instrument.toLowerCase()}</span>
+                <span className="ms">
+                  <button
+                    className={`ms-btn ${isMuted ? "active-m" : ""}`}
+                    title="Mute"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMuted((prev) => toggleIn(prev, track.id));
+                    }}
+                  >
+                    M
+                  </button>
+                  <button
+                    className={`ms-btn ${isSolo ? "active-s" : ""}`}
+                    title="Solo"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSoloed((prev) => toggleIn(prev, track.id));
+                    }}
+                  >
+                    S
+                  </button>
+                </span>
                 <button
                   className="danger"
                   onClick={(e) => {
@@ -392,12 +498,29 @@ export function BeatMakerPage() {
               <button onClick={() => setOctaves((p) => ({ ...p, [selected.id]: Math.min(7, octave + 1) }))}>
                 Oct +
               </button>
+              {currentNote && (
+                <label className="velocity">
+                  velocity {Math.round(currentNote.velocity * 100)}%
+                  <input
+                    type="range"
+                    min={10}
+                    max={100}
+                    value={Math.round(currentNote.velocity * 100)}
+                    onChange={(e) => {
+                      const velocity = Number(e.target.value) / 100;
+                      updateNote(selected.id, selectedNote!, { velocity });
+                      preview(selected.id, currentNote.pitch, velocity);
+                    }}
+                  />
+                </label>
+              )}
               {hiddenNotes > 0 && <span className="who">{hiddenNotes} note(s) in other octaves</span>}
             </div>
           </div>
           <p className="hint">
-            Click a cell to add a note and drag right to stretch it · drag a note to move it
-            (up/down = pitch) · drag its right edge to resize · right-click to delete.
+            Click empty cell = add note (keep dragging to stretch) · drag note = move (up/down =
+            pitch) · right edge = resize · click note = select, then slide velocity or press
+            Delete · right-click = delete · Space = play/stop.
           </p>
           <div className="roll-wrap">
             <div className="pitch-labels">
@@ -433,12 +556,14 @@ export function BeatMakerPage() {
                 return (
                   <div
                     key={index}
-                    className="note"
+                    className={`note ${index === selectedNote ? "selected" : ""}`}
                     style={{
                       left: note.step * CELL_W + 1,
                       top: row * CELL_H + 2,
                       width: note.length * CELL_W - 3,
                       height: CELL_H - 4,
+                      // Velocity is VISIBLE: quiet notes are translucent.
+                      opacity: 0.35 + 0.65 * note.velocity,
                     }}
                     onMouseDown={(e) => onNoteMouseDown(e, index, note, false)}
                     onContextMenu={(e) => onNoteContextMenu(e, index)}

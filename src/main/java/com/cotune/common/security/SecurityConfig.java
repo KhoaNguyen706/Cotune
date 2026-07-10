@@ -83,6 +83,13 @@ public class SecurityConfig {
                         // Dev-only IDE. Fine while local; gate or disable it
                         // before any public deployment (application.yml note).
                         .requestMatchers("/graphiql").permitAll()
+                        // The SPA shell + its fingerprinted assets (served
+                        // from classpath:/static in the Docker image). Only
+                        // HTML/JS/CSS — all DATA still rides through
+                        // /graphql and /api/** with their own rules above.
+                        .requestMatchers(HttpMethod.GET,
+                                "/", "/index.html", "/assets/**", "/favicon.ico",
+                                "/login", "/register", "/songs/*").permitAll()
                         // Boot re-dispatches exceptions to /error internally;
                         // blocking it turns every error into a confusing 403.
                         .requestMatchers("/error").permitAll()
