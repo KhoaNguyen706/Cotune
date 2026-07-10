@@ -6,19 +6,27 @@ import { createInstrument, type TrackInstrument } from "../audio/instruments";
 import type { Song, Step, Track } from "../types";
 
 const STEPS = 16;
+// One octave, top-to-bottom like every DAW: high notes up. Sharps get the
+// dark "black key" row shading.
+const PITCH_ROWS = ["B", "A#", "A", "G#", "G", "F#", "F", "E", "D#", "D", "C#", "C"];
+// Cell geometry lives in ONE place (inline styles derive from these) —
+// drag math and rendering must agree to the pixel, so they share constants
+// instead of duplicating numbers in CSS.
+const CELL_W = 34;
+const CELL_H = 26;
 
 const SONG_QUERY = `
   query Song($id: ID!) {
     song(id: $id) {
       id title bpm timeSignature
-      tracks { id name instrument position pattern { step pitch velocity } }
+      tracks { id name instrument position pattern { step pitch velocity length } }
     }
   }
 `;
 
 const ADD_TRACK = `
   mutation AddTrack($input: AddTrackInput!) {
-    addTrack(input: $input) { id name instrument position pattern { step pitch velocity } }
+    addTrack(input: $input) { id }
   }
 `;
 
@@ -32,22 +40,32 @@ const SAVE_PATTERN = `
   }
 `;
 
-/** Grid cell truth: is there an event at this step? (MVP: one row per track,
- *  the instrument's default pitch — the DATA model already supports chords
- *  and melodies; only this editor is drum-machine-shaped.) */
-function toGrid(pattern: Step[]): boolean[] {
-  const row = Array<boolean>(STEPS).fill(false);
-  for (const event of pattern) {
-    if (event.step >= 0 && event.step < STEPS) row[event.step] = true;
-  }
-  return row;
+interface DragState {
+  trackId: string;
+  index: number;
+  mode: "move" | "resize";
+  grabOffset: number; // move only: steps between note.step and the grabbed cell
+  rect: DOMRect; // roll geometry captured at drag start
+}
+
+function pitchOf(row: number, octave: number): string {
+  return PITCH_ROWS[row] + octave;
+}
+
+function rowOf(pitch: string, octave: number): number | null {
+  const match = /^([A-G]#?)([0-8])$/.exec(pitch);
+  if (!match || Number(match[2]) !== octave) return null;
+  const row = PITCH_ROWS.indexOf(match[1]);
+  return row >= 0 ? row : null;
 }
 
 export function BeatMakerPage() {
   const { songId } = useParams<{ songId: string }>();
   const [song, setSong] = useState<Song | null>(null);
-  const [grids, setGrids] = useState<Record<string, boolean[]>>({});
+  const [notesByTrack, setNotesByTrack] = useState<Record<string, Step[]>>({});
   const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [octaves, setOctaves] = useState<Record<string, number>>({});
   const [playing, setPlaying] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
   const [error, setError] = useState<string | null>(null);
@@ -55,29 +73,39 @@ export function BeatMakerPage() {
   const [newTrackName, setNewTrackName] = useState("");
   const [newInstrument, setNewInstrument] = useState("DRUMS");
 
-  // Audio objects live OUTSIDE React state: synths and the paint gesture
-  // are mutable, non-rendering machinery. Putting them in useState would
-  // re-render on every note and fight React's lifecycle; refs are the
-  // escape hatch React provides for exactly this.
+  // Mutable, non-rendering machinery lives in refs (see Session 5 notes on
+  // stale closures): the transport callback and drag handlers are created
+  // once but must always see current data.
   const instrumentsRef = useRef<Map<string, TrackInstrument>>(new Map());
-  const gridsRef = useRef(grids);
-  gridsRef.current = grids;
+  const notesRef = useRef(notesByTrack);
+  notesRef.current = notesByTrack;
   const tracksRef = useRef<Track[]>([]);
-  const paintRef = useRef<boolean | null>(null); // null = not dragging
+  const dragRef = useRef<DragState | null>(null);
+  const rollRef = useRef<HTMLDivElement | null>(null);
+  const octavesRef = useRef(octaves);
+  octavesRef.current = octaves;
 
   const load = useCallback(async () => {
     try {
       const data = await gql<{ song: Song }>(SONG_QUERY, { id: songId });
       setSong(data.song);
       tracksRef.current = data.song.tracks;
-      const nextGrids: Record<string, boolean[]> = {};
+      const next: Record<string, Step[]> = {};
       for (const track of data.song.tracks) {
-        nextGrids[track.id] = toGrid(track.pattern);
+        next[track.id] = track.pattern;
         if (!instrumentsRef.current.has(track.id)) {
           instrumentsRef.current.set(track.id, createInstrument(track.instrument));
         }
       }
-      setGrids(nextGrids);
+      setNotesByTrack(next);
+      setOctaves((prev) => {
+        const merged = { ...prev };
+        for (const track of data.song.tracks) {
+          merged[track.id] ??= instrumentsRef.current.get(track.id)!.defaultOctave;
+        }
+        return merged;
+      });
+      setSelectedId((prev) => prev ?? data.song.tracks[0]?.id ?? null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to load song");
     }
@@ -86,9 +114,6 @@ export function BeatMakerPage() {
   useEffect(() => {
     void load();
     const instruments = instrumentsRef.current;
-    // Cleanup: stop transport and release WebAudio nodes when leaving the
-    // page — otherwise navigating back and forth stacks silent synths
-    // until the audio context runs out of headroom.
     return () => {
       Tone.getTransport().stop();
       Tone.getTransport().cancel();
@@ -97,39 +122,114 @@ export function BeatMakerPage() {
     };
   }, [load]);
 
-  // End a paint-drag wherever the mouse is released, even outside the grid.
-  useEffect(() => {
-    const stop = () => (paintRef.current = null);
-    window.addEventListener("mouseup", stop);
-    return () => window.removeEventListener("mouseup", stop);
-  }, []);
-
-  function setCell(trackId: string, step: number, on: boolean, preview: boolean) {
-    setGrids((prev) => {
-      const row = [...(prev[trackId] ?? Array(STEPS).fill(false))];
-      if (row[step] === on) return prev;
-      row[step] = on;
-      return { ...prev, [trackId]: row };
+  function updateNote(trackId: string, index: number, changes: Partial<Step>) {
+    setNotesByTrack((prev) => {
+      const notes = [...(prev[trackId] ?? [])];
+      const updated = { ...notes[index], ...changes };
+      // The backend rejects two events at the same step+pitch; blocking the
+      // collision in the editor beats a save-time error message.
+      const collides = notes.some(
+        (n, i) => i !== index && n.step === updated.step && n.pitch === updated.pitch,
+      );
+      if (collides) return prev;
+      notes[index] = updated;
+      return { ...prev, [trackId]: notes };
     });
     setDirty((prev) => new Set(prev).add(trackId));
-    if (on && preview) {
-      // Immediate feedback on placing a note — "drag note, it makes a
-      // sound". time=undefined means "now" (outside transport scheduling).
-      const instrument = instrumentsRef.current.get(trackId);
-      instrument?.trigger(undefined, instrument.defaultPitch, 0.9);
+  }
+
+  function preview(trackId: string, pitch: string) {
+    instrumentsRef.current.get(trackId)?.trigger(undefined, pitch, 0.9);
+  }
+
+  // ---- piano roll mouse interactions -----------------------------------
+
+  function cellFromEvent(e: MouseEvent | React.MouseEvent, rect: DOMRect) {
+    const col = Math.max(0, Math.min(STEPS - 1, Math.floor((e.clientX - rect.left) / CELL_W)));
+    const row = Math.max(0, Math.min(PITCH_ROWS.length - 1, Math.floor((e.clientY - rect.top) / CELL_H)));
+    return { col, row };
+  }
+
+  function onRollMouseDown(e: React.MouseEvent) {
+    // Only empty-cell presses land here — notes stop propagation.
+    if (!selectedId || e.button !== 0 || !rollRef.current) return;
+    e.preventDefault();
+    const rect = rollRef.current.getBoundingClientRect();
+    const { col, row } = cellFromEvent(e, rect);
+    const pitch = pitchOf(row, octaves[selectedId] ?? 4);
+    const notes = notesRef.current[selectedId] ?? [];
+    if (notes.some((n) => n.step === col && n.pitch === pitch)) return;
+
+    setNotesByTrack((prev) => ({
+      ...prev,
+      [selectedId]: [...(prev[selectedId] ?? []), { step: col, pitch, velocity: 0.9, length: 1 }],
+    }));
+    setDirty((prev) => new Set(prev).add(selectedId));
+    preview(selectedId, pitch);
+    // FL-style: the fresh note is immediately in resize mode — press,
+    // drag right, release = a note exactly as long as you dragged.
+    dragRef.current = { trackId: selectedId, index: notes.length, mode: "resize", grabOffset: 0, rect };
+  }
+
+  function onNoteMouseDown(e: React.MouseEvent, index: number, note: Step, resize: boolean) {
+    if (!selectedId || e.button !== 0 || !rollRef.current) return;
+    e.preventDefault();
+    e.stopPropagation(); // don't let the roll create a note underneath
+    const rect = rollRef.current.getBoundingClientRect();
+    const { col } = cellFromEvent(e, rect);
+    dragRef.current = {
+      trackId: selectedId,
+      index,
+      mode: resize ? "resize" : "move",
+      grabOffset: col - note.step,
+      rect,
+    };
+  }
+
+  function onNoteContextMenu(e: React.MouseEvent, index: number) {
+    // Right-click deletes — the DAW convention.
+    e.preventDefault();
+    if (!selectedId) return;
+    setNotesByTrack((prev) => ({
+      ...prev,
+      [selectedId]: (prev[selectedId] ?? []).filter((_, i) => i !== index),
+    }));
+    setDirty((prev) => new Set(prev).add(selectedId));
+  }
+
+  // Document-level listeners so a drag survives leaving the grid; attached
+  // once, reading current drag state through the ref.
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const note = notesRef.current[drag.trackId]?.[drag.index];
+      if (!note) return;
+      const { col, row } = cellFromEvent(e, drag.rect);
+      if (drag.mode === "resize") {
+        const length = Math.max(1, Math.min(STEPS - note.step, col - note.step + 1));
+        if (length !== note.length) updateNote(drag.trackId, drag.index, { length });
+      } else {
+        const octave = octavesRef.current[drag.trackId] ?? 4;
+        const step = Math.max(0, Math.min(STEPS - note.length, col - drag.grabOffset));
+        const pitch = pitchOf(row, octave);
+        if (step !== note.step || pitch !== note.pitch) {
+          updateNote(drag.trackId, drag.index, { step, pitch });
+          if (pitch !== note.pitch) preview(drag.trackId, pitch);
+        }
+      }
     }
-  }
+    const onUp = () => (dragRef.current = null);
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  function onCellMouseDown(trackId: string, step: number) {
-    const on = !(gridsRef.current[trackId]?.[step] ?? false);
-    paintRef.current = on; // this drag paints cells to the toggled value
-    setCell(trackId, step, on, true);
-  }
-
-  function onCellMouseEnter(trackId: string, step: number) {
-    if (paintRef.current === null) return;
-    setCell(trackId, step, paintRef.current, true);
-  }
+  // ---- transport ---------------------------------------------------------
 
   async function togglePlay() {
     if (!song) return;
@@ -140,25 +240,21 @@ export function BeatMakerPage() {
       setCurrentStep(-1);
       return;
     }
-    // Browsers block audio until a user gesture — Tone.start() must be
-    // called from a click handler, which is why play can't autostart.
     await Tone.start();
     Tone.getTransport().bpm.value = song.bpm;
     let step = 0;
     Tone.getTransport().scheduleRepeat((time) => {
       const current = step % STEPS;
-      // Read through refs, not state: this callback was created once, and
-      // closing over `grids` state would freeze the beat as it was at
-      // play-time. Refs always see the latest grid — edit WHILE playing.
+      const sixteenth = Tone.Time("16n").toSeconds();
       for (const track of tracksRef.current) {
-        if (gridsRef.current[track.id]?.[current]) {
-          const instrument = instrumentsRef.current.get(track.id);
-          instrument?.trigger(time, instrument.defaultPitch, 0.9);
+        for (const note of notesRef.current[track.id] ?? []) {
+          if (note.step === current) {
+            instrumentsRef.current
+              .get(track.id)
+              ?.trigger(time, note.pitch, note.velocity, note.length * sixteenth);
+          }
         }
       }
-      // Tone.Draw syncs visuals to AUDIO time — the audio thread schedules
-      // ahead of the wall clock, so setting state directly here would
-      // highlight cells before they sound.
       Tone.getDraw().schedule(() => setCurrentStep(current), time);
       step++;
     }, "16n");
@@ -170,14 +266,10 @@ export function BeatMakerPage() {
     setSaving(true);
     setError(null);
     try {
-      // One mutation per dirty track — only what changed travels.
       for (const trackId of dirty) {
-        const track = tracksRef.current.find((t) => t.id === trackId);
-        const instrument = instrumentsRef.current.get(trackId);
-        if (!track || !instrument) continue;
-        const pattern = (gridsRef.current[trackId] ?? [])
-          .map((on, step) => (on ? { step, pitch: instrument.defaultPitch, velocity: 0.9 } : null))
-          .filter((s): s is Step => s !== null);
+        const pattern = (notesRef.current[trackId] ?? []).map(
+          ({ step, pitch, velocity, length }) => ({ step, pitch, velocity, length }),
+        );
         await gql(SAVE_PATTERN, { id: trackId, pattern });
       }
       setDirty(new Set());
@@ -192,9 +284,7 @@ export function BeatMakerPage() {
     event.preventDefault();
     setError(null);
     try {
-      await gql(ADD_TRACK, {
-        input: { songId, name: newTrackName, instrument: newInstrument },
-      });
+      await gql(ADD_TRACK, { input: { songId, name: newTrackName, instrument: newInstrument } });
       setNewTrackName("");
       await load();
     } catch (e) {
@@ -208,21 +298,28 @@ export function BeatMakerPage() {
       await gql(DELETE_TRACK, { id: trackId });
       instrumentsRef.current.get(trackId)?.dispose();
       instrumentsRef.current.delete(trackId);
+      if (selectedId === trackId) setSelectedId(null);
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to delete track");
     }
   }
 
+  // ---- render -------------------------------------------------------------
+
   if (!song) {
     return (
-      <main className="wide">
-        {error ? <p className="error">{error}</p> : <p>Loading…</p>}
-      </main>
+      <main className="wide">{error ? <p className="error">{error}</p> : <p>Loading…</p>}</main>
     );
   }
 
   const sortedTracks = [...song.tracks].sort((a, b) => a.position - b.position);
+  const selected = sortedTracks.find((t) => t.id === selectedId) ?? null;
+  const octave = selected ? octaves[selected.id] ?? 4 : 4;
+  const selectedNotes = selected ? notesByTrack[selected.id] ?? [] : [];
+  const hiddenNotes = selected
+    ? selectedNotes.filter((n) => rowOf(n.pitch, octave) === null).length
+    : 0;
 
   return (
     <main className="wide">
@@ -242,37 +339,121 @@ export function BeatMakerPage() {
 
       {error && <p className="error">{error}</p>}
 
-      <section className="sequencer card">
-        {sortedTracks.length === 0 && <p>No tracks yet — add one below and start clicking cells.</p>}
-        {sortedTracks.map((track) => (
-          <div className="seq-row" key={track.id}>
-            <div className="seq-label">
-              <strong>{track.name}</strong>
-              <span>{track.instrument.toLowerCase()}</span>
-              <button className="danger" onClick={() => void removeTrack(track.id)}>×</button>
-            </div>
-            <div className="seq-cells">
-              {Array.from({ length: STEPS }, (_, step) => (
+      <section className="card tracklist">
+        {sortedTracks.length === 0 && <p>No tracks yet — add one below, then paint notes.</p>}
+        {sortedTracks.map((track) => {
+          const notes = notesByTrack[track.id] ?? [];
+          return (
+            <div
+              key={track.id}
+              className={`seq-row ${track.id === selectedId ? "selected" : ""}`}
+              onClick={() => setSelectedId(track.id)}
+            >
+              <div className="seq-label">
+                <strong>{track.name}</strong>
+                <span>{track.instrument.toLowerCase()}</span>
                 <button
-                  key={step}
-                  className={[
-                    "cell",
-                    grids[track.id]?.[step] ? "on" : "",
-                    step === currentStep ? "playhead" : "",
-                    step % 4 === 0 ? "beat" : "",
-                  ].join(" ")}
-                  onMouseDown={(e) => {
-                    e.preventDefault(); // no text-selection while painting
-                    onCellMouseDown(track.id, step);
+                  className="danger"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void removeTrack(track.id);
                   }}
-                  onMouseEnter={() => onCellMouseEnter(track.id, step)}
-                  aria-label={`${track.name} step ${step + 1}`}
-                />
-              ))}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="seq-cells mini">
+                {Array.from({ length: STEPS }, (_, s) => (
+                  <span
+                    key={s}
+                    className={[
+                      "cell",
+                      notes.some((n) => s >= n.step && s < n.step + n.length) ? "on" : "",
+                      s === currentStep ? "playhead" : "",
+                      s % 4 === 0 ? "beat" : "",
+                    ].join(" ")}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      {selected && (
+        <section className="card">
+          <div className="roll-head">
+            <h2>{selected.name} — piano roll</h2>
+            <div className="roll-controls">
+              <button onClick={() => setOctaves((p) => ({ ...p, [selected.id]: Math.max(0, octave - 1) }))}>
+                Oct −
+              </button>
+              <span>octave {octave}</span>
+              <button onClick={() => setOctaves((p) => ({ ...p, [selected.id]: Math.min(7, octave + 1) }))}>
+                Oct +
+              </button>
+              {hiddenNotes > 0 && <span className="who">{hiddenNotes} note(s) in other octaves</span>}
             </div>
           </div>
-        ))}
-      </section>
+          <p className="hint">
+            Click a cell to add a note and drag right to stretch it · drag a note to move it
+            (up/down = pitch) · drag its right edge to resize · right-click to delete.
+          </p>
+          <div className="roll-wrap">
+            <div className="pitch-labels">
+              {PITCH_ROWS.map((p) => (
+                <div key={p} style={{ height: CELL_H }} className={p.includes("#") ? "dark" : ""}>
+                  {p}{octave}
+                </div>
+              ))}
+            </div>
+            <div
+              className="roll"
+              ref={rollRef}
+              onMouseDown={onRollMouseDown}
+              style={{ width: STEPS * CELL_W, height: PITCH_ROWS.length * CELL_H }}
+            >
+              {PITCH_ROWS.map((p, row) =>
+                Array.from({ length: STEPS }, (_, col) => (
+                  <div
+                    key={`${row}-${col}`}
+                    className={[
+                      "roll-cell",
+                      p.includes("#") ? "dark" : "",
+                      col % 4 === 0 ? "beat" : "",
+                      col === currentStep ? "playcol" : "",
+                    ].join(" ")}
+                    style={{ left: col * CELL_W, top: row * CELL_H, width: CELL_W, height: CELL_H }}
+                  />
+                )),
+              )}
+              {selectedNotes.map((note, index) => {
+                const row = rowOf(note.pitch, octave);
+                if (row === null) return null;
+                return (
+                  <div
+                    key={index}
+                    className="note"
+                    style={{
+                      left: note.step * CELL_W + 1,
+                      top: row * CELL_H + 2,
+                      width: note.length * CELL_W - 3,
+                      height: CELL_H - 4,
+                    }}
+                    onMouseDown={(e) => onNoteMouseDown(e, index, note, false)}
+                    onContextMenu={(e) => onNoteContextMenu(e, index)}
+                  >
+                    <span
+                      className="note-handle"
+                      onMouseDown={(e) => onNoteMouseDown(e, index, note, true)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="card">
         <h2>Add track</h2>

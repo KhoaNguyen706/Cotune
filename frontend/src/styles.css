@@ -254,3 +254,128 @@ select {
   padding: 0.55rem 0.7rem;
   font-size: 0.95rem;
 }
+
+/* --- track list --- */
+
+.tracklist .seq-row {
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+}
+
+.tracklist .seq-row.selected {
+  background: #262a35;
+  outline: 1px solid var(--accent);
+}
+
+.seq-cells.mini .cell {
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: default;
+  display: inline-block;
+}
+
+/* --- piano roll --- */
+
+.roll-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.roll-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.roll-controls button {
+  padding: 0.25rem 0.6rem;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0.4rem 0 0.8rem;
+}
+
+.roll-wrap {
+  display: flex;
+  overflow-x: auto;
+  user-select: none;
+}
+
+.pitch-labels {
+  flex-shrink: 0;
+  width: 2.6rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.pitch-labels div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 0.4rem;
+  border-bottom: 1px solid transparent;
+}
+
+.pitch-labels div.dark {
+  color: #6b7080;
+}
+
+.roll {
+  position: relative;
+  flex-shrink: 0;
+  cursor: crosshair;
+}
+
+.roll-cell {
+  position: absolute;
+  border-right: 1px solid #262933;
+  border-bottom: 1px solid #262933;
+  background: var(--bg);
+  box-sizing: border-box;
+}
+
+/* sharps = the "black key" lanes, like every DAW */
+.roll-cell.dark {
+  background: #17181e;
+}
+
+.roll-cell.beat {
+  border-left: 1px solid #3d414d;
+}
+
+.roll-cell.playcol {
+  background: #23273a;
+}
+
+.roll-cell.dark.playcol {
+  background: #1d2130;
+}
+
+.note {
+  position: absolute;
+  background: var(--accent);
+  border-radius: 3px;
+  cursor: grab;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.note:active {
+  cursor: grabbing;
+}
+
+.note-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  border-radius: 0 3px 3px 0;
+  background: rgba(255, 255, 255, 0.25);
+}

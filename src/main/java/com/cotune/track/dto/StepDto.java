@@ -6,5 +6,5 @@ package com.cotune.track.dto;
  * can evolve (e.g. per-note length), while this stays glued to the GraphQL
  * schema. Cheap insurance, same reasoning as every other DTO here.
  */
-public record StepDto(int step, String pitch, double velocity) {
+public record StepDto(int step, String pitch, double velocity, int length) {
 }

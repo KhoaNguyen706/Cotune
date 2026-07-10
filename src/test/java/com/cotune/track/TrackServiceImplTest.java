@@ -95,18 +95,25 @@ class TrackServiceImplTest {
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
 
         TrackDto dto = service.updatePattern(trackId, java.util.List.of(
-                new com.cotune.track.dto.StepInput(0, "C1", 0.9),
-                new com.cotune.track.dto.StepInput(8, "C1", 0.9)));
+                new com.cotune.track.dto.StepInput(0, "C1", 0.9, 1),
+                new com.cotune.track.dto.StepInput(8, "C1", 0.9, 4)));
 
         assertThat(dto.pattern()).hasSize(2);
         assertThat(dto.pattern().getFirst().pitch()).isEqualTo("C1");
+        assertThat(dto.pattern().getLast().length()).isEqualTo(4);
 
         // Bad pitch is stopped by the Step value object itself — the domain
         // guarantee holds even if boundary validation were bypassed.
         assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
-                new com.cotune.track.dto.StepInput(0, "H4", 0.9))))
+                new com.cotune.track.dto.StepInput(0, "H4", 0.9, 1))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("pitch");
+
+        // A note may not overrun the loop: step 14 + length 4 ends at 18.
+        assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
+                new com.cotune.track.dto.StepInput(14, "C1", 0.9, 4))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("length");
     }
 
     @Test
@@ -116,8 +123,8 @@ class TrackServiceImplTest {
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
 
         assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
-                new com.cotune.track.dto.StepInput(3, "C2", 0.9),
-                new com.cotune.track.dto.StepInput(3, "C2", 0.5))))
+                new com.cotune.track.dto.StepInput(3, "C2", 0.9, 1),
+                new com.cotune.track.dto.StepInput(3, "C2", 0.5, 2))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("duplicate");
     }

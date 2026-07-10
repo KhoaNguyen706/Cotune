@@ -25,6 +25,14 @@ public record StepInput(
 
         @DecimalMin(value = "0.0", inclusive = false)
         @DecimalMax("1.0")
-        double velocity
+        double velocity,
+
+        // Duration in steps. The schema declares `length: Int! = 1`, so
+        // clients that never heard of note lengths (or old saved requests)
+        // keep working — additive, defaulted fields are THE way to evolve
+        // an API without breaking existing callers.
+        @Min(1)
+        @Max(Step.STEPS_PER_PATTERN)
+        int length
 ) {
 }

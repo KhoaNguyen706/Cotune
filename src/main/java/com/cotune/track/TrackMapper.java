@@ -25,7 +25,7 @@ public class TrackMapper {
                 track.getInstrument(),
                 track.getPosition(),
                 track.getPattern().stream()
-                        .map(step -> new StepDto(step.step(), step.pitch(), step.velocity()))
+                        .map(step -> new StepDto(step.step(), step.pitch(), step.velocity(), step.length()))
                         .toList(),
                 track.getVersion(),
                 Timestamps.utc(track.getCreatedAt()),

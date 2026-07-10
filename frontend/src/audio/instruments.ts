@@ -9,26 +9,29 @@ import * as Tone from "tone";
  * (client-side). Buckets enter the picture when users upload samples or
  * export rendered audio.
  *
- * `defaultPitch` is what a grid cell plays for that instrument — the
- * pattern data model already stores pitch per note, so a future piano-roll
- * UI needs no schema change, only a richer editor.
+ * `duration` is in SECONDS (the caller converts note length in steps to
+ * seconds at the current BPM); undefined means "one sixteenth, now" for
+ * edit-time previews.
  */
 export interface TrackInstrument {
-  trigger(time: number | undefined, pitch: string, velocity: number): void;
+  trigger(time: number | undefined, pitch: string, velocity: number, duration?: number): void;
   dispose(): void;
   defaultPitch: string;
+  defaultOctave: number;
 }
 
 export function createInstrument(instrument: string): TrackInstrument {
   switch (instrument) {
     case "DRUMS": {
-      // MembraneSynth = pitched drum head (kick/tom territory).
+      // MembraneSynth = pitched drum head (kick/tom territory). Drum hits
+      // are transient — length affects little, which is musically correct.
       const synth = new Tone.MembraneSynth().toDestination();
       return {
-        trigger: (time, pitch, velocity) =>
-          synth.triggerAttackRelease(pitch, "16n", time, velocity),
+        trigger: (time, pitch, velocity, duration) =>
+          synth.triggerAttackRelease(pitch, duration ?? "16n", time, velocity),
         dispose: () => synth.dispose(),
         defaultPitch: "C1",
+        defaultOctave: 1,
       };
     }
     case "BASS": {
@@ -37,20 +40,22 @@ export function createInstrument(instrument: string): TrackInstrument {
         envelope: { attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.2 },
       }).toDestination();
       return {
-        trigger: (time, pitch, velocity) =>
-          synth.triggerAttackRelease(pitch, "16n", time, velocity),
+        trigger: (time, pitch, velocity, duration) =>
+          synth.triggerAttackRelease(pitch, duration ?? "16n", time, velocity),
         dispose: () => synth.dispose(),
         defaultPitch: "C2",
+        defaultOctave: 2,
       };
     }
     case "GUITAR": {
-      // Karplus-Strong plucked-string physical model — the most
-      // guitar-ish thing available without samples.
+      // Karplus-Strong plucked string — decays naturally, ignores duration
+      // just like a real pluck would.
       const synth = new Tone.PluckSynth().toDestination();
       return {
-        trigger: (time, pitch, _velocity) => synth.triggerAttack(pitch, time),
+        trigger: (time, pitch, _velocity, _duration) => synth.triggerAttack(pitch, time),
         dispose: () => synth.dispose(),
         defaultPitch: "E3",
+        defaultOctave: 3,
       };
     }
     case "STRINGS": {
@@ -58,10 +63,11 @@ export function createInstrument(instrument: string): TrackInstrument {
         envelope: { attack: 0.3, release: 0.8 },
       }).toDestination();
       return {
-        trigger: (time, pitch, velocity) =>
-          synth.triggerAttackRelease(pitch, "8n", time, velocity),
+        trigger: (time, pitch, velocity, duration) =>
+          synth.triggerAttackRelease(pitch, duration ?? "8n", time, velocity),
         dispose: () => synth.dispose(),
         defaultPitch: "A3",
+        defaultOctave: 4,
       };
     }
     case "PIANO": {
@@ -69,10 +75,11 @@ export function createInstrument(instrument: string): TrackInstrument {
       // future bucket use-case); AMSynth is a passable electric-piano.
       const synth = new Tone.PolySynth(Tone.AMSynth).toDestination();
       return {
-        trigger: (time, pitch, velocity) =>
-          synth.triggerAttackRelease(pitch, "16n", time, velocity),
+        trigger: (time, pitch, velocity, duration) =>
+          synth.triggerAttackRelease(pitch, duration ?? "16n", time, velocity),
         dispose: () => synth.dispose(),
         defaultPitch: "C4",
+        defaultOctave: 4,
       };
     }
     case "SYNTH":
@@ -81,10 +88,11 @@ export function createInstrument(instrument: string): TrackInstrument {
         oscillator: { type: "square" },
       }).toDestination();
       return {
-        trigger: (time, pitch, velocity) =>
-          synth.triggerAttackRelease(pitch, "16n", time, velocity),
+        trigger: (time, pitch, velocity, duration) =>
+          synth.triggerAttackRelease(pitch, duration ?? "16n", time, velocity),
         dispose: () => synth.dispose(),
         defaultPitch: "C4",
+        defaultOctave: 4,
       };
     }
   }

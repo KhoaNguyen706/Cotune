@@ -23,6 +23,7 @@ export interface Step {
   step: number;
   pitch: string;
   velocity: number;
+  length: number;
 }
 
 export interface Track {

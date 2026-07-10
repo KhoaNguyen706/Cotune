@@ -78,7 +78,7 @@ public class TrackServiceImpl implements TrackService {
         // re-validates; a malformed event can't sneak past the boundary
         // even if a future caller skips Bean Validation.
         List<Step> steps = pattern.stream()
-                .map(input -> new Step(input.step(), input.pitch(), input.velocity()))
+                .map(input -> new Step(input.step(), input.pitch(), input.velocity(), input.length()))
                 .toList();
         track.replacePattern(steps);
 

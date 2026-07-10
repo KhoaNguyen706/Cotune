@@ -66,18 +66,22 @@ type Track {
     updatedAt: DateTime!
 }
 
-# "At step N play PITCH this loud." The beat as data — see Step.java for
-# why this lives in Postgres rows rather than audio files.
+# "At step N play PITCH this loud for LENGTH steps." The beat as data —
+# see Step.java for why this lives in Postgres rows rather than audio files.
 type Step {
     step: Int!        # 0..15
     pitch: String!    # scientific notation: C4, F#2 ...
     velocity: Float!  # (0, 1]
+    length: Int!      # duration in steps; step + length <= 16
 }
 
 input StepInput {
     step: Int!
     pitch: String!
     velocity: Float!
+    # Schema-level default: clients that predate note lengths keep working
+    # without resending anything — additive evolution, no breaking change.
+    length: Int! = 1
 }
 
 # Type-checked at the edge: a typo'd instrument never reaches Java code.
