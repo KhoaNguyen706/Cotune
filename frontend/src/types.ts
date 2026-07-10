@@ -1,10 +1,15 @@
-// Hand-written mirrors of the backend DTOs / GraphQL types. Good enough at
-// this size; the moment these drift from the server they become lies, which
-// is why real teams GENERATE them (graphql-codegen reads schema.graphqls,
-// openapi-generator reads the REST spec) — one source of truth, no drift.
+// App-facing view types, DERIVED from src/generated/schema.ts (which
+// `npm run codegen` regenerates from the backend's schema.graphqls).
+// Each type Picks exactly the fields our queries fetch — per-view field
+// selection is GraphQL's point, so response shapes are narrower than the
+// schema — but because the field names/types come from the generated
+// file, a server-side rename or retype breaks THIS file at compile time
+// instead of lying at runtime. (That drift bit us once: Song.tracks.)
+import type * as gql from "./generated/schema";
 
 export type Role = "USER" | "ADMIN";
 
+/** Auth is REST (/api/auth/*), not GraphQL — hand-written on purpose. */
 export interface User {
   id: string;
   email: string;
@@ -19,67 +24,41 @@ export interface AuthPayload {
   user: User;
 }
 
-export interface Step {
-  step: number;
-  pitch: string;
-  velocity: number;
-  length: number;
-}
+export type Step = Pick<gql.Step, "step" | "pitch" | "velocity" | "length">;
 
 /** One instrument LANE inside a beat (kick lane, bass lane, ...). */
-export interface Track {
-  id: string;
-  name: string;
-  instrument: string;
-  position: number;
-  /** Optimistic-concurrency counter — send back as expectedVersion. */
-  version: number;
+export interface Track
+  extends Pick<gql.Track, "id" | "name" | "instrument" | "position" | "version"> {
   pattern: Step[];
 }
 
 /** A named multi-instrument pattern group — "Beat 1", "Beat 2" — the
  *  FL-Studio pattern model. The unit the arrangement places on the
  *  timeline: one beat clip plays ALL of the beat's lanes together. */
-export interface Beat {
-  id: string;
-  name: string;
-  position: number;
-  /** How many 16-step bars the beat's patterns span (1..8). */
-  bars: number;
+export interface Beat extends Pick<gql.Beat, "id" | "name" | "position" | "bars"> {
   tracks: Track[];
 }
 
-export type ClipType = "BEAT" | "AUDIO";
+export type ClipType = gql.ClipType;
 
 /** One placement on the arrangement timeline. Time in 16th-note steps
  *  (16 = one 4/4 bar) — the arrangement survives BPM changes. */
-export interface Clip {
-  id: string;
-  lane: number;
-  startStep: number;
-  lengthSteps: number;
-  type: ClipType;
-  beatId: string | null;  // set when type === "BEAT" — the WHOLE beat plays
-  audioId: string | null; // set when type === "AUDIO"
-}
+export type Clip = Pick<
+  gql.Clip,
+  "id" | "lane" | "startStep" | "lengthSteps" | "type" | "beatId" | "audioId"
+>;
 
 /** Upload metadata; the bytes live at GET /api/audio/{id}. */
-export interface AudioFile {
-  id: string;
-  filename: string;
-  contentType: string;
-  sizeBytes: number;
-  durationSeconds: number;
-}
+export type AudioFile = Pick<
+  gql.AudioFile,
+  "id" | "filename" | "contentType" | "sizeBytes" | "durationSeconds"
+>;
 
-export interface Song {
-  id: string;
-  title: string;
-  bpm: number;
-  timeSignature: string;
-  ownerId: string | null; // null = created before ownership existed
-  version: number;
-  createdAt: string;
+export interface Song
+  extends Pick<
+    gql.Song,
+    "id" | "title" | "bpm" | "timeSignature" | "ownerId" | "version" | "createdAt"
+  > {
   beats: Beat[];
   clips: Clip[];
   audioFiles: AudioFile[];

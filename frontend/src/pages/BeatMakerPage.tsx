@@ -77,6 +77,17 @@ interface DragState {
   rect: DOMRect; // roll geometry captured at drag start
   moved: boolean; // false until the mouse leaves the starting cell — a
   // "click" is a drag that never moved; we use it for note selection
+  recorded: boolean; // history snapshot taken for this gesture? One drag =
+  // one undo entry, captured lazily on the FIRST actual change so plain
+  // clicks (note selection) never pollute the history
+}
+
+/** One undoable editor state: the whole grid + which lanes were unsaved.
+ *  Snapshots are shallow — pattern arrays are replaced, never mutated
+ *  (see updateNote), so sharing them across entries is safe. */
+interface HistoryEntry {
+  notes: Record<string, Step[]>;
+  dirty: Set<string>;
 }
 
 function pitchOf(row: number, octave: number): string {
@@ -123,6 +134,13 @@ export function BeatMakerPage() {
   const instrumentsRef = useRef<Map<string, TrackInstrument>>(new Map());
   const notesRef = useRef(notesByTrack);
   notesRef.current = notesByTrack;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  // Undo/redo over PATTERN edits only (local, pre-save). Server-synced
+  // structure (beats, lanes, clips) is out of scope until inverse server
+  // ops exist — that's collaboration-phase machinery.
+  const historyRef = useRef<{ past: HistoryEntry[]; future: HistoryEntry[] }>({ past: [], future: [] });
+  const [historySizes, setHistorySizes] = useState({ past: 0, future: 0 });
   const clipsRef = useRef(clips);
   clipsRef.current = clips;
   const beatsRef = useRef<Beat[]>([]);
@@ -166,6 +184,9 @@ export function BeatMakerPage() {
         }
       }
       setNotesByTrack(next);
+      // Server truth replaces local state — stale undo targets with it.
+      historyRef.current = { past: [], future: [] };
+      setHistorySizes({ past: 0, future: 0 });
       setOctaves((prev) => {
         const merged = { ...prev };
         for (const beat of beats) {
@@ -220,6 +241,41 @@ export function BeatMakerPage() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  // ---- undo/redo ---------------------------------------------------------
+  // These read ONLY refs and stable setters, so the once-attached keyboard
+  // handler can safely close over the first render's instances.
+
+  /** Call BEFORE a mutation: pushes the current state as an undo point. */
+  function recordHistory() {
+    const h = historyRef.current;
+    h.past.push({ notes: notesRef.current, dirty: dirtyRef.current });
+    if (h.past.length > 100) h.past.shift(); // bounded — old history is noise
+    h.future = []; // a new edit forks the timeline; redo targets are gone
+    setHistorySizes({ past: h.past.length, future: 0 });
+  }
+
+  function undo() {
+    const h = historyRef.current;
+    const entry = h.past.pop();
+    if (!entry) return;
+    h.future.push({ notes: notesRef.current, dirty: dirtyRef.current });
+    setNotesByTrack(entry.notes);
+    setDirty(entry.dirty);
+    setSelectedNote(null); // indices may no longer exist in the restored grid
+    setHistorySizes({ past: h.past.length, future: h.future.length });
+  }
+
+  function redo() {
+    const h = historyRef.current;
+    const entry = h.future.pop();
+    if (!entry) return;
+    h.past.push({ notes: notesRef.current, dirty: dirtyRef.current });
+    setNotesByTrack(entry.notes);
+    setDirty(entry.dirty);
+    setSelectedNote(null);
+    setHistorySizes({ past: h.past.length, future: h.future.length });
+  }
+
   function updateNote(trackId: string, index: number, changes: Partial<Step>) {
     setNotesByTrack((prev) => {
       const notes = [...(prev[trackId] ?? [])];
@@ -259,6 +315,7 @@ export function BeatMakerPage() {
     const notes = notesRef.current[selectedId] ?? [];
     if (notes.some((n) => n.step === col && n.pitch === pitch)) return;
 
+    recordHistory(); // undo removes the note (and any stretch that follows)
     setNotesByTrack((prev) => ({
       ...prev,
       [selectedId]: [...(prev[selectedId] ?? []), { step: col, pitch, velocity: 0.9, length: 1 }],
@@ -267,7 +324,8 @@ export function BeatMakerPage() {
     preview(selectedId, pitch);
     // FL-style: the fresh note is immediately in resize mode — press,
     // drag right, release = a note exactly as long as you dragged.
-    dragRef.current = { trackId: selectedId, index: notes.length, mode: "resize", grabOffset: 0, rect, moved: false };
+    // recorded: true — add + stretch is ONE gesture, one undo entry.
+    dragRef.current = { trackId: selectedId, index: notes.length, mode: "resize", grabOffset: 0, rect, moved: false, recorded: true };
   }
 
   function onNoteMouseDown(e: React.MouseEvent, index: number, note: Step, resize: boolean) {
@@ -283,6 +341,7 @@ export function BeatMakerPage() {
       grabOffset: col - note.step,
       rect,
       moved: false,
+      recorded: false, // snapshot lazily on first change — clicks stay free
     };
   }
 
@@ -290,6 +349,7 @@ export function BeatMakerPage() {
     // Right-click deletes — the DAW convention.
     e.preventDefault();
     if (!selectedId) return;
+    recordHistory();
     setSelectedNote(null);
     setNotesByTrack((prev) => ({
       ...prev,
@@ -310,6 +370,10 @@ export function BeatMakerPage() {
       if (drag.mode === "resize") {
         const length = Math.max(1, Math.min(beatStepsRef.current - note.step, col - note.step + 1));
         if (length !== note.length) {
+          if (!drag.recorded) {
+            recordHistory(); // one entry per gesture, taken pre-change
+            drag.recorded = true;
+          }
           drag.moved = true;
           updateNote(drag.trackId, drag.index, { length });
         }
@@ -318,6 +382,10 @@ export function BeatMakerPage() {
         const step = Math.max(0, Math.min(beatStepsRef.current - note.length, col - drag.grabOffset));
         const pitch = pitchOf(row, octave);
         if (step !== note.step || pitch !== note.pitch) {
+          if (!drag.recorded) {
+            recordHistory();
+            drag.recorded = true;
+          }
           drag.moved = true;
           updateNote(drag.trackId, drag.index, { step, pitch });
           if (pitch !== note.pitch) preview(drag.trackId, pitch, note.velocity);
@@ -538,6 +606,7 @@ export function BeatMakerPage() {
       if ((e.code === "Delete" || e.code === "Backspace")) {
         const { trackId, index } = selectedNoteRef.current;
         if (trackId !== null && index !== null) {
+          recordHistory();
           setNotesByTrack((prev) => ({
             ...prev,
             [trackId]: (prev[trackId] ?? []).filter((_, i) => i !== index),
@@ -545,6 +614,16 @@ export function BeatMakerPage() {
           setDirty((prev) => new Set(prev).add(trackId));
           setSelectedNote(null);
         }
+      }
+      // Ctrl/Cmd+Z = undo, +Shift = redo; Ctrl+Y = the Windows redo.
+      if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.code === "KeyY") {
+        e.preventDefault();
+        redo();
       }
     }
     document.addEventListener("keydown", onKey);
@@ -824,6 +903,24 @@ export function BeatMakerPage() {
           >
             {playing ? "■ Stop" : "▶ Play"}
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={undo}
+            disabled={historySizes.past === 0}
+            title="Undo pattern edit (Ctrl+Z)"
+          >
+            ↺
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={redo}
+            disabled={historySizes.future === 0}
+            title="Redo pattern edit (Ctrl+Shift+Z)"
+          >
+            ↻
+          </Button>
           <Button variant="ghost" onClick={() => void save()} disabled={saving || dirty.size === 0}>
             {saving ? "Saving…" : dirty.size > 0 ? `Save (${dirty.size})` : "Saved"}
           </Button>
@@ -1080,6 +1177,7 @@ export function BeatMakerPage() {
                         min={10}
                         max={100}
                         value={Math.round(currentNote.velocity * 100)}
+                        onPointerDown={recordHistory}
                         onChange={(e) => {
                           const velocity = Number(e.target.value) / 100;
                           updateNote(selected.id, selectedNote!, { velocity });
