@@ -17,6 +17,7 @@ public record SongDto(
         String title,
         int bpm,
         String timeSignature,
+        UUID ownerId, // null only for songs created before ownership existed
         long version,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt

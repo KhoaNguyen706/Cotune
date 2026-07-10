@@ -39,6 +39,7 @@ export interface Song {
   title: string;
   bpm: number;
   timeSignature: string;
+  ownerId: string | null; // null = created before ownership existed
   version: number;
   createdAt: string;
   tracks: Track[];

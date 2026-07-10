@@ -61,6 +61,15 @@ public class Song {
     @Column(name = "time_signature", nullable = false, length = 10)
     private String timeSignature;
 
+    // A plain UUID column, NOT @ManyToOne(User): the song feature needs the
+    // owner's IDENTITY for authorization, never the User object itself.
+    // Referencing the entity would couple com.cotune.song to com.cotune.user
+    // and invite accidental joins; the FK constraint still lives in the
+    // database (V5) where referential integrity belongs. Nullable only for
+    // rows that predate ownership.
+    @Column(name = "owner_id", updatable = false)
+    private UUID ownerId;
+
     // Optimistic locking: Hibernate adds "WHERE version = ?" to every UPDATE
     // and bumps the counter. If two collaborators save concurrently, the
     // second write fails with OptimisticLockException instead of silently
@@ -77,7 +86,11 @@ public class Song {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public Song(String title, int bpm, String timeSignature) {
+    public Song(String title, int bpm, String timeSignature, UUID ownerId) {
+        if (ownerId == null) {
+            throw new IllegalArgumentException("A new song must have an owner");
+        }
+        this.ownerId = ownerId;
         // Reuse the guarded mutators instead of assigning fields directly,
         // so construction and mutation enforce the exact same invariants.
         rename(title);

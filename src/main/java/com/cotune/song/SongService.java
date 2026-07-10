@@ -19,7 +19,8 @@ import java.util.UUID;
  */
 public interface SongService {
 
-    SongDto create(CreateSongInput input);
+    /** ownerId = the authenticated caller; the transport layer supplies it. */
+    SongDto create(CreateSongInput input, UUID ownerId);
 
     SongDto getById(UUID id);
 

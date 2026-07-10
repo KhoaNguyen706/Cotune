@@ -30,8 +30,8 @@ public class SongServiceImpl implements SongService {
     private final SongMapper songMapper;
 
     @Override
-    public SongDto create(CreateSongInput input) {
-        Song song = songMapper.toEntity(input);
+    public SongDto create(CreateSongInput input, UUID ownerId) {
+        Song song = songMapper.toEntity(input, ownerId);
         // save() returns the managed instance; use the return value, not the
         // argument — for entities with generated fields they can differ.
         Song saved = songRepository.save(song);

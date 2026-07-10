@@ -39,6 +39,9 @@ type Song {
     title: String!
     bpm: Int!
     timeSignature: String!
+    # The creator's user id. Only the owner may deleteSong. Nullable solely
+    # for songs that predate ownership (admin-managed leftovers).
+    ownerId: ID
     # Exposed so clients can later send it back for conflict detection
     # (optimistic concurrency across the wire).
     version: Int!

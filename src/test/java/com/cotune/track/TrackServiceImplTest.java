@@ -41,7 +41,7 @@ class TrackServiceImplTest {
     private TrackServiceImpl service;
 
     private final UUID songId = UUID.randomUUID();
-    private final Song song = new Song("Test Song", 120, "4/4");
+    private final Song song = new Song("Test Song", 120, "4/4", UUID.randomUUID());
 
     @BeforeEach
     void setUp() {

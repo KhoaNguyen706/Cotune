@@ -10,7 +10,7 @@ import type { Song } from "../types";
 const SONGS_QUERY = `
   query Songs {
     songs {
-      id title bpm timeSignature version createdAt
+      id title bpm timeSignature ownerId version createdAt
       tracks { id name instrument position }
     }
   }
@@ -80,10 +80,11 @@ export function SongsPage() {
       await gql(DELETE_SONG, { id });
       await refresh();
     } catch (e) {
-      // Plain USERs hit the server's hasRole('ADMIN') wall here — surfacing
-      // it beats hiding the button, while we haven't wired role-based UI.
+      // Shouldn't normally happen (the button only renders for the owner),
+      // but the SERVER is the enforcement — this catch is for devtools
+      // adventurers and stale pages.
       setError(e instanceof ApiError && e.status === 403
-        ? "Only admins can delete songs"
+        ? "Only the song's creator can delete it"
         : "Failed to delete song");
     }
   }
@@ -154,9 +155,13 @@ export function SongsPage() {
                   <Link className="open" to={`/songs/${song.id}`}>
                     Open beat maker →
                   </Link>
-                  <button className="danger" onClick={() => void onDelete(song.id)}>
-                    Delete
-                  </button>
+                  {/* UI mirrors the server rule (owner-only) for honest
+                      affordances; the real gate is @PreAuthorize server-side. */}
+                  {song.ownerId === user?.id && (
+                    <button className="danger" onClick={() => void onDelete(song.id)}>
+                      Delete
+                    </button>
+                  )}
                 </div>
                 {song.tracks.length > 0 && (
                   <ul className="tracks">

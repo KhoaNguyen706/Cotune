@@ -4,6 +4,8 @@ import com.cotune.song.dto.CreateSongInput;
 import com.cotune.song.dto.SongDto;
 import org.junit.jupiter.api.Test;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -15,16 +17,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SongMapperTest {
 
     private final SongMapper mapper = new SongMapper();
+    private final UUID ownerId = UUID.randomUUID();
 
     @Test
     void toEntityCopiesAllFieldsThroughDomainConstructor() {
         CreateSongInput input = new CreateSongInput("Midnight Sketch", 92, "3/4");
 
-        Song song = mapper.toEntity(input);
+        Song song = mapper.toEntity(input, ownerId);
 
         assertThat(song.getTitle()).isEqualTo("Midnight Sketch");
         assertThat(song.getBpm()).isEqualTo(92);
         assertThat(song.getTimeSignature()).isEqualTo("3/4");
+        assertThat(song.getOwnerId()).isEqualTo(ownerId);
         // Server-owned fields are unset before persistence — the mapper
         // must not invent them.
         assertThat(song.getId()).isNull();
@@ -38,20 +42,21 @@ class SongMapperTest {
         // if Bean Validation were somehow skipped.
         CreateSongInput input = new CreateSongInput("Broken", 1000, "4/4");
 
-        assertThatThrownBy(() -> mapper.toEntity(input))
+        assertThatThrownBy(() -> mapper.toEntity(input, ownerId))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("BPM");
     }
 
     @Test
     void toDtoMapsFieldsAndConvertsTimestampsToUtc() {
-        Song song = new Song("Lo-fi Loop", 74, "4/4");
+        Song song = new Song("Lo-fi Loop", 74, "4/4", ownerId);
 
         SongDto dto = mapper.toDto(song);
 
         assertThat(dto.title()).isEqualTo("Lo-fi Loop");
         assertThat(dto.bpm()).isEqualTo(74);
         assertThat(dto.timeSignature()).isEqualTo("4/4");
+        assertThat(dto.ownerId()).isEqualTo(ownerId);
         // Unsaved entity → null timestamps must not blow up the mapper.
         assertThat(dto.createdAt()).isNull();
     }

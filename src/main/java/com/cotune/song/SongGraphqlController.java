@@ -9,6 +9,7 @@ import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.graphql.data.method.annotation.QueryMapping;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.annotation.Validated;
 
@@ -49,8 +50,10 @@ public class SongGraphqlController {
     }
 
     @MutationMapping
-    public SongDto createSong(@Argument @Valid CreateSongInput input) {
-        return songService.create(input);
+    public SongDto createSong(@Argument @Valid CreateSongInput input, Authentication authentication) {
+        // The owner is WHO YOU ARE, taken from the verified token — never
+        // an input field a client could set to someone else's id.
+        return songService.create(input, UUID.fromString(authentication.getName()));
     }
 
     @MutationMapping
@@ -62,10 +65,12 @@ public class SongGraphqlController {
     // void is not a GraphQL type, so Boolean is the conventional ack.
     //
     // Method-level @PreAuthorize OVERRIDES the class-level one (it does not
-    // stack) — deleting is destructive, so it's role-gated: authentication
-    // answers "who are you", this answers "and are you ALLOWED to".
+    // stack). This was hasRole('ADMIN') — a ROLE check — until ownership
+    // arrived; now the rule is object-level: only the song's creator may
+    // delete it. #id is the method argument, @songAccess is the SongAccess
+    // bean, and Spring hands the current Authentication in.
     @MutationMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@songAccess.canDelete(#id, authentication)")
     public boolean deleteSong(@Argument UUID id) {
         songService.delete(id);
         return true;
