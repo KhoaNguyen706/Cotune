@@ -23,4 +23,8 @@ public class ResourceNotFoundException extends RuntimeException {
     public static ResourceNotFoundException track(UUID id) {
         return new ResourceNotFoundException("Track not found: " + id);
     }
+
+    public static ResourceNotFoundException user(UUID id) {
+        return new ResourceNotFoundException("User not found: " + id);
+    }
 }

@@ -43,6 +43,22 @@
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
+        <!-- Core Spring Security: the filter chain, method security
+             (@PreAuthorize), password encoding. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!-- JWT support (Nimbus JOSE under the hood). "Resource server" is
+             Spring's name for "an API that accepts bearer tokens". We use it
+             even though we ISSUE our own tokens too — the starter gives us
+             JwtEncoder/JwtDecoder and the BearerTokenAuthenticationFilter,
+             so we never hand-roll token parsing or a custom filter. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
         <!-- Bean Validation (Jakarta). Lets us declare constraints on DTOs and
              have Spring enforce them at the API boundary instead of hand-rolled
              if/throw blocks scattered through services. -->
@@ -100,6 +116,12 @@
         <dependency>
             <groupId>org.springframework.graphql</groupId>
             <artifactId>spring-graphql-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Test helpers: mock users, SecurityMockMvc, etc. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

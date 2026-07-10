@@ -25,6 +25,19 @@ spring:
       # disable (or gate behind auth) before anything public-facing.
       enabled: true
 
+cotune:
+  security:
+    jwt:
+      # HMAC-SHA256 signing key, Base64-encoded, >= 256 bits. The ${VAR:default}
+      # syntax means: use the JWT_SECRET env var if set, else this dev-only
+      # fallback. The fallback is fine locally but MUST be overridden in any
+      # shared environment — anyone who knows the signing key can mint a
+      # token for any user with any role.
+      secret: ${JWT_SECRET:o4v2MifYO/cSXQkB9fWtvtrZu5+VKHg8xC/B872+sf4=}
+      # Short on purpose: JWTs can't be revoked, so TTL bounds the damage
+      # window of a leaked token AND how long a stale role claim survives.
+      ttl: 1h
+
 logging:
   level:
     # Log the SQL Hibernate actually emits — while learning, always check

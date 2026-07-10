@@ -14,10 +14,15 @@ type Query {
     songs: [Song!]!
 }
 
+# Auth (register/login/me) is deliberately NOT in this schema — it lives on
+# REST at /api/auth/* (see AuthRestController for the reasoning). Every
+# operation below requires "Authorization: Bearer <jwt>"; the schema can't
+# express that (auth rules live in @PreAuthorize on the resolvers), clients
+# discover it via UNAUTHORIZED errors.
 type Mutation {
     createSong(input: CreateSongInput!): Song!
     updateSong(id: ID!, input: UpdateSongInput!): Song!
-    deleteSong(id: ID!): Boolean!
+    deleteSong(id: ID!): Boolean!   # ADMIN only
 
     addTrack(input: AddTrackInput!): Track!
     updateTrack(id: ID!, input: UpdateTrackInput!): Track!

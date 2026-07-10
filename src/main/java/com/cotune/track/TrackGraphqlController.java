@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.BatchMapping;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.annotation.Validated;
 
@@ -21,6 +22,10 @@ import java.util.stream.Collectors;
 @Controller
 @Validated
 @RequiredArgsConstructor
+// Same class-level rule as SongGraphqlController; it also covers the
+// @BatchMapping below (Song.tracks is only reachable via queries that are
+// themselves authenticated, but defense in depth costs one annotation).
+@PreAuthorize("isAuthenticated()")
 public class TrackGraphqlController {
 
     private final TrackService trackService;

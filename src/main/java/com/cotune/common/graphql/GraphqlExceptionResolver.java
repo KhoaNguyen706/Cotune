@@ -26,6 +26,12 @@ public class GraphqlExceptionResolver extends DataFetcherExceptionResolverAdapte
                     .build();
         }
 
+        // Auth exceptions are deliberately absent: register/login live on
+        // REST (AuthRestController), handled by RestExceptionHandler.
+        // AccessDeniedException from @PreAuthorize is also not handled
+        // here — Spring GraphQL's built-in security resolver already maps
+        // it to FORBIDDEN/UNAUTHORIZED.
+
         // IllegalArgumentException here means a domain invariant fired
         // (e.g. Song.changeTempo rejected the value) — the caller's fault,
         // so classify as BAD_REQUEST rather than a server error.

@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.graphql.data.method.annotation.QueryMapping;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.annotation.Validated;
 
@@ -27,6 +28,10 @@ import java.util.UUID;
 @Controller
 @Validated // enables @Valid on method arguments below
 @RequiredArgsConstructor
+// Class-level default: every operation in here requires a logged-in user.
+// HTTP-level rules can't do this (all of GraphQL is one POST /graphql), so
+// authorization is enforced at the method layer — see SecurityConfig.
+@PreAuthorize("isAuthenticated()")
 public class SongGraphqlController {
 
     private final SongService songService;
@@ -55,7 +60,12 @@ public class SongGraphqlController {
 
     // Returning the deleted object is impossible (it's gone) and returning
     // void is not a GraphQL type, so Boolean is the conventional ack.
+    //
+    // Method-level @PreAuthorize OVERRIDES the class-level one (it does not
+    // stack) — deleting is destructive, so it's role-gated: authentication
+    // answers "who are you", this answers "and are you ALLOWED to".
     @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public boolean deleteSong(@Argument UUID id) {
         songService.delete(id);
         return true;
