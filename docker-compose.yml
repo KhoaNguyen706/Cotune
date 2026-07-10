@@ -1,4 +1,35 @@
 services:
+  app:
+    build: .
+    container_name: cotune-app
+    ports:
+      # Host port is configurable (COTUNE_PORT=8081 docker compose up)
+      # because 8080 on a dev machine is prime real estate — other
+      # projects' containers often squat on it.
+      - "${COTUNE_PORT:-8080}:8080"
+    environment:
+      # Overrides spring.datasource.* from application.yml (Boot maps
+      # SPRING_DATASOURCE_URL onto it). Inside the compose network the DB's
+      # hostname is the SERVICE NAME "postgres" — "localhost" here would be
+      # the app container itself. Same image everywhere, config injected
+      # per environment: that's 12-factor config.
+      #
+      # The ${VAR:-default} indirection lets a .env file repoint the WHOLE
+      # stack at Supabase (see .env.example) without touching this file.
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/cotune}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-cotune}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-cotune}
+      # JWT_SECRET intentionally not set here: the dev fallback in
+      # application.yml applies. Real deployments inject it (secret
+      # manager / CI variable), never a file committed to git.
+    depends_on:
+      # Not just "wait until the container starts" — wait until the
+      # healthcheck below passes. Postgres accepts TCP connections a
+      # moment before it accepts logins; without the condition the app
+      # boots, Flyway can't connect, startup fails.
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: cotune-postgres

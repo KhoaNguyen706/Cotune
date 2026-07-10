@@ -1,0 +1,11 @@
+# Keeps the build context small and the cache stable: anything listed here
+# never reaches the Docker daemon, so changing it can't invalidate layers.
+target/
+.git/
+.claude/
+.mvn/
+mvnw
+mvnw.cmd
+*.md
+.gitignore
+docker-compose.yml

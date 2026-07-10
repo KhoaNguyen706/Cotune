@@ -1,0 +1,170 @@
+/* Minimal, dependency-free styling. A component library (MUI, shadcn)
+   would be faster to look good — plain CSS keeps the learning surface
+   small and shows there's no magic in the pretty versions. */
+
+:root {
+  color-scheme: dark;
+  --bg: #14151a;
+  --panel: #1e2027;
+  --border: #33363f;
+  --text: #e8e9ec;
+  --muted: #9aa0ab;
+  --accent: #7c8cf8;
+  --danger: #e5626a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#root {
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+main.card,
+main.wide {
+  width: 100%;
+}
+
+main.card {
+  max-width: 24rem;
+}
+
+main.wide {
+  max-width: 44rem;
+}
+
+h1 {
+  color: var(--accent);
+  margin: 0 0 0.5rem;
+}
+
+h2 {
+  margin: 0.5rem 0 1rem;
+  font-size: 1.1rem;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+form.row {
+  flex-direction: row;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.95rem;
+}
+
+input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+button {
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #101116;
+  font-weight: 600;
+  padding: 0.6rem 1.1rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.danger {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 0.3rem 0.7rem;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.topbar .who {
+  color: var(--muted);
+  margin-right: 0.8rem;
+}
+
+.error {
+  color: var(--danger);
+  margin: 0.3rem 0 0;
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
+ul.songs {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.song-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.song-head span {
+  color: var(--muted);
+  flex: 1;
+}
+
+ul.tracks {
+  margin: 0.6rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+p a {
+  color: var(--accent);
+}

@@ -1,0 +1,23 @@
+# Profile-specific config: active when SPRING_PROFILES_ACTIVE=supabase.
+# Spring loads application.yml FIRST, then overlays this file on top —
+# only the keys here change; everything else (JPA, GraphQL, JWT, logging)
+# is inherited. One base config + thin per-environment overlays beats
+# copy-pasting the whole file per environment.
+#
+# Run:  SPRING_PROFILES_ACTIVE=supabase SUPABASE_DB_PASSWORD=... ./mvnw spring-boot:run
+spring:
+  datasource:
+    # Supabase's "session mode" pooler (port 5432) — behaves like a normal
+    # Postgres connection, which JDBC needs (the 6543 "transaction mode"
+    # pooler breaks prepared statements, which Hibernate uses heavily).
+    # sslmode=require: this connection crosses the public internet, unlike
+    # the localhost/compose-network hops we've used so far.
+    url: jdbc:postgresql://aws-0-ca-central-1.pooler.supabase.com:5432/postgres?sslmode=require
+    # Username/password as separate properties, NOT embedded in the URL:
+    # Supabase's URI format needs special characters percent-encoded, and
+    # a password in a URL leaks into logs that print the datasource URL.
+    username: postgres.ojnocvbtammmpllnwdre
+    # No fallback on purpose (contrast with JWT_SECRET's dev default):
+    # there is no sane default for a cloud database password, so a missing
+    # env var must fail the boot loudly, not connect somewhere weird.
+    password: ${SUPABASE_DB_PASSWORD}
