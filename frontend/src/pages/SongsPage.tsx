@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError, gql } from "../api/client";
 import type { Song } from "../types";
@@ -150,6 +151,9 @@ export function SongsPage() {
                   <span>
                     {song.bpm} BPM · {song.timeSignature} · v{song.version}
                   </span>
+                  <Link className="open" to={`/songs/${song.id}`}>
+                    Open beat maker →
+                  </Link>
                   <button className="danger" onClick={() => void onDelete(song.id)}>
                     Delete
                   </button>

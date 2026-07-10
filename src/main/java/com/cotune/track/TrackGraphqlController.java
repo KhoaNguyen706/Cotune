@@ -2,6 +2,7 @@ package com.cotune.track;
 
 import com.cotune.song.dto.SongDto;
 import com.cotune.track.dto.AddTrackInput;
+import com.cotune.track.dto.StepInput;
 import com.cotune.track.dto.TrackDto;
 import com.cotune.track.dto.UpdateTrackInput;
 import jakarta.validation.Valid;
@@ -44,6 +45,15 @@ public class TrackGraphqlController {
     public boolean deleteTrack(@Argument UUID id) {
         trackService.delete(id);
         return true;
+    }
+
+    // @Valid on a List cascades into the StepInput elements (each is
+    // validated against its own annotations). The domain Step re-checks
+    // everything anyway — boundary errors are friendlier, domain errors
+    // are the guarantee.
+    @MutationMapping
+    public TrackDto updateTrackPattern(@Argument UUID id, @Argument @Valid List<StepInput> pattern) {
+        return trackService.updatePattern(id, pattern);
     }
 
     /**

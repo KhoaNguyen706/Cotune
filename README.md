@@ -1,6 +1,8 @@
 # Cotune
 
-Real-time collaborative music editor. Backend: Spring Boot (Java 21), PostgreSQL (local Docker or Supabase), GraphQL + REST auth. Frontend: React + Vite + TypeScript (`frontend/`). Redis pub/sub + WebSocket arrive in later sessions.
+Real-time collaborative music editor. Backend: Spring Boot (Java 21), PostgreSQL (local Docker or Supabase), GraphQL + REST auth. Frontend: React + Vite + TypeScript + Tone.js (`frontend/`) — sign in, open a song, and build a 16-step beat in the browser. Redis pub/sub + WebSocket arrive in later sessions.
+
+**Beats are data, not audio**: a pattern is a JSONB array of `{step, pitch, velocity}` events on the track row (see `V4__add_track_pattern.sql` for the modeling rationale); the browser synthesizes all sound with Tone.js. Object storage (e.g. Supabase Storage) only becomes necessary for uploaded samples and exported audio — not for the sequencer.
 
 ## Run
 

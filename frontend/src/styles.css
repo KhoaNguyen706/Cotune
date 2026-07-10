@@ -168,3 +168,89 @@ ul.tracks {
 p a {
   color: var(--accent);
 }
+
+a.open {
+  color: var(--accent);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.topbar a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.transport {
+  display: flex;
+  gap: 0.6rem;
+}
+
+/* --- step sequencer --- */
+
+.sequencer {
+  overflow-x: auto;
+}
+
+.seq-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.35rem 0;
+}
+
+.seq-label {
+  width: 10rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.seq-label span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.seq-label button {
+  margin-left: auto;
+}
+
+.seq-cells {
+  display: flex;
+  gap: 4px;
+}
+
+.cell {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+/* every 4th step tinted: musicians think in beats, not steps */
+.cell.beat {
+  border-color: #4a4e5a;
+}
+
+.cell.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cell.playhead {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.95rem;
+}

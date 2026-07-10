@@ -65,3 +65,7 @@ Supabase mode can't be verified without SUPABASE_DB_PASSWORD (user-held secret).
 - GraphQL: anonymous query → UNAUTHORIZED in `errors` (HTTP still 200);
   tampered token → HTTP 401 (filter rejects before GraphQL);
   deleteSong as USER → FORBIDDEN
+- Beat patterns: `updateTrackPattern(id, pattern: [{step, pitch, velocity}])`
+  → round-trips through the tracks.pattern JSONB column; invalid pitch/step
+  → BAD_REQUEST with field path; browser audio (Tone.js) can only be
+  checked by ear at localhost:5173 — not headless-verifiable here

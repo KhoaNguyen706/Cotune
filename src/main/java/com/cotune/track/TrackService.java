@@ -1,6 +1,7 @@
 package com.cotune.track;
 
 import com.cotune.track.dto.AddTrackInput;
+import com.cotune.track.dto.StepInput;
 import com.cotune.track.dto.TrackDto;
 import com.cotune.track.dto.UpdateTrackInput;
 
@@ -13,6 +14,9 @@ public interface TrackService {
     TrackDto add(AddTrackInput input);
 
     TrackDto update(UUID id, UpdateTrackInput input);
+
+    /** Replace the track's whole step pattern (the beat grid saves as one unit). */
+    TrackDto updatePattern(UUID id, List<StepInput> pattern);
 
     void delete(UUID id);
 

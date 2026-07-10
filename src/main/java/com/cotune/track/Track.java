@@ -17,9 +17,13 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -64,6 +68,14 @@ public class Track {
     @Column(nullable = false)
     private int position;
 
+    // The beat itself. @JdbcTypeCode(JSON) tells Hibernate to serialize the
+    // list to the JSONB column via Jackson — the List<Step> is a plain Java
+    // object in memory and one jsonb value in the row. No extra table, no
+    // join; the trade-off is documented in V4__add_track_pattern.sql.
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private List<Step> pattern = new ArrayList<>();
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -101,6 +113,45 @@ public class Track {
             throw new IllegalArgumentException("Track instrument must not be null");
         }
         this.instrument = newInstrument;
+    }
+
+    /**
+     * Whole-pattern replacement, not add/removeNote: the client edits a
+     * grid and saves the grid — one intention, one method. (Fine-grained
+     * note operations only become necessary for real-time collab, where
+     * two people edit the SAME pattern concurrently.)
+     *
+     * Each Step validated itself at construction; the pattern-level rules
+     * (size cap, no duplicate step+pitch) live here because they're about
+     * the collection, not any single note.
+     */
+    public void replacePattern(List<Step> newPattern) {
+        if (newPattern == null) {
+            throw new IllegalArgumentException("Pattern must not be null (use an empty list to clear)");
+        }
+        // 16 steps x a generous chord/polyphony allowance. A cap matters
+        // because this arrives from the network: without one, a malicious
+        // 10MB pattern is a storage/bandwidth attack wearing a beat costume.
+        if (newPattern.size() > 256) {
+            throw new IllegalArgumentException("Pattern too large: max 256 events");
+        }
+        long distinct = newPattern.stream().map(s -> s.step() + "|" + s.pitch()).distinct().count();
+        if (distinct != newPattern.size()) {
+            throw new IllegalArgumentException("Pattern has duplicate events for the same step and pitch");
+        }
+        // Defensive copy — nobody outside can mutate our state through a
+        // list reference they kept.
+        this.pattern = new ArrayList<>(newPattern);
+    }
+
+    /**
+     * Hand-written to shadow Lombok's getter: hands out an unmodifiable
+     * view, so the ONLY way to change the pattern is replacePattern()
+     * with its validation. A raw getter would reopen the anemic-model
+     * hole for this one field.
+     */
+    public List<Step> getPattern() {
+        return List.copyOf(pattern);
     }
 
     // Same identity-based equals/hashCode contract as Song — see the long

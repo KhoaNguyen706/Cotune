@@ -27,6 +27,11 @@ type Mutation {
     addTrack(input: AddTrackInput!): Track!
     updateTrack(id: ID!, input: UpdateTrackInput!): Track!
     deleteTrack(id: ID!): Boolean!
+
+    # Whole-pattern replacement: the beat grid saves as one unit. An empty
+    # list clears the pattern. Per-note operations arrive with real-time
+    # collaboration, not before.
+    updateTrackPattern(id: ID!, pattern: [StepInput!]!): Track!
 }
 
 type Song {
@@ -53,9 +58,26 @@ type Track {
     # 0-based slot, server-assigned, gaps allowed after deletes —
     # clients must sort by it, never assume contiguity.
     position: Int!
+    # The beat: note events on a 16-step grid. Unordered — clients index
+    # by step number, not array position.
+    pattern: [Step!]!
     version: Int!
     createdAt: DateTime!
     updatedAt: DateTime!
+}
+
+# "At step N play PITCH this loud." The beat as data — see Step.java for
+# why this lives in Postgres rows rather than audio files.
+type Step {
+    step: Int!        # 0..15
+    pitch: String!    # scientific notation: C4, F#2 ...
+    velocity: Float!  # (0, 1]
+}
+
+input StepInput {
+    step: Int!
+    pitch: String!
+    velocity: Float!
 }
 
 # Type-checked at the edge: a typo'd instrument never reaches Java code.

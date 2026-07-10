@@ -19,11 +19,18 @@ export interface AuthPayload {
   user: User;
 }
 
+export interface Step {
+  step: number;
+  pitch: string;
+  velocity: number;
+}
+
 export interface Track {
   id: string;
   name: string;
   instrument: string;
   position: number;
+  pattern: Step[];
 }
 
 export interface Song {

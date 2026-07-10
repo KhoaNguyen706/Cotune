@@ -4,9 +4,12 @@ import com.cotune.common.exception.ResourceNotFoundException;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.graphql.execution.DataFetcherExceptionResolverAdapter;
 import org.springframework.graphql.execution.ErrorType;
 import org.springframework.stereotype.Component;
+
+import java.util.stream.Collectors;
 
 /**
  * GraphQL has no HTTP status codes — every response is 200, and failures
@@ -23,6 +26,22 @@ public class GraphqlExceptionResolver extends DataFetcherExceptionResolverAdapte
             return GraphqlErrorBuilder.newError(env)
                     .errorType(ErrorType.NOT_FOUND)
                     .message(notFound.getMessage())
+                    .build();
+        }
+
+        // Bean Validation failures on @Valid GraphQL arguments. Without
+        // this mapping they fall through to INTERNAL_ERROR — which hides
+        // the caller's mistake AND swallows the helpful message (found by
+        // probing updateTrackPattern with a bad pitch during verification).
+        // The REST twin of this mapping lives in RestExceptionHandler.
+        if (ex instanceof ConstraintViolationException violations) {
+            String message = violations.getConstraintViolations().stream()
+                    .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                    .sorted() // deterministic order — violations come as a Set
+                    .collect(Collectors.joining("; "));
+            return GraphqlErrorBuilder.newError(env)
+                    .errorType(ErrorType.BAD_REQUEST)
+                    .message(message)
                     .build();
         }
 

@@ -1,6 +1,7 @@
 package com.cotune.track;
 
 import com.cotune.common.mapping.Timestamps;
+import com.cotune.track.dto.StepDto;
 import com.cotune.track.dto.TrackDto;
 import org.springframework.stereotype.Component;
 
@@ -23,6 +24,9 @@ public class TrackMapper {
                 track.getName(),
                 track.getInstrument(),
                 track.getPosition(),
+                track.getPattern().stream()
+                        .map(step -> new StepDto(step.step(), step.pitch(), step.velocity()))
+                        .toList(),
                 track.getVersion(),
                 Timestamps.utc(track.getCreatedAt()),
                 Timestamps.utc(track.getUpdatedAt())

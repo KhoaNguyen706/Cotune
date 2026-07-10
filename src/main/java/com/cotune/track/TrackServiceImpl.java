@@ -4,6 +4,7 @@ import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.song.Song;
 import com.cotune.song.SongRepository;
 import com.cotune.track.dto.AddTrackInput;
+import com.cotune.track.dto.StepInput;
 import com.cotune.track.dto.TrackDto;
 import com.cotune.track.dto.UpdateTrackInput;
 import lombok.RequiredArgsConstructor;
@@ -65,6 +66,25 @@ public class TrackServiceImpl implements TrackService {
         track.rename(input.name());
         track.changeInstrument(input.instrument());
 
+        trackRepository.flush();
+        return trackMapper.toDto(track);
+    }
+
+    @Override
+    public TrackDto updatePattern(UUID id, List<StepInput> pattern) {
+        Track track = loadTrack(id);
+
+        // DTO -> domain value objects. Each Step's compact constructor
+        // re-validates; a malformed event can't sneak past the boundary
+        // even if a future caller skips Bean Validation.
+        List<Step> steps = pattern.stream()
+                .map(input -> new Step(input.step(), input.pitch(), input.velocity()))
+                .toList();
+        track.replacePattern(steps);
+
+        // Managed entity + dirty checking persists the JSONB column; flush
+        // now so the returned DTO carries the bumped version/updatedAt
+        // (same reasoning as update() above).
         trackRepository.flush();
         return trackMapper.toDto(track);
     }

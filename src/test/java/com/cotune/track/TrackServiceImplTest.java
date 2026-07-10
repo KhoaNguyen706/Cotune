@@ -89,6 +89,40 @@ class TrackServiceImplTest {
     }
 
     @Test
+    void updatePatternReplacesStepsAndRejectsInvalidOnes() {
+        UUID trackId = UUID.randomUUID();
+        Track track = new Track(song, "Kick", Instrument.DRUMS, 0);
+        when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
+
+        TrackDto dto = service.updatePattern(trackId, java.util.List.of(
+                new com.cotune.track.dto.StepInput(0, "C1", 0.9),
+                new com.cotune.track.dto.StepInput(8, "C1", 0.9)));
+
+        assertThat(dto.pattern()).hasSize(2);
+        assertThat(dto.pattern().getFirst().pitch()).isEqualTo("C1");
+
+        // Bad pitch is stopped by the Step value object itself — the domain
+        // guarantee holds even if boundary validation were bypassed.
+        assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
+                new com.cotune.track.dto.StepInput(0, "H4", 0.9))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("pitch");
+    }
+
+    @Test
+    void updatePatternRejectsDuplicateEvents() {
+        UUID trackId = UUID.randomUUID();
+        Track track = new Track(song, "Bass", Instrument.BASS, 0);
+        when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
+
+        assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
+                new com.cotune.track.dto.StepInput(3, "C2", 0.9),
+                new com.cotune.track.dto.StepInput(3, "C2", 0.5))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("duplicate");
+    }
+
+    @Test
     void deleteRejectsUnknownTrack() {
         UUID trackId = UUID.randomUUID();
         when(trackRepository.existsById(trackId)).thenReturn(false);
