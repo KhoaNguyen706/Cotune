@@ -56,7 +56,9 @@ public class SongGraphqlController {
         return songService.create(input, UUID.fromString(authentication.getName()));
     }
 
+    // Object-level like deleteSong below: only the owner may edit.
     @MutationMapping
+    @PreAuthorize("isAuthenticated() and @songAccess.canEdit(#id, authentication)")
     public SongDto updateSong(@Argument UUID id, @Argument @Valid UpdateSongInput input) {
         return songService.update(id, input);
     }

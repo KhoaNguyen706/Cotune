@@ -83,4 +83,19 @@ class SongAccessTest {
         // letting the call through makes the service answer NOT_FOUND.
         assertThat(access().canDelete(songId, authFor(UUID.randomUUID(), "ROLE_USER"))).isTrue();
     }
+
+    @Test
+    void editFollowsTheSameOwnershipRuleAsDelete() {
+        UUID owner = UUID.randomUUID();
+        UUID songId = UUID.randomUUID();
+        when(songRepository.findById(songId))
+                .thenReturn(Optional.of(new Song("Mine", 120, "4/4", owner)));
+
+        assertThat(access().canEdit(songId, authFor(owner, "ROLE_USER"))).isTrue();
+        assertThat(access().canEdit(songId, authFor(UUID.randomUUID(), "ROLE_USER"))).isFalse();
+        assertThat(access().canEdit(songId, authFor(UUID.randomUUID(), "ROLE_ADMIN"))).isFalse();
+
+        when(songRepository.findById(songId)).thenReturn(Optional.empty());
+        assertThat(access().canEdit(songId, authFor(UUID.randomUUID(), "ROLE_USER"))).isTrue();
+    }
 }

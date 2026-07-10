@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface BeatRepository extends JpaRepository<Beat, UUID> {
@@ -18,4 +19,9 @@ public interface BeatRepository extends JpaRepository<Beat, UUID> {
     // Referential guard for clip placement (a clip may only place a beat
     // from its own song).
     boolean existsByIdAndSongId(UUID id, UUID songId);
+
+    // Ownership resolution for BeatAccess — one indexed lookup, no entity
+    // hydration. Empty when the beat doesn't exist.
+    @Query("select b.song.id from Beat b where b.id = :id")
+    Optional<UUID> findSongIdById(@Param("id") UUID id);
 }

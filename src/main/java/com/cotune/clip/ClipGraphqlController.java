@@ -27,17 +27,22 @@ public class ClipGraphqlController {
 
     private final ClipService clipService;
 
+    // Owner-only mutations — see BeatGraphqlController.addBeat for why the
+    // expression restates isAuthenticated().
     @MutationMapping
+    @PreAuthorize("isAuthenticated() and @songAccess.canEdit(#input.songId(), authentication)")
     public ClipDto addClip(@Argument @Valid AddClipInput input) {
         return clipService.add(input);
     }
 
     @MutationMapping
+    @PreAuthorize("isAuthenticated() and @clipAccess.canEdit(#id, authentication)")
     public ClipDto updateClip(@Argument UUID id, @Argument @Valid UpdateClipInput input) {
         return clipService.update(id, input);
     }
 
     @MutationMapping
+    @PreAuthorize("isAuthenticated() and @clipAccess.canEdit(#id, authentication)")
     public boolean deleteClip(@Argument UUID id) {
         clipService.delete(id);
         return true;

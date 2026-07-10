@@ -2,9 +2,11 @@ package com.cotune.song;
 
 import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.common.exception.StaleAccountException;
+import com.cotune.common.exception.StaleVersionException;
 import com.cotune.song.dto.CreateSongInput;
 import com.cotune.song.dto.SongDto;
 import com.cotune.song.dto.UpdateSongInput;
+import com.cotune.song.dto.UpdateSongPatch;
 import com.cotune.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -88,9 +90,23 @@ public class SongServiceImpl implements SongService {
     }
 
     @Override
-    public SongDto rename(UUID id, String title) {
+    public SongDto patch(UUID id, UpdateSongPatch patch) {
+        if (patch.isEmpty()) {
+            throw new IllegalArgumentException("Patch must change at least one field");
+        }
         Song song = loadSong(id);
-        song.rename(title);
+        StaleVersionException.check("Song", patch.expectedVersion(), song.getVersion());
+        // Null = leave unchanged; each present field goes through the same
+        // guarded mutator the full update uses, so invariants can't diverge.
+        if (patch.title() != null) {
+            song.rename(patch.title());
+        }
+        if (patch.bpm() != null) {
+            song.changeTempo(patch.bpm());
+        }
+        if (patch.timeSignature() != null) {
+            song.changeTimeSignature(patch.timeSignature());
+        }
         // Flush for the same reason as update(): the returned DTO must
         // carry the bumped version/updatedAt, not the pre-write values.
         songRepository.flush();

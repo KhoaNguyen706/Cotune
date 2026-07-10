@@ -3,6 +3,7 @@ package com.cotune.track;
 import com.cotune.beat.Beat;
 import com.cotune.beat.BeatRepository;
 import com.cotune.common.exception.ResourceNotFoundException;
+import com.cotune.common.exception.StaleVersionException;
 import com.cotune.track.dto.AddTrackInput;
 import com.cotune.track.dto.StepInput;
 import com.cotune.track.dto.TrackDto;
@@ -79,8 +80,9 @@ public class TrackServiceImpl implements TrackService {
     }
 
     @Override
-    public TrackDto updatePattern(UUID id, List<StepInput> pattern) {
+    public TrackDto updatePattern(UUID id, List<StepInput> pattern, Long expectedVersion) {
         Track track = loadTrack(id);
+        StaleVersionException.check("Track pattern", expectedVersion, track.getVersion());
 
         // DTO -> domain value objects. Each Step's compact constructor
         // re-validates; a malformed event can't sneak past the boundary

@@ -31,17 +31,22 @@ public class TrackGraphqlController {
 
     private final TrackService trackService;
 
+    // Owner-only mutations — see BeatGraphqlController.addBeat for why the
+    // expression restates isAuthenticated().
     @MutationMapping
+    @PreAuthorize("isAuthenticated() and @beatAccess.canEdit(#input.beatId(), authentication)")
     public TrackDto addTrack(@Argument @Valid AddTrackInput input) {
         return trackService.add(input);
     }
 
     @MutationMapping
+    @PreAuthorize("isAuthenticated() and @trackAccess.canEdit(#id, authentication)")
     public TrackDto updateTrack(@Argument UUID id, @Argument @Valid UpdateTrackInput input) {
         return trackService.update(id, input);
     }
 
     @MutationMapping
+    @PreAuthorize("isAuthenticated() and @trackAccess.canEdit(#id, authentication)")
     public boolean deleteTrack(@Argument UUID id) {
         trackService.delete(id);
         return true;
@@ -52,8 +57,11 @@ public class TrackGraphqlController {
     // everything anyway — boundary errors are friendlier, domain errors
     // are the guarantee.
     @MutationMapping
-    public TrackDto updateTrackPattern(@Argument UUID id, @Argument @Valid List<StepInput> pattern) {
-        return trackService.updatePattern(id, pattern);
+    @PreAuthorize("isAuthenticated() and @trackAccess.canEdit(#id, authentication)")
+    public TrackDto updateTrackPattern(@Argument UUID id,
+                                       @Argument @Valid List<StepInput> pattern,
+                                       @Argument Long expectedVersion) {
+        return trackService.updatePattern(id, pattern, expectedVersion);
     }
 
     /**

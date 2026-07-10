@@ -26,12 +26,19 @@ public class BeatGraphqlController {
 
     private final BeatService beatService;
 
+    // Object-level rule (method-level @PreAuthorize REPLACES the class
+    // default, so isAuthenticated() is restated): only the song's owner
+    // may add material to it. The access bean answers true for missing
+    // resources so the service can 404 — the isAuthenticated() guard keeps
+    // anonymous callers at UNAUTHORIZED even in that case.
     @MutationMapping
+    @PreAuthorize("isAuthenticated() and @songAccess.canEdit(#input.songId(), authentication)")
     public BeatDto addBeat(@Argument @Valid AddBeatInput input) {
         return beatService.add(input);
     }
 
     @MutationMapping
+    @PreAuthorize("isAuthenticated() and @beatAccess.canEdit(#id, authentication)")
     public boolean deleteBeat(@Argument UUID id) {
         beatService.delete(id);
         return true;

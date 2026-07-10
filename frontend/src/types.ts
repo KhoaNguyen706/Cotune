@@ -32,6 +32,8 @@ export interface Track {
   name: string;
   instrument: string;
   position: number;
+  /** Optimistic-concurrency counter — send back as expectedVersion. */
+  version: number;
   pattern: Step[];
 }
 

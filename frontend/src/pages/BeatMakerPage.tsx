@@ -5,12 +5,14 @@ import { ApiError, gql, rest } from "../api/client";
 import {
   arrangementEndSeconds,
   downloadBlob,
+  encodeWav,
   prefetchBuffers,
-  renderArrangementToWav,
+  renderArrangement,
   scheduleArrangement,
   secondsPerStep,
   type ArrangementSources,
 } from "../audio/engine";
+import { encodeMp3 } from "../audio/mp3";
 import { createInstrument, type TrackInstrument } from "../audio/instruments";
 import { ArrangementPanel } from "../components/ArrangementPanel";
 import { beatColor, colorFor } from "../ui/trackColors";
@@ -33,7 +35,7 @@ const SONG_QUERY = `
       id title bpm timeSignature
       beats {
         id name position
-        tracks { id name instrument position pattern { step pitch velocity length } }
+        tracks { id name instrument position version pattern { step pitch velocity length } }
       }
       clips { id lane startStep lengthSteps type beatId audioId }
       audioFiles { id filename contentType sizeBytes durationSeconds }
@@ -62,8 +64,8 @@ const DELETE_TRACK = `
 `;
 
 const SAVE_PATTERN = `
-  mutation SavePattern($id: ID!, $pattern: [StepInput!]!) {
-    updateTrackPattern(id: $id, pattern: $pattern) { id version }
+  mutation SavePattern($id: ID!, $pattern: [StepInput!]!, $expectedVersion: Int) {
+    updateTrackPattern(id: $id, pattern: $pattern, expectedVersion: $expectedVersion) { id version }
   }
 `;
 
@@ -124,6 +126,8 @@ export function BeatMakerPage() {
   const clipsRef = useRef(clips);
   clipsRef.current = clips;
   const beatsRef = useRef<Beat[]>([]);
+  // Last-known @Version per lane, sent back as expectedVersion on save.
+  const trackVersionsRef = useRef<Map<string, number>>(new Map());
   const selectedBeatIdRef = useRef(selectedBeatId);
   selectedBeatIdRef.current = selectedBeatId;
   const playersRef = useRef<Tone.Player[]>([]);
@@ -152,6 +156,7 @@ export function BeatMakerPage() {
       for (const beat of beats) {
         for (const lane of beat.tracks) {
           next[lane.id] = lane.pattern;
+          trackVersionsRef.current.set(lane.id, lane.version);
           if (!instrumentsRef.current.has(lane.id)) {
             instrumentsRef.current.set(lane.id, createInstrument(lane.instrument));
           }
@@ -487,7 +492,7 @@ export function BeatMakerPage() {
     setMode(next);
   }
 
-  async function exportWav() {
+  async function exportAs(format: "wav" | "mp3") {
     const sources = currentSources();
     if (!sources || !song) return;
     if (arrangementEndSeconds(sources) === 0) {
@@ -498,9 +503,11 @@ export function BeatMakerPage() {
     setError(null);
     try {
       const buffers = await prefetchBuffers(sources.clips);
-      const blob = await renderArrangementToWav(sources, buffers);
+      // One offline render, then the format is just an encoder choice.
+      const rendered = await renderArrangement(sources, buffers);
+      const blob = format === "wav" ? encodeWav(rendered) : encodeMp3(rendered);
       const safeTitle = song.title.replace(/[^\w\- ]+/g, "").trim() || "cotune-song";
-      downloadBlob(blob, `${safeTitle}.wav`);
+      downloadBlob(blob, `${safeTitle}.${format}`);
     } catch {
       setError("Export failed — try playing the arrangement once, then export again.");
     } finally {
@@ -549,11 +556,26 @@ export function BeatMakerPage() {
         const pattern = (notesRef.current[trackId] ?? []).map(
           ({ step, pitch, velocity, length }) => ({ step, pitch, velocity, length }),
         );
-        await gql(SAVE_PATTERN, { id: trackId, pattern });
+        // expectedVersion = the version we loaded (or last saved): if the
+        // row moved on under us the server answers CONFLICT instead of
+        // silently overwriting the other editor's grid.
+        const data = await gql<{ updateTrackPattern: { id: string; version: number } }>(
+          SAVE_PATTERN,
+          { id: trackId, pattern, expectedVersion: trackVersionsRef.current.get(trackId) ?? null },
+        );
+        trackVersionsRef.current.set(trackId, data.updateTrackPattern.version);
       }
       setDirty(new Set());
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Failed to save");
+      if (e instanceof ApiError && e.status === 409) {
+        // Conservative conflict resolution for now: reload the server's
+        // truth. Merging concurrent edits is the collaboration phase.
+        setError(`${e.message} — reloaded the latest version`);
+        await load();
+        setDirty(new Set());
+      } else {
+        setError(e instanceof ApiError ? e.message : "Failed to save");
+      }
     } finally {
       setSaving(false);
     }
@@ -594,14 +616,28 @@ export function BeatMakerPage() {
   // server-side note on SongRestController). On success we patch local
   // state instead of re-running load(): the server confirmed exactly this
   // change, and a full reload would drop unsaved pattern edits.
-  async function renameSong(title: string) {
+  async function patchSong(patch: { title?: string; bpm?: number; timeSignature?: string }) {
     setError(null);
     try {
-      await rest(`/api/songs/${songId}`, { method: "PATCH", body: { title } });
-      setSong((prev) => (prev ? { ...prev, title } : prev));
+      await rest(`/api/songs/${songId}`, { method: "PATCH", body: patch });
+      setSong((prev) => (prev ? { ...prev, ...patch } : prev));
+      // A live loop keeps its scheduled step times, but the transport
+      // tempo can follow immediately — the next play is fully correct.
+      if (patch.bpm) Tone.getTransport().bpm.value = patch.bpm;
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Failed to rename song");
+      setError(e instanceof ApiError ? e.message : "Failed to update song");
     }
+  }
+
+  function changeBpm(raw: string) {
+    const bpm = Number(raw);
+    // Mirror the server's Song.MIN_BPM..MAX_BPM guard for a friendlier
+    // message; the server still enforces it.
+    if (!Number.isInteger(bpm) || bpm < 20 || bpm > 400) {
+      setError("BPM must be a whole number between 20 and 400");
+      return;
+    }
+    void patchSong({ bpm });
   }
 
   async function renameBeat(beatId: string, name: string) {
@@ -737,9 +773,17 @@ export function BeatMakerPage() {
             ← Songs
           </Link>
           <h1 className="text-2xl font-extrabold tracking-tight">
-            <EditableName value={song.title} maxLength={120} onRename={renameSong} />
+            <EditableName value={song.title} maxLength={120} onRename={(title) => patchSong({ title })} />
           </h1>
-          <span className="text-sm text-muted">{song.bpm} BPM · {song.timeSignature}</span>
+          <span className="text-sm text-muted">
+            <EditableName value={String(song.bpm)} maxLength={3} onRename={changeBpm} />
+            {" BPM · "}
+            <EditableName
+              value={song.timeSignature}
+              maxLength={5}
+              onRename={(timeSignature) => void patchSong({ timeSignature })}
+            />
+          </span>
         </div>
 
         <div className="flex rounded-lg border border-edge bg-bg-soft p-1">
@@ -778,14 +822,24 @@ export function BeatMakerPage() {
             {saving ? "Saving…" : dirty.size > 0 ? `Save (${dirty.size})` : "Saved"}
           </Button>
           {mode === "arrange" && (
-            <Button
-              variant="ghost"
-              onClick={() => void exportWav()}
-              disabled={exporting}
-              title="Render the arrangement to a WAV file"
-            >
-              {exporting ? "Rendering…" : "⬇ Export WAV"}
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => void exportAs("wav")}
+                disabled={exporting}
+                title="Render the arrangement to a WAV file (lossless)"
+              >
+                {exporting ? "Rendering…" : "⬇ WAV"}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => void exportAs("mp3")}
+                disabled={exporting}
+                title="Render the arrangement to an MP3 file (192 kbps)"
+              >
+                {exporting ? "Rendering…" : "⬇ MP3"}
+              </Button>
+            </>
           )}
         </div>
       </header>

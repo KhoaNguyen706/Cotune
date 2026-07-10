@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface AudioFileRepository extends JpaRepository<AudioFile, UUID> {
@@ -28,4 +29,9 @@ public interface AudioFileRepository extends JpaRepository<AudioFile, UUID> {
     // Referential guard for clip placement — exists-check only, so the
     // bytea payload is never touched.
     boolean existsByIdAndSongId(UUID id, UUID songId);
+
+    // Ownership resolution for AudioAccess. Deliberately NOT findById +
+    // getSong(): that would hydrate the bytea payload just to read an id.
+    @Query("select a.song.id from AudioFile a where a.id = :id")
+    Optional<UUID> findSongIdById(@Param("id") UUID id);
 }

@@ -200,11 +200,15 @@ export function SongsPage() {
               <Card className="transition-[transform,border-color] duration-150 hover:-translate-y-0.5 hover:border-edge-strong">
                 <div className="flex flex-wrap items-center gap-4">
                   <strong className="text-base tracking-tight">
-                    <EditableName
-                      value={song.title}
-                      maxLength={120}
-                      onRename={(next) => onRename(song.id, next)}
-                    />
+                    {song.ownerId === user?.id ? (
+                      <EditableName
+                        value={song.title}
+                        maxLength={120}
+                        onRename={(next) => onRename(song.id, next)}
+                      />
+                    ) : (
+                      song.title
+                    )}
                   </strong>
                   <span className="flex flex-1 gap-2">
                     <Chip>{song.bpm} BPM</Chip>

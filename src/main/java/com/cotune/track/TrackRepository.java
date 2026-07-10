@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface TrackRepository extends JpaRepository<Track, UUID> {
@@ -26,4 +27,9 @@ public interface TrackRepository extends JpaRepository<Track, UUID> {
      */
     @Query("select coalesce(max(t.position), -1) from Track t where t.beat.id = :beatId")
     int findMaxPositionByBeatId(@Param("beatId") UUID beatId);
+
+    // Ownership resolution for TrackAccess: lane → beat → song in one
+    // join, no entity hydration. Empty when the track doesn't exist.
+    @Query("select t.beat.song.id from Track t where t.id = :id")
+    Optional<UUID> findSongIdById(@Param("id") UUID id);
 }

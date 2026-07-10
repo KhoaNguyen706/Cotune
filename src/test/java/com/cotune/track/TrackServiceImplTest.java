@@ -3,6 +3,7 @@ package com.cotune.track;
 import com.cotune.beat.Beat;
 import com.cotune.beat.BeatRepository;
 import com.cotune.common.exception.ResourceNotFoundException;
+import com.cotune.common.exception.StaleVersionException;
 import com.cotune.song.Song;
 import com.cotune.track.dto.AddTrackInput;
 import com.cotune.track.dto.TrackDto;
@@ -98,7 +99,7 @@ class TrackServiceImplTest {
 
         TrackDto dto = service.updatePattern(trackId, java.util.List.of(
                 new com.cotune.track.dto.StepInput(0, "C1", 0.9, 1),
-                new com.cotune.track.dto.StepInput(8, "C1", 0.9, 4)));
+                new com.cotune.track.dto.StepInput(8, "C1", 0.9, 4)), null);
 
         assertThat(dto.pattern()).hasSize(2);
         assertThat(dto.pattern().getFirst().pitch()).isEqualTo("C1");
@@ -107,15 +108,33 @@ class TrackServiceImplTest {
         // Bad pitch is stopped by the Step value object itself — the domain
         // guarantee holds even if boundary validation were bypassed.
         assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
-                new com.cotune.track.dto.StepInput(0, "H4", 0.9, 1))))
+                new com.cotune.track.dto.StepInput(0, "H4", 0.9, 1)), null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("pitch");
 
         // A note may not overrun the loop: step 14 + length 4 ends at 18.
         assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
-                new com.cotune.track.dto.StepInput(14, "C1", 0.9, 4))))
+                new com.cotune.track.dto.StepInput(14, "C1", 0.9, 4)), null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("length");
+    }
+
+    @Test
+    void updatePatternHonorsExpectedVersion() {
+        UUID trackId = UUID.randomUUID();
+        // A fresh entity's @Version is 0 (unpersisted default).
+        Track track = new Track(beat, "Kick", Instrument.DRUMS, 0);
+        when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
+        var pattern = java.util.List.of(new com.cotune.track.dto.StepInput(0, "C1", 0.9, 1));
+
+        // Matching version → saves.
+        assertThat(service.updatePattern(trackId, pattern, 0L).pattern()).hasSize(1);
+
+        // Stale version → conflict, and the pattern was NOT replaced.
+        assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(), 7L))
+                .isInstanceOf(StaleVersionException.class)
+                .hasMessageContaining("version");
+        assertThat(track.getPattern()).hasSize(1);
     }
 
     @Test
@@ -126,7 +145,7 @@ class TrackServiceImplTest {
 
         assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
                 new com.cotune.track.dto.StepInput(3, "C2", 0.9, 1),
-                new com.cotune.track.dto.StepInput(3, "C2", 0.5, 2))))
+                new com.cotune.track.dto.StepInput(3, "C2", 0.5, 2)), null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("duplicate");
     }

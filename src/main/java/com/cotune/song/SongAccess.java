@@ -37,6 +37,24 @@ public class SongAccess {
                 .orElse(true);
     }
 
+    /**
+     * May this user MUTATE this song or anything inside it (beats, lanes,
+     * patterns, clips, audio)? Same rule as delete: the owner; legacy
+     * ownerless rows are admin-only. Reads stay open to any authenticated
+     * user — collaborators must see each other's songs before the
+     * collaboration phase makes them co-editors.
+     *
+     * Child features check their own resources by resolving UP to the
+     * owning song and delegating here (BeatAccess, TrackAccess, ...): the
+     * ownership rule lives in exactly one place.
+     */
+    @Transactional(readOnly = true)
+    public boolean canEdit(UUID songId, Authentication authentication) {
+        return songRepository.findById(songId)
+                .map(song -> allowedFor(song, authentication))
+                .orElse(true); // missing → let the service answer NOT_FOUND
+    }
+
     private boolean allowedFor(Song song, Authentication authentication) {
         UUID owner = song.getOwnerId();
         if (owner == null) {

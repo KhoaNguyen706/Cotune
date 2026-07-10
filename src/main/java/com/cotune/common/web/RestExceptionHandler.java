@@ -2,6 +2,7 @@ package com.cotune.common.web;
 
 import com.cotune.common.exception.EmailAlreadyRegisteredException;
 import com.cotune.common.exception.ResourceNotFoundException;
+import com.cotune.common.exception.StaleVersionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.core.AuthenticationException;
@@ -45,6 +46,14 @@ public class RestExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     ProblemDetail handleNotFound(ResourceNotFoundException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    // Same 409-because-of-STATE reasoning as the email conflict above:
+    // the request was fine, the row just moved on. GraphQL twin: the
+    // CONFLICT classification in GraphqlExceptionResolver.
+    @ExceptionHandler(StaleVersionException.class)
+    ProblemDetail handleStaleVersion(StaleVersionException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     // Bean Validation failures on @Valid @RequestBody. Collect ALL field

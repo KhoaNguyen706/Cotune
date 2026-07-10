@@ -179,16 +179,16 @@ export async function prefetchBuffers(clips: Clip[]): Promise<Map<string, AudioB
 /* ---- offline export ------------------------------------------------------ */
 
 /**
- * Renders the arrangement faster than real time in an OfflineAudioContext
- * and returns a 16-bit PCM WAV. Fresh instruments are built INSIDE the
- * Tone.Offline callback — Tone swaps the ambient context for the render's
- * duration, so everything created here wires to the offline graph, not
- * the speakers.
+ * Renders the arrangement faster than real time in an OfflineAudioContext.
+ * Fresh instruments are built INSIDE the Tone.Offline callback — Tone
+ * swaps the ambient context for the render's duration, so everything
+ * created here wires to the offline graph, not the speakers. The returned
+ * PCM feeds either encoder (WAV/MP3): render once, encode any way.
  */
-export async function renderArrangementToWav(
+export async function renderArrangement(
   sources: ArrangementSources,
   buffers: Map<string, AudioBuffer>,
-): Promise<Blob> {
+): Promise<AudioBuffer> {
   // +1.5s tail so releases/decays aren't clipped at the last step.
   const seconds = arrangementEndSeconds(sources) + 1.5;
   const rendered = await Tone.Offline(async () => {
@@ -201,7 +201,7 @@ export async function renderArrangementToWav(
     scheduleArrangement({ sources, instruments, buffers });
     Tone.getTransport().start(0);
   }, seconds, 2, 44100);
-  return encodeWav(rendered.get() as AudioBuffer);
+  return rendered.get() as AudioBuffer;
 }
 
 /** AudioBuffer → interleaved 16-bit PCM WAV (RIFF) blob. */

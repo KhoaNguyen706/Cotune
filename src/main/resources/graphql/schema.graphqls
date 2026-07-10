@@ -38,7 +38,10 @@ type Mutation {
     # Whole-pattern replacement: the beat grid saves as one unit. An empty
     # list clears the pattern. Per-note operations arrive with real-time
     # collaboration, not before.
-    updateTrackPattern(id: ID!, pattern: [StepInput!]!): Track!
+    # expectedVersion (optional): optimistic concurrency — pass the version
+    # you loaded; if the row moved on, the save fails with CONFLICT instead
+    # of silently overwriting another editor's grid.
+    updateTrackPattern(id: ID!, pattern: [StepInput!]!, expectedVersion: Int): Track!
 
     # The arrangement timeline: a clip PLACES a beat (track pattern) or an
     # uploaded audio file on a lane at a step offset. Same beat, many
@@ -202,6 +205,8 @@ input UpdateClipInput {
     lane: Int!
     startStep: Int!
     lengthSteps: Int!
+    # Optional optimistic-concurrency guard — see updateTrackPattern.
+    expectedVersion: Int
 }
 
 input AddBeatInput {

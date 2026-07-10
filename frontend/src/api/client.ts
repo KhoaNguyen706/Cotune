@@ -162,6 +162,7 @@ export async function gql<T>(
       classification === "UNAUTHORIZED" ? 401
       : classification === "FORBIDDEN" ? 403
       : classification === "NOT_FOUND" ? 404
+      : classification === "CONFLICT" ? 409
       : 400;
     if (status === 401) onUnauthorized();
     throw new ApiError(json.errors[0].message, status);

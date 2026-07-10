@@ -19,6 +19,9 @@ public record UpdateClipInput(
 
         @Min(1)
         @Max(Clip.MAX_TIMELINE_STEPS)
-        int lengthSteps
+        int lengthSteps,
+
+        /** Optional optimistic-concurrency guard — see UpdateSongPatch. */
+        Long expectedVersion
 ) {
 }

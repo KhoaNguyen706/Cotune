@@ -3,6 +3,7 @@ package com.cotune.song;
 import com.cotune.song.dto.CreateSongInput;
 import com.cotune.song.dto.SongDto;
 import com.cotune.song.dto.UpdateSongInput;
+import com.cotune.song.dto.UpdateSongPatch;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,8 +29,8 @@ public interface SongService {
 
     SongDto update(UUID id, UpdateSongInput input);
 
-    /** Title-only change — the REST rename endpoint's use case. */
-    SongDto rename(UUID id, String title);
+    /** Partial update (REST PATCH): only non-null fields change. */
+    SongDto patch(UUID id, UpdateSongPatch patch);
 
     void delete(UUID id);
 }

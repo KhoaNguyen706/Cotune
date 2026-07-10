@@ -18,8 +18,13 @@ public interface TrackService {
     /** Name-only change — the REST rename endpoint's use case. */
     TrackDto rename(UUID id, String name);
 
-    /** Replace the track's whole step pattern (the beat grid saves as one unit). */
-    TrackDto updatePattern(UUID id, List<StepInput> pattern);
+    /**
+     * Replace the track's whole step pattern (the beat grid saves as one
+     * unit). expectedVersion, when present, must match the row's current
+     * @Version or the save is rejected as a conflict — two editors can't
+     * silently overwrite each other's grids.
+     */
+    TrackDto updatePattern(UUID id, List<StepInput> pattern, Long expectedVersion);
 
     void delete(UUID id);
 

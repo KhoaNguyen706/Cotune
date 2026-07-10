@@ -6,6 +6,7 @@ import com.cotune.clip.dto.AddClipInput;
 import com.cotune.clip.dto.ClipDto;
 import com.cotune.clip.dto.UpdateClipInput;
 import com.cotune.common.exception.ResourceNotFoundException;
+import com.cotune.common.exception.StaleVersionException;
 import com.cotune.song.Song;
 import com.cotune.song.SongRepository;
 import lombok.RequiredArgsConstructor;
@@ -73,6 +74,7 @@ public class ClipServiceImpl implements ClipService {
     public ClipDto update(UUID id, UpdateClipInput input) {
         Clip clip = clipRepository.findById(id)
                 .orElseThrow(() -> ResourceNotFoundException.clip(id));
+        StaleVersionException.check("Clip", input.expectedVersion(), clip.getVersion());
 
         // Managed entity + dirty checking (see SongServiceImpl.update).
         clip.place(input.lane(), input.startStep(), input.lengthSteps());

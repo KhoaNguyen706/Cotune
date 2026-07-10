@@ -4,6 +4,7 @@ import com.cotune.beat.dto.BeatDto;
 import com.cotune.beat.dto.RenameBeatInput;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,6 +20,7 @@ public class BeatRestController {
     private final BeatService beatService;
 
     @PatchMapping("/api/beats/{id}")
+    @PreAuthorize("@beatAccess.canEdit(#id, authentication)")
     public BeatDto rename(@PathVariable UUID id, @RequestBody @Valid RenameBeatInput input) {
         return beatService.rename(id, input.name());
     }

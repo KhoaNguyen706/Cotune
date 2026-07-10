@@ -1,9 +1,10 @@
 package com.cotune.song;
 
-import com.cotune.song.dto.RenameSongInput;
 import com.cotune.song.dto.SongDto;
+import com.cotune.song.dto.UpdateSongPatch;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,8 +28,11 @@ public class SongRestController {
 
     private final SongService songService;
 
+    // URL rules cover "must be logged in"; the OWNER rule is object-level
+    // and needs method security (same split as the GraphQL mutations).
     @PatchMapping("/api/songs/{id}")
-    public SongDto rename(@PathVariable UUID id, @RequestBody @Valid RenameSongInput input) {
-        return songService.rename(id, input.title());
+    @PreAuthorize("@songAccess.canEdit(#id, authentication)")
+    public SongDto patch(@PathVariable UUID id, @RequestBody @Valid UpdateSongPatch patch) {
+        return songService.patch(id, patch);
     }
 }

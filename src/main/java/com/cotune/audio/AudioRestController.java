@@ -2,6 +2,7 @@ package com.cotune.audio;
 
 import com.cotune.audio.dto.AudioFileDto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -34,7 +35,10 @@ public class AudioRestController {
 
     private final AudioService audioService;
 
+    // Mutations are owner-only (object-level); download stays open to any
+    // authenticated user, same as GraphQL reads.
     @PostMapping(value = "/api/songs/{songId}/audio", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("@songAccess.canEdit(#songId, authentication)")
     public AudioFileDto upload(@PathVariable UUID songId,
                                @RequestParam("file") MultipartFile file,
                                // The browser measured this while decoding for
@@ -68,6 +72,7 @@ public class AudioRestController {
     }
 
     @DeleteMapping("/api/audio/{id}")
+    @PreAuthorize("@audioAccess.canEdit(#id, authentication)")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         audioService.delete(id);
         return ResponseEntity.noContent().build();

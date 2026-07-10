@@ -2,6 +2,7 @@ package com.cotune.common.graphql;
 
 import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.common.exception.StaleAccountException;
+import com.cotune.common.exception.StaleVersionException;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
@@ -53,6 +54,16 @@ public class GraphqlExceptionResolver extends DataFetcherExceptionResolverAdapte
             return GraphqlErrorBuilder.newError(env)
                     .errorType(ErrorType.BAD_REQUEST)
                     .message(message)
+                    .build();
+        }
+
+        // Optimistic-concurrency conflict: not the caller's mistake and not
+        // a server fault — a third category ("someone got there first"),
+        // hence its own classification instead of BAD_REQUEST.
+        if (ex instanceof StaleVersionException stale) {
+            return GraphqlErrorBuilder.newError(env)
+                    .errorType(CotuneErrorType.CONFLICT)
+                    .message(stale.getMessage())
                     .build();
         }
 
