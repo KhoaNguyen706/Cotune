@@ -8,6 +8,7 @@ public record BeatDto(
         UUID songId,
         String name,
         int position,
+        int bars,
         long version,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt

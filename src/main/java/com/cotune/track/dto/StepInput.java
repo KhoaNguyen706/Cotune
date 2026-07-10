@@ -15,8 +15,11 @@ import jakarta.validation.constraints.Pattern;
  */
 public record StepInput(
 
+        // Bounded by the absolute maximum (8 bars); whether the note fits
+        // the TARGET beat's bar count is checked in the domain, which can
+        // see the beat.
         @Min(0)
-        @Max(Step.STEPS_PER_PATTERN - 1)
+        @Max(Step.MAX_STEPS - 1)
         int step,
 
         @NotBlank
@@ -32,7 +35,7 @@ public record StepInput(
         // keep working — additive, defaulted fields are THE way to evolve
         // an API without breaking existing callers.
         @Min(1)
-        @Max(Step.STEPS_PER_PATTERN)
+        @Max(Step.MAX_STEPS)
         int length
 ) {
 }

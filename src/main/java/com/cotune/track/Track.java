@@ -130,11 +130,22 @@ public class Track {
         if (newPattern == null) {
             throw new IllegalArgumentException("Pattern must not be null (use an empty list to clear)");
         }
-        // 16 steps x a generous chord/polyphony allowance. A cap matters
-        // because this arrives from the network: without one, a malicious
-        // 10MB pattern is a storage/bandwidth attack wearing a beat costume.
-        if (newPattern.size() > 256) {
-            throw new IllegalArgumentException("Pattern too large: max 256 events");
+        // Generous chord/polyphony allowance. A cap matters because this
+        // arrives from the network: without one, a malicious 10MB pattern
+        // is a storage/bandwidth attack wearing a beat costume.
+        if (newPattern.size() > 1024) {
+            throw new IllegalArgumentException("Pattern too large: max 1024 events");
+        }
+        // Per-beat bound: Step's constructor only rejects the impossible
+        // (past MAX_BARS); whether a note fits THIS beat depends on its
+        // bar count, which only the aggregate can see.
+        int totalSteps = beat.totalSteps();
+        for (Step step : newPattern) {
+            if (step.step() + step.length() > totalSteps) {
+                throw new IllegalArgumentException(
+                        "note at step %d (length %d) exceeds the beat's %d bar(s) = %d steps"
+                                .formatted(step.step(), step.length(), beat.getBars(), totalSteps));
+            }
         }
         long distinct = newPattern.stream().map(s -> s.step() + "|" + s.pitch()).distinct().count();
         if (distinct != newPattern.size()) {

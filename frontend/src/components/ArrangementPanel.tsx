@@ -113,10 +113,14 @@ export function ArrangementPanel({
     const lane = laneFromY(e.clientY, rect);
     const startStep = Math.min(MAX_STEPS - STEPS_PER_BAR, snapBar(stepFromX(e.clientX, rect)));
 
-    // Beat clips start at one bar (one pattern pass — stretch to loop);
-    // audio clips get their natural duration in steps at the CURRENT tempo.
+    // Beat clips start at the beat's full length (one pattern pass —
+    // stretch to loop); audio clips get their natural duration in steps
+    // at the CURRENT tempo.
     let lengthSteps = STEPS_PER_BAR;
-    if (armed.kind === "AUDIO") {
+    if (armed.kind === "BEAT") {
+      const beat = beats.find((b) => b.id === armed.beatId);
+      lengthSteps = (beat?.bars ?? 1) * STEPS_PER_BAR;
+    } else {
       const file = audioById.get(armed.audioId);
       if (!file) return;
       lengthSteps = Math.max(2, Math.ceil(file.durationSeconds / secondsPerStep(bpm)));

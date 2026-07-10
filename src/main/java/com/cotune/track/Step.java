@@ -16,8 +16,16 @@ import java.util.regex.Pattern;
  */
 public record Step(int step, String pitch, double velocity, int length) {
 
-    /** 16 sixteenth-notes = one bar — the classic step-sequencer loop. */
-    public static final int STEPS_PER_PATTERN = 16;
+    /** 16 sixteenth-notes = one bar — the step-sequencer's grid unit. */
+    public static final int STEPS_PER_BAR = 16;
+
+    /**
+     * Hard ceiling for any note position: Beat.MAX_BARS bars. A value
+     * object can't know ITS beat's actual bar count, so Step only rejects
+     * the impossible; the per-beat bound (step must fit within bars*16)
+     * lives in Track.replacePattern, which can see the beat.
+     */
+    public static final int MAX_STEPS = STEPS_PER_BAR * 8;
 
     // Scientific pitch notation: C4, F#2, A0... Validated at the edge so
     // the frontend can trust every stored pitch to be playable by Tone.js.
@@ -36,9 +44,9 @@ public record Step(int step, String pitch, double velocity, int length) {
         if (length == 0) {
             length = 1;
         }
-        if (step < 0 || step >= STEPS_PER_PATTERN) {
+        if (step < 0 || step >= MAX_STEPS) {
             throw new IllegalArgumentException(
-                    "step must be 0..%d, got %d".formatted(STEPS_PER_PATTERN - 1, step));
+                    "step must be 0..%d, got %d".formatted(MAX_STEPS - 1, step));
         }
         if (pitch == null || !PITCH_FORMAT.matcher(pitch).matches()) {
             throw new IllegalArgumentException("pitch must look like C4 or F#2, got: " + pitch);
@@ -46,10 +54,10 @@ public record Step(int step, String pitch, double velocity, int length) {
         if (velocity <= 0.0 || velocity > 1.0) {
             throw new IllegalArgumentException("velocity must be in (0, 1], got " + velocity);
         }
-        if (length < 1 || step + length > STEPS_PER_PATTERN) {
+        if (length < 1 || step + length > MAX_STEPS) {
             throw new IllegalArgumentException(
                     "length must be >= 1 and note must end by step %d, got step %d + length %d"
-                            .formatted(STEPS_PER_PATTERN, step, length));
+                            .formatted(MAX_STEPS, step, length));
         }
     }
 }

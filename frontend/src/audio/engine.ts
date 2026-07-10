@@ -116,15 +116,16 @@ export function scheduleArrangement(options: ScheduleOptions): Tone.Player[] {
       if (!beat) continue;
 
       // EVERY lane of the beat plays — one clip, the whole groove. Each
-      // lane's 16-step pattern LOOPS bar by bar across the clip; notes
+      // lane's pattern (bars × 16 steps) LOOPS across the clip; notes
       // (and note tails) are truncated at the clip's right edge —
       // video-editor semantics: the clip's box is the sound's box.
+      const beatSteps = (beat.bars || 1) * STEPS_PER_BAR;
       for (const lane of beat.tracks) {
         const instrument = instruments.get(lane.id);
         const pattern = sources.patterns[lane.id] ?? [];
         if (!instrument || pattern.length === 0) continue;
 
-        for (let offset = 0; offset < clip.lengthSteps; offset += STEPS_PER_BAR) {
+        for (let offset = 0; offset < clip.lengthSteps; offset += beatSteps) {
           for (const note of pattern) {
             const localStep = offset + note.step;
             if (localStep >= clip.lengthSteps) continue;

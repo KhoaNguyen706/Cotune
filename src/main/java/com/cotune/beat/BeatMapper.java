@@ -13,6 +13,7 @@ public class BeatMapper {
                 beat.getSong().getId(),
                 beat.getName(),
                 beat.getPosition(),
+                beat.getBars(),
                 beat.getVersion(),
                 Timestamps.utc(beat.getCreatedAt()),
                 Timestamps.utc(beat.getUpdatedAt())

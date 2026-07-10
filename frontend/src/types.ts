@@ -44,6 +44,8 @@ export interface Beat {
   id: string;
   name: string;
   position: number;
+  /** How many 16-step bars the beat's patterns span (1..8). */
+  bars: number;
   tracks: Track[];
 }
 

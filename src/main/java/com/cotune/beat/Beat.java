@@ -52,6 +52,13 @@ public class Beat {
     @Column(nullable = false)
     private int position;
 
+    // How many 16-step bars this beat's patterns span. New beats start at
+    // the classic single bar; growing/shrinking is a deliberate edit
+    // (changeBars), and shrinking is guarded in the service where the
+    // lane patterns are visible.
+    @Column(nullable = false)
+    private int bars = 1;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -81,6 +88,22 @@ public class Beat {
             throw new IllegalArgumentException("Beat name must not be blank");
         }
         this.name = newName.strip();
+    }
+
+    /** Upper bound mirrored by the V8 CHECK constraint — change both. */
+    public static final int MAX_BARS = 8;
+
+    /** Total 16th-note steps this beat's patterns may span. */
+    public int totalSteps() {
+        return bars * 16;
+    }
+
+    public void changeBars(int newBars) {
+        if (newBars < 1 || newBars > MAX_BARS) {
+            throw new IllegalArgumentException(
+                    "bars must be 1..%d, got %d".formatted(MAX_BARS, newBars));
+        }
+        this.bars = newBars;
     }
 
     @Override

@@ -85,6 +85,10 @@ type Beat {
     name: String!
     # 0-based slot, server-assigned, gaps allowed after deletes.
     position: Int!
+    # How many 16-step bars the beat's patterns span (1..8). Changed via
+    # REST PATCH /api/beats/{id}; shrinking is rejected while notes would
+    # be cut.
+    bars: Int!
     version: Int!
     createdAt: DateTime!
     updatedAt: DateTime!

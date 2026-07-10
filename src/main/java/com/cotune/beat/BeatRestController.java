@@ -1,7 +1,7 @@
 package com.cotune.beat;
 
 import com.cotune.beat.dto.BeatDto;
-import com.cotune.beat.dto.RenameBeatInput;
+import com.cotune.beat.dto.UpdateBeatPatch;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/** Rename rides on REST — see SongRestController for the reasoning. */
+/** Single-field updates ride on REST — see SongRestController. */
 @RestController
 @RequiredArgsConstructor
 public class BeatRestController {
@@ -21,7 +21,7 @@ public class BeatRestController {
 
     @PatchMapping("/api/beats/{id}")
     @PreAuthorize("@beatAccess.canEdit(#id, authentication)")
-    public BeatDto rename(@PathVariable UUID id, @RequestBody @Valid RenameBeatInput input) {
-        return beatService.rename(id, input.name());
+    public BeatDto patch(@PathVariable UUID id, @RequestBody @Valid UpdateBeatPatch patch) {
+        return beatService.patch(id, patch);
     }
 }

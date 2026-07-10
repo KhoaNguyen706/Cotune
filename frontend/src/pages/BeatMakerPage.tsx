@@ -34,7 +34,7 @@ const SONG_QUERY = `
     song(id: $id) {
       id title bpm timeSignature
       beats {
-        id name position
+        id name position bars
         tracks { id name instrument position version pattern { step pitch velocity length } }
       }
       clips { id lane startStep lengthSteps type beatId audioId }
@@ -128,6 +128,9 @@ export function BeatMakerPage() {
   const beatsRef = useRef<Beat[]>([]);
   // Last-known @Version per lane, sent back as expectedVersion on save.
   const trackVersionsRef = useRef<Map<string, number>>(new Map());
+  // Steps in the SELECTED beat's grid (bars × 16). A ref because the
+  // once-attached drag handlers must clamp against the current value.
+  const beatStepsRef = useRef(STEPS);
   const selectedBeatIdRef = useRef(selectedBeatId);
   selectedBeatIdRef.current = selectedBeatId;
   const playersRef = useRef<Tone.Player[]>([]);
@@ -240,7 +243,7 @@ export function BeatMakerPage() {
   // ---- piano roll mouse interactions -----------------------------------
 
   function cellFromEvent(e: MouseEvent | React.MouseEvent, rect: DOMRect) {
-    const col = Math.max(0, Math.min(STEPS - 1, Math.floor((e.clientX - rect.left) / CELL_W)));
+    const col = Math.max(0, Math.min(beatStepsRef.current - 1, Math.floor((e.clientX - rect.left) / CELL_W)));
     const row = Math.max(0, Math.min(PITCH_ROWS.length - 1, Math.floor((e.clientY - rect.top) / CELL_H)));
     return { col, row };
   }
@@ -305,14 +308,14 @@ export function BeatMakerPage() {
       if (!note) return;
       const { col, row } = cellFromEvent(e, drag.rect);
       if (drag.mode === "resize") {
-        const length = Math.max(1, Math.min(STEPS - note.step, col - note.step + 1));
+        const length = Math.max(1, Math.min(beatStepsRef.current - note.step, col - note.step + 1));
         if (length !== note.length) {
           drag.moved = true;
           updateNote(drag.trackId, drag.index, { length });
         }
       } else {
         const octave = octavesRef.current[drag.trackId] ?? 4;
-        const step = Math.max(0, Math.min(STEPS - note.length, col - drag.grabOffset));
+        const step = Math.max(0, Math.min(beatStepsRef.current - note.length, col - drag.grabOffset));
         const pitch = pitchOf(row, octave);
         if (step !== note.step || pitch !== note.pitch) {
           drag.moved = true;
@@ -444,11 +447,11 @@ export function BeatMakerPage() {
     Tone.getTransport().bpm.value = song.bpm;
     let step = 0;
     Tone.getTransport().scheduleRepeat((time) => {
-      const current = step % STEPS;
-      const sixteenth = Tone.Time("16n").toSeconds();
       // Loop the SELECTED beat only — this view is the beat workbench;
       // hearing the whole song is what the Arrange tab is for.
       const looping = beatsRef.current.find((b) => b.id === selectedBeatIdRef.current);
+      const current = step % ((looping?.bars ?? 1) * STEPS);
+      const sixteenth = Tone.Time("16n").toSeconds();
       for (const lane of looping?.tracks ?? []) {
         if (!isAudible(lane.id)) continue;
         for (const note of notesRef.current[lane.id] ?? []) {
@@ -640,15 +643,16 @@ export function BeatMakerPage() {
     void patchSong({ bpm });
   }
 
-  async function renameBeat(beatId: string, name: string) {
+  async function patchBeat(beatId: string, body: { name?: string; bars?: number }) {
     setError(null);
     try {
-      await rest(`/api/beats/${beatId}`, { method: "PATCH", body: { name } });
-      const patch = (beats: Beat[]) => beats.map((b) => (b.id === beatId ? { ...b, name } : b));
+      await rest(`/api/beats/${beatId}`, { method: "PATCH", body });
+      const patch = (beats: Beat[]) => beats.map((b) => (b.id === beatId ? { ...b, ...body } : b));
       beatsRef.current = patch(beatsRef.current);
       setSong((prev) => (prev ? { ...prev, beats: patch(prev.beats) } : prev));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Failed to rename beat");
+      // The shrink guard's message ("delete them first") surfaces here.
+      setError(e instanceof ApiError ? e.message : "Failed to update beat");
     }
   }
 
@@ -733,6 +737,8 @@ export function BeatMakerPage() {
 
   const sortedBeats = [...song.beats].sort((a, b) => a.position - b.position);
   const selectedBeat = sortedBeats.find((b) => b.id === selectedBeatId) ?? null;
+  const beatSteps = (selectedBeat?.bars ?? 1) * STEPS;
+  beatStepsRef.current = beatSteps;
   const sortedLanes = selectedBeat
     ? [...selectedBeat.tracks].sort((a, b) => a.position - b.position)
     : [];
@@ -890,7 +896,7 @@ export function BeatMakerPage() {
                   }}
                 >
                   <i className="h-2.5 w-2.5 rounded-full" style={{ background: beatColor(beat.position) }} />
-                  <EditableName value={beat.name} onRename={(name) => renameBeat(beat.id, name)} />
+                  <EditableName value={beat.name} onRename={(name) => patchBeat(beat.id, { name })} />
                   <button
                     className="rounded text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                     title="Delete beat (removes its lanes and timeline clips)"
@@ -925,12 +931,28 @@ export function BeatMakerPage() {
 
           {selectedBeat && (
             <Card className="mb-4">
-              <h2 className="mb-4 font-semibold">
-                {selectedBeat.name} — lanes
-                <span className="ml-2 text-xs font-normal text-muted">
-                  these instruments play together as one beat
-                </span>
-              </h2>
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                <h2 className="font-semibold">
+                  {selectedBeat.name} — lanes
+                  <span className="ml-2 text-xs font-normal text-muted">
+                    these instruments play together as one beat
+                  </span>
+                </h2>
+                <label className="ml-auto flex items-center gap-2 text-xs text-muted">
+                  length
+                  <Select
+                    className="w-24 !py-1 text-sm"
+                    value={selectedBeat.bars}
+                    onChange={(e) => void patchBeat(selectedBeat.id, { bars: Number(e.target.value) })}
+                  >
+                    {[1, 2, 4, 8].map((b) => (
+                      <option key={b} value={b}>
+                        {b} bar{b > 1 ? "s" : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              </div>
               {sortedLanes.length === 0 && (
                 <EmptyState
                   icon="🥁"
@@ -1010,7 +1032,7 @@ export function BeatMakerPage() {
                         className="seq-cells mini"
                         style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
                       >
-                        {Array.from({ length: STEPS }, (_, s) => (
+                        {Array.from({ length: beatSteps }, (_, s) => (
                           <span
                             key={s}
                             className={[
@@ -1092,10 +1114,10 @@ export function BeatMakerPage() {
                   className="roll"
                   ref={rollRef}
                   onMouseDown={onRollMouseDown}
-                  style={{ width: STEPS * CELL_W, height: PITCH_ROWS.length * CELL_H }}
+                  style={{ width: beatSteps * CELL_W, height: PITCH_ROWS.length * CELL_H }}
                 >
                   {PITCH_ROWS.map((p, row) =>
-                    Array.from({ length: STEPS }, (_, col) => (
+                    Array.from({ length: beatSteps }, (_, col) => (
                       <div
                         key={`${row}-${col}`}
                         className={[
