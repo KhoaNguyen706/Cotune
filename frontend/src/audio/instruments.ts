@@ -30,8 +30,12 @@ export function createInstrument(instrument: string): TrackInstrument {
         trigger: (time, pitch, velocity, duration) =>
           synth.triggerAttackRelease(pitch, duration ?? "16n", time, velocity),
         dispose: () => synth.dispose(),
-        defaultPitch: "C1",
-        defaultOctave: 1,
+        // C2 (~65 Hz), NOT C1 (~33 Hz): most laptop speakers physically
+        // cannot reproduce 33 Hz — a C1 kick is nearly silent on them,
+        // which reads as "the play button is broken". Club systems get
+        // the sub-octave back via EQ; defaults must work on a laptop.
+        defaultPitch: "C2",
+        defaultOctave: 2,
       };
     }
     case "BASS": {

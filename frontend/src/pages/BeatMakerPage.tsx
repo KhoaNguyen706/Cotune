@@ -266,6 +266,25 @@ export function BeatMakerPage() {
 
   // ---- transport ---------------------------------------------------------
 
+  // Master volume, 0-100 mapped to decibels on Tone's destination node.
+  // gainToDb is logarithmic — perceived loudness, not linear amplitude
+  // (a linear volume slider feels "all in the last 10%").
+  const [volume, setVolume] = useState(80);
+  function applyVolume(v: number) {
+    setVolume(v);
+    Tone.getDestination().volume.value = v === 0 ? -Infinity : Tone.gainToDb(v / 100);
+  }
+
+  // One-click "is my audio path alive?" — a mid-range blip no speaker can
+  // miss. Debugging affordance for the user, not a musical feature: it
+  // separates "app is broken" from "tab/OS is muted" instantly.
+  async function testSound() {
+    await Tone.start();
+    const synth = new Tone.Synth().toDestination();
+    synth.triggerAttackRelease("C5", "8n");
+    setTimeout(() => synth.dispose(), 1000);
+  }
+
   async function togglePlay() {
     if (!song) return;
     if (playing) {
@@ -273,6 +292,13 @@ export function BeatMakerPage() {
       Tone.getTransport().cancel();
       setPlaying(false);
       setCurrentStep(-1);
+      return;
+    }
+    // Pressing play on a silent song is the #1 "sound is broken" report —
+    // say why instead of sweeping an empty playhead in silence.
+    const totalNotes = Object.values(notesRef.current).reduce((n, list) => n + list.length, 0);
+    if (totalNotes === 0) {
+      setError("This song has no notes yet — click cells in the piano roll below, then press play.");
       return;
     }
     await Tone.start();
@@ -290,9 +316,18 @@ export function BeatMakerPage() {
         if (!audible) continue;
         for (const note of notesRef.current[track.id] ?? []) {
           if (note.step === current) {
-            instrumentsRef.current
-              .get(track.id)
-              ?.trigger(time, note.pitch, note.velocity, note.length * sixteenth);
+            // try/catch PER NOTE: monophonic synths (drums, bass) throw on
+            // two notes at the exact same tick ("start time must be
+            // strictly greater..."). Without isolation, one bad chord on
+            // track 1 would silence every later track on that tick, every
+            // loop — which users report as "play is broken".
+            try {
+              instrumentsRef.current
+                .get(track.id)
+                ?.trigger(time, note.pitch, note.velocity, note.length * sixteenth);
+            } catch {
+              // skip the colliding note; the rest of the tick still plays
+            }
           }
         }
       }
@@ -413,6 +448,19 @@ export function BeatMakerPage() {
           <span className="who">{song.bpm} BPM · {song.timeSignature}</span>
         </div>
         <div className="transport">
+          <label className="volume" title="Master volume">
+            🔊
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={volume}
+              onChange={(e) => applyVolume(Number(e.target.value))}
+            />
+          </label>
+          <button className="ghost" onClick={() => void testSound()} title="Play a test blip — if you can't hear this, check your tab/OS volume">
+            Test
+          </button>
           <button onClick={() => void togglePlay()}>{playing ? "■ Stop" : "▶ Play"}</button>
           <button onClick={() => void save()} disabled={saving || dirty.size === 0}>
             {saving ? "Saving…" : dirty.size > 0 ? `Save (${dirty.size})` : "Saved"}

@@ -559,8 +559,19 @@ ul.songs {
   align-items: center;
 }
 
-.transport button:first-child {
-  min-width: 6.2rem;
+.volume {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.volume input[type="range"] {
+  width: 6rem;
+  padding: 0;
+  accent-color: var(--accent);
 }
 
 /* ---------- piano roll ---------- */
