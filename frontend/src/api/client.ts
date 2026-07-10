@@ -93,7 +93,44 @@ export async function rest<T>(
       problem?.errors ?? {},
     );
   }
+  // 204 No Content (DELETEs) has no body — json() would throw on it.
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return response.json();
+}
+
+/**
+ * Multipart upload — its own helper because rest() hard-codes a JSON
+ * Content-Type. Here the browser must set the multipart boundary header
+ * itself (setting it by hand breaks the request), so we only add auth.
+ */
+export async function upload<T>(path: string, form: FormData): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: authHeader(),
+    body: form,
+  });
+  if (!response.ok) {
+    const problem = await response.json().catch(() => null);
+    if (response.status === 401) onUnauthorized();
+    throw new ApiError(
+      problem?.detail ?? `Upload failed (${response.status})`,
+      response.status,
+      problem?.errors ?? {},
+    );
+  }
+  return response.json();
+}
+
+/** Authenticated binary GET (audio downloads) — bytes, not JSON. */
+export async function fetchBinary(path: string): Promise<ArrayBuffer> {
+  const response = await fetch(path, { headers: authHeader() });
+  if (!response.ok) {
+    if (response.status === 401) onUnauthorized();
+    throw new ApiError(`Download failed (${response.status})`, response.status);
+  }
+  return response.arrayBuffer();
 }
 
 /** GraphQL call. Throws ApiError if the response carries errors[]. */

@@ -27,4 +27,16 @@ public class ResourceNotFoundException extends RuntimeException {
     public static ResourceNotFoundException user(UUID id) {
         return new ResourceNotFoundException("User not found: " + id);
     }
+
+    public static ResourceNotFoundException beat(UUID id) {
+        return new ResourceNotFoundException("Beat not found: " + id);
+    }
+
+    public static ResourceNotFoundException audioFile(UUID id) {
+        return new ResourceNotFoundException("Audio file not found: " + id);
+    }
+
+    public static ResourceNotFoundException clip(UUID id) {
+        return new ResourceNotFoundException("Clip not found: " + id);
+    }
 }

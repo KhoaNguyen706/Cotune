@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import { Button, Card, ErrorBanner, Field, TextInput } from "../ui/kit";
 
 export function RegisterPage() {
   const { register } = useAuth();
@@ -37,60 +38,69 @@ export function RegisterPage() {
   }
 
   return (
-    <main className="auth-shell">
-      <div className="brand">
-        <span className="brand-mark">♪</span> Cotune
+    <main className="flex min-h-[82vh] w-full max-w-sm flex-col justify-center">
+      <div className="mb-6 flex items-center justify-center gap-2 text-3xl font-extrabold tracking-tight">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-xl text-bg shadow-glow">
+          ♪
+        </span>
+        <span className="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-transparent">
+          Cotune
+        </span>
       </div>
-      <div className="card">
-        <h2>Create account</h2>
-        <p className="sub">One form away from your first beat.</p>
-        <form onSubmit={onSubmit}>
-        <label>
-          Display name
-          <input
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            required
-            maxLength={60}
-          />
-          {fieldErrors.displayName && <span className="field-error">{fieldErrors.displayName}</span>}
-        </label>
-        <label>
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
-          {fieldErrors.email && <span className="field-error">{fieldErrors.email}</span>}
-        </label>
-        <label>
-          Password
-          {/* minLength mirrors the server rule for instant feedback, but the
-              server remains the authority — HTML attributes are trivially
-              removable in devtools. Same belt-and-suspenders as DTO
-              validation vs entity invariants on the backend. */}
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-            maxLength={72}
-            autoComplete="new-password"
-          />
-          {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}
-        </label>
-          {error && <p className="error">{error}</p>}
-          <button type="submit" disabled={busy}>
+
+      <Card>
+        <h2 className="mb-1 font-semibold">Create account</h2>
+        <p className="mb-6 text-sm text-muted">One form away from your first beat.</p>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <Field label="Display name" error={fieldErrors.displayName}>
+            <TextInput
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="DJ Latenight"
+              required
+              maxLength={60}
+            />
+          </Field>
+          <Field label="Email" error={fieldErrors.email}>
+            <TextInput
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@band.com"
+              required
+              autoComplete="email"
+            />
+          </Field>
+          <Field label="Password" error={fieldErrors.password}>
+            {/* minLength mirrors the server rule for instant feedback, but
+                the server remains the authority — HTML attributes are
+                trivially removable in devtools. */}
+            <TextInput
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="8+ characters"
+              required
+              minLength={8}
+              maxLength={72}
+              autoComplete="new-password"
+            />
+          </Field>
+          {error && <ErrorBanner>{error}</ErrorBanner>}
+          <Button type="submit" disabled={busy}>
             {busy ? "Creating…" : "Create account"}
-          </button>
+          </Button>
         </form>
-      </div>
-      <p>
-        Already have an account? <Link to="/login">Sign in</Link>
+      </Card>
+
+      <p className="mt-4 text-center text-sm text-muted">
+        Already have an account?{" "}
+        <Link
+          className="font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded"
+          to="/login"
+        >
+          Sign in
+        </Link>
       </p>
     </main>
   );

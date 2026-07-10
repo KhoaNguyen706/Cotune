@@ -1,6 +1,6 @@
 package com.cotune.track;
 
-import com.cotune.song.Song;
+import com.cotune.beat.Beat;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -28,12 +28,13 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * One instrument lane inside a song (what the frontend will render as a
- * horizontal strip in the editor).
+ * One instrument lane inside a BEAT (since V7 — lanes used to hang off the
+ * song directly; now "Beat 1" groups the lanes that play together, and the
+ * arrangement places whole beats).
  *
- * Deliberate modeling choice: Track points at Song (@ManyToOne), but Song
+ * Deliberate modeling choice: Track points at Beat (@ManyToOne), but Beat
  * has NO @OneToMany collection of tracks. A bidirectional collection means
- * loading a Song can drag its tracks along, equals/hashCode landmines, and
+ * loading a Beat can drag its tracks along, equals/hashCode landmines, and
  * "who owns the relationship" bookkeeping. In a GraphQL service the child
  * side is fetched per-request by the resolver layer (see @BatchMapping in
  * TrackGraphqlController) — the entity graph stays one-directional.
@@ -48,12 +49,12 @@ public class Track {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    // LAZY: loading a track must not automatically SELECT its song — we
-    // almost always already have the song in hand. EAGER (the awful JPA
-    // default for @ManyToOne!) would join-fetch the song on every track load.
+    // LAZY: loading a track must not automatically SELECT its beat — we
+    // almost always already have the beat in hand. EAGER (the awful JPA
+    // default for @ManyToOne!) would join-fetch the beat on every track load.
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "song_id", nullable = false, updatable = false)
-    private Song song;
+    @JoinColumn(name = "beat_id", nullable = false, updatable = false)
+    private Beat beat;
 
     @Column(nullable = false, length = 80)
     private String name;
@@ -63,7 +64,7 @@ public class Track {
     @Column(nullable = false, length = 20)
     private Instrument instrument;
 
-    // 0-based slot in the song's track list. Assigned by the service
+    // 0-based slot in the beat's lane list. Assigned by the service
     // (max + 1), not by the client — ordering is server-owned state.
     @Column(nullable = false)
     private int position;
@@ -88,14 +89,14 @@ public class Track {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public Track(Song song, String name, Instrument instrument, int position) {
-        if (song == null) {
-            throw new IllegalArgumentException("Track must belong to a song");
+    public Track(Beat beat, String name, Instrument instrument, int position) {
+        if (beat == null) {
+            throw new IllegalArgumentException("Track must belong to a beat");
         }
         if (position < 0) {
             throw new IllegalArgumentException("Track position must be >= 0, got " + position);
         }
-        this.song = song;
+        this.beat = beat;
         this.position = position;
         rename(name);
         changeInstrument(instrument);

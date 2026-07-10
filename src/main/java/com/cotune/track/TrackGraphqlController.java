@@ -1,6 +1,6 @@
 package com.cotune.track;
 
-import com.cotune.song.dto.SongDto;
+import com.cotune.beat.dto.BeatDto;
 import com.cotune.track.dto.AddTrackInput;
 import com.cotune.track.dto.StepInput;
 import com.cotune.track.dto.TrackDto;
@@ -57,33 +57,21 @@ public class TrackGraphqlController {
     }
 
     /**
-     * Resolves Song.tracks — THE most important method of this session.
-     *
-     * The naive version is @SchemaMapping(typeName = "Song") taking ONE
-     * SongDto and querying its tracks: correct results, but GraphQL calls
-     * it once PER SONG, so `{ songs { tracks } }` with 50 songs fires
-     * 1 + 50 SQL queries. That's the N+1 problem.
-     *
-     * @BatchMapping changes the execution contract: the engine collects
-     * every Song in the current query and calls this method ONCE with all
-     * of them; we return a Map telling it which tracks belong to which
-     * song. 51 queries become 2. This is Spring's sugar over the
-     * DataLoader pattern (batch-and-cache within one request).
-     *
-     * typeName must be spelled out because the source object is a SongDto —
-     * Spring can't guess that "SongDto" plays the schema type "Song".
+     * Resolves Beat.tracks — the N+1 fix explained at length in earlier
+     * sessions, retargeted after V7: lanes now hang off beats. The engine
+     * collects every Beat in the current query and calls this ONCE; we
+     * return a Map keyed by the SAME BeatDto instances it handed us.
+     * getOrDefault matters: a beat with zero lanes must map to an empty
+     * list — a missing key would resolve the non-nullable `tracks:
+     * [Track!]!` to null and error the whole beat.
      */
-    @BatchMapping(typeName = "Song", field = "tracks")
-    public Map<SongDto, List<TrackDto>> tracks(List<SongDto> songs) {
-        Map<UUID, List<TrackDto>> tracksBySongId =
-                trackService.getBySongIds(songs.stream().map(SongDto::id).toList());
+    @BatchMapping(typeName = "Beat", field = "tracks")
+    public Map<BeatDto, List<TrackDto>> tracks(List<BeatDto> beats) {
+        Map<UUID, List<TrackDto>> tracksByBeatId =
+                trackService.getByBeatIds(beats.stream().map(BeatDto::id).toList());
 
-        // The engine wants the map keyed by the SAME SongDto instances it
-        // handed us. getOrDefault matters: a song with zero tracks must map
-        // to an empty list — a missing key would resolve the non-nullable
-        // field `tracks: [Track!]!` to null and error the whole song.
-        return songs.stream().collect(Collectors.toMap(
+        return beats.stream().collect(Collectors.toMap(
                 Function.identity(),
-                song -> tracksBySongId.getOrDefault(song.id(), List.of())));
+                beat -> tracksByBeatId.getOrDefault(beat.id(), List.of())));
     }
 }

@@ -24,6 +24,13 @@ type Mutation {
     updateSong(id: ID!, input: UpdateSongInput!): Song!
     deleteSong(id: ID!): Boolean!   # ADMIN only
 
+    # A beat is a NAMED multi-instrument pattern group ("Beat 1", "Beat 2")
+    # — the material the arrangement places. Deleting one cascades its
+    # lanes and its timeline placements.
+    addBeat(input: AddBeatInput!): Beat!
+    deleteBeat(id: ID!): Boolean!
+
+    # Lanes (tracks) live INSIDE a beat since V7.
     addTrack(input: AddTrackInput!): Track!
     updateTrack(id: ID!, input: UpdateTrackInput!): Track!
     deleteTrack(id: ID!): Boolean!
@@ -32,6 +39,14 @@ type Mutation {
     # list clears the pattern. Per-note operations arrive with real-time
     # collaboration, not before.
     updateTrackPattern(id: ID!, pattern: [StepInput!]!): Track!
+
+    # The arrangement timeline: a clip PLACES a beat (track pattern) or an
+    # uploaded audio file on a lane at a step offset. Same beat, many
+    # placements — that's how many beats compose a song.
+    addClip(input: AddClipInput!): Clip!
+    # Geometry only (move/resize); what a clip points at never changes.
+    updateClip(id: ID!, input: UpdateClipInput!): Clip!
+    deleteClip(id: ID!): Boolean!
 }
 
 type Song {
@@ -47,15 +62,36 @@ type Song {
     version: Int!
     createdAt: DateTime!
     updatedAt: DateTime!
-    # Resolved by @BatchMapping in TrackGraphqlController — NOT stored on
+    # Resolved by @BatchMapping in BeatGraphqlController — NOT stored on
     # the Song entity. The graph shape lives in the schema; the Java object
-    # graph stays flat. Non-null list: a song with no tracks returns [].
+    # graph stays flat. Non-null list: a song with no beats returns [].
+    beats: [Beat!]!
+    # The arrangement — every placement on the timeline (batch-resolved,
+    # same pattern as beats).
+    clips: [Clip!]!
+    # Uploaded audio METADATA. The bytes ride on REST (/api/audio/{id});
+    # base64-ing megabytes into JSON is the wrong transport.
+    audioFiles: [AudioFile!]!
+}
+
+# One multi-instrument pattern group — the FL-Studio "pattern": kick +
+# snare + bass lanes that play together. The unit the arrangement places.
+type Beat {
+    id: ID!
+    songId: ID!
+    name: String!
+    # 0-based slot, server-assigned, gaps allowed after deletes.
+    position: Int!
+    version: Int!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+    # The beat's instrument lanes — batch-resolved (TrackGraphqlController).
     tracks: [Track!]!
 }
 
 type Track {
     id: ID!
-    songId: ID!
+    beatId: ID!
     name: String!
     instrument: Instrument!
     # 0-based slot, server-assigned, gaps allowed after deletes —
@@ -113,10 +149,70 @@ input UpdateSongInput {
     timeSignature: String!
 }
 
+# ---- arrangement -----------------------------------------------------------
+
+# One placement on the timeline (video-editor model: media never moves,
+# clips are the edit). Time is in 16th-note steps — 16 steps = one 4/4 bar —
+# so the arrangement survives BPM changes.
+type Clip {
+    id: ID!
+    songId: ID!
+    lane: Int!
+    startStep: Int!
+    lengthSteps: Int!
+    type: ClipType!
+    # Exactly one is set, matching `type`. beatId places a whole
+    # multi-instrument beat.
+    beatId: ID
+    audioId: ID
+    version: Int!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+}
+
+enum ClipType {
+    BEAT
+    AUDIO
+}
+
+# Upload metadata; bytes live at GET /api/audio/{id}. Immutable after
+# upload — "replacing" audio is a new upload plus re-pointed clips.
+type AudioFile {
+    id: ID!
+    songId: ID!
+    filename: String!
+    contentType: String!
+    sizeBytes: Int!
+    durationSeconds: Float!
+    createdAt: DateTime!
+}
+
+# No `type` field: derived from which reference is present (exactly one of
+# beatId/audioId) — a type field could contradict the reference.
+input AddClipInput {
+    songId: ID!
+    lane: Int!
+    startStep: Int!
+    lengthSteps: Int!
+    beatId: ID
+    audioId: ID
+}
+
+input UpdateClipInput {
+    lane: Int!
+    startStep: Int!
+    lengthSteps: Int!
+}
+
+input AddBeatInput {
+    songId: ID!
+    name: String!
+}
+
 # No position field: the server appends at the end. Reordering will be a
 # dedicated operation in the collaboration sessions.
 input AddTrackInput {
-    songId: ID!
+    beatId: ID!
     name: String!
     instrument: Instrument!
 }

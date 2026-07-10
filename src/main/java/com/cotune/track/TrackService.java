@@ -15,6 +15,9 @@ public interface TrackService {
 
     TrackDto update(UUID id, UpdateTrackInput input);
 
+    /** Name-only change — the REST rename endpoint's use case. */
+    TrackDto rename(UUID id, String name);
+
     /** Replace the track's whole step pattern (the beat grid saves as one unit). */
     TrackDto updatePattern(UUID id, List<StepInput> pattern);
 
@@ -22,9 +25,9 @@ public interface TrackService {
 
     /**
      * Batch contract, shaped for the GraphQL @BatchMapping resolver: given
-     * N song ids, return all their tracks grouped by song — in ONE query.
-     * A per-song variant (getBySongId) would invite N+1 usage; deliberately
+     * N beat ids, return all their lanes grouped by beat — in ONE query.
+     * A per-beat variant (getByBeatId) would invite N+1 usage; deliberately
      * not offered until something genuinely needs it.
      */
-    Map<UUID, List<TrackDto>> getBySongIds(List<UUID> songIds);
+    Map<UUID, List<TrackDto>> getByBeatIds(List<UUID> beatIds);
 }

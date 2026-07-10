@@ -8,15 +8,15 @@ import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
 /**
- * Note what is ABSENT: position. The server assigns it (append at end).
- * Letting clients pick a slot invites duplicate-position races and is a
- * reordering concern — which, in a collaborative editor, is an operation
- * with ordering semantics, not a CRUD field.
+ * Since V7 a lane is added to a BEAT (the multi-instrument pattern group),
+ * not to the song directly. Note what is ABSENT: position. The server
+ * assigns it (append at end) — letting clients pick a slot invites
+ * duplicate-position races.
  */
 public record AddTrackInput(
 
-        @NotNull(message = "songId is required")
-        UUID songId,
+        @NotNull(message = "beatId is required")
+        UUID beatId,
 
         @NotBlank(message = "name must not be blank")
         @Size(max = 80, message = "name must be at most 80 characters")

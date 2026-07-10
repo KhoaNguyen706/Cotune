@@ -17,10 +17,10 @@ public class TrackMapper {
     public TrackDto toDto(Track track) {
         return new TrackDto(
                 track.getId(),
-                // Safe even when `song` is an uninitialized lazy proxy:
+                // Safe even when `beat` is an uninitialized lazy proxy:
                 // Hibernate serves the id straight from the proxy (it was
                 // created FROM the FK value) — no SQL fires for this call.
-                track.getSong().getId(),
+                track.getBeat().getId(),
                 track.getName(),
                 track.getInstrument(),
                 track.getPosition(),

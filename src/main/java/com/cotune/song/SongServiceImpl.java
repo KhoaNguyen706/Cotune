@@ -88,6 +88,16 @@ public class SongServiceImpl implements SongService {
     }
 
     @Override
+    public SongDto rename(UUID id, String title) {
+        Song song = loadSong(id);
+        song.rename(title);
+        // Flush for the same reason as update(): the returned DTO must
+        // carry the bumped version/updatedAt, not the pre-write values.
+        songRepository.flush();
+        return songMapper.toDto(song);
+    }
+
+    @Override
     public void delete(UUID id) {
         // deleteById() is deliberately silent on missing rows (Spring Data
         // contract), but our API promises a NOT_FOUND error for bogus ids,

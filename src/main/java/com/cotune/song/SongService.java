@@ -28,5 +28,8 @@ public interface SongService {
 
     SongDto update(UUID id, UpdateSongInput input);
 
+    /** Title-only change — the REST rename endpoint's use case. */
+    SongDto rename(UUID id, String title);
+
     void delete(UUID id);
 }

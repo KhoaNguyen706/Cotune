@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import { Button, Card, ErrorBanner, Field, TextInput } from "../ui/kit";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -31,42 +32,55 @@ export function LoginPage() {
   }
 
   return (
-    <main className="auth-shell">
-      <div className="brand">
-        <span className="brand-mark">♪</span> Cotune
+    <main className="flex min-h-[82vh] w-full max-w-sm flex-col justify-center">
+      <div className="mb-6 flex items-center justify-center gap-2 text-3xl font-extrabold tracking-tight">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-xl text-bg shadow-glow">
+          ♪
+        </span>
+        <span className="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-transparent">
+          Cotune
+        </span>
       </div>
-      <div className="card">
-        <h2>Sign in</h2>
-        <p className="sub">Make beats in the browser. Your bandmates are waiting.</p>
-        <form onSubmit={onSubmit}>
-        <label>
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-          />
-        </label>
-          {error && <p className="error">{error}</p>}
-          <button type="submit" disabled={busy}>
+
+      <Card>
+        <h2 className="mb-1 font-semibold">Sign in</h2>
+        <p className="mb-6 text-sm text-muted">Make beats in the browser. Your bandmates are waiting.</p>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <Field label="Email">
+            <TextInput
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@band.com"
+              required
+              autoComplete="email"
+            />
+          </Field>
+          <Field label="Password">
+            <TextInput
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              autoComplete="current-password"
+            />
+          </Field>
+          {error && <ErrorBanner>{error}</ErrorBanner>}
+          <Button type="submit" disabled={busy}>
             {busy ? "Signing in…" : "Sign in"}
-          </button>
+          </Button>
         </form>
-      </div>
-      <p>
-        No account? <Link to="/register">Create one</Link>
+      </Card>
+
+      <p className="mt-4 text-center text-sm text-muted">
+        No account?{" "}
+        <Link
+          className="font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded"
+          to="/register"
+        >
+          Create one
+        </Link>
       </p>
     </main>
   );

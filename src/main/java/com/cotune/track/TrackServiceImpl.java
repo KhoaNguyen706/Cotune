@@ -1,8 +1,8 @@
 package com.cotune.track;
 
+import com.cotune.beat.Beat;
+import com.cotune.beat.BeatRepository;
 import com.cotune.common.exception.ResourceNotFoundException;
-import com.cotune.song.Song;
-import com.cotune.song.SongRepository;
 import com.cotune.track.dto.AddTrackInput;
 import com.cotune.track.dto.StepInput;
 import com.cotune.track.dto.TrackDto;
@@ -26,34 +26,34 @@ public class TrackServiceImpl implements TrackService {
     // A service may depend on ANOTHER feature's repository (or better, its
     // service) — cross-feature reads are normal; what's forbidden is
     // reaching into another feature's tables with raw SQL.
-    private final SongRepository songRepository;
+    private final BeatRepository beatRepository;
     private final TrackMapper trackMapper;
 
     @Override
     public TrackDto add(AddTrackInput input) {
-        // Explicit existence check so a bogus songId becomes a clean
+        // Explicit existence check so a bogus beatId becomes a clean
         // NOT_FOUND now — otherwise it would surface at flush time as a
         // cryptic FK-violation 500.
-        if (!songRepository.existsById(input.songId())) {
-            throw ResourceNotFoundException.song(input.songId());
+        if (!beatRepository.existsById(input.beatId())) {
+            throw ResourceNotFoundException.beat(input.beatId());
         }
 
         // getReferenceById returns a lazy PROXY without any SELECT — we
-        // only need the Song to fill the FK column, so loading the full
+        // only need the Beat to fill the FK column, so loading the full
         // row (findById) would be a wasted query. This is the standard
         // "attach child to parent by id" idiom.
-        Song songRef = songRepository.getReferenceById(input.songId());
+        Beat beatRef = beatRepository.getReferenceById(input.beatId());
 
         // Append-at-end. NOTE a real race lives here: two concurrent adds
-        // to the same song can both read max=2 and both try position 3.
-        // The UNIQUE (song_id, position) constraint turns that race into a
+        // to the same beat can both read max=2 and both try position 3.
+        // The UNIQUE (beat_id, position) constraint turns that race into a
         // hard failure instead of silent corruption — the DB is the last
         // referee. Proper serialization of concurrent edits is exactly
         // what the collaboration sessions will address.
-        int nextPosition = trackRepository.findMaxPositionBySongId(input.songId()) + 1;
+        int nextPosition = trackRepository.findMaxPositionByBeatId(input.beatId()) + 1;
 
-        Track saved = trackRepository.save(
-                new Track(songRef, input.name(), input.instrument(), nextPosition));
+        Track saved = trackRepository.saveAndFlush(
+                new Track(beatRef, input.name(), input.instrument(), nextPosition));
         return trackMapper.toDto(saved);
     }
 
@@ -66,6 +66,14 @@ public class TrackServiceImpl implements TrackService {
         track.rename(input.name());
         track.changeInstrument(input.instrument());
 
+        trackRepository.flush();
+        return trackMapper.toDto(track);
+    }
+
+    @Override
+    public TrackDto rename(UUID id, String name) {
+        Track track = loadTrack(id);
+        track.rename(name);
         trackRepository.flush();
         return trackMapper.toDto(track);
     }
@@ -103,13 +111,13 @@ public class TrackServiceImpl implements TrackService {
 
     @Override
     @Transactional(readOnly = true)
-    public Map<UUID, List<TrackDto>> getBySongIds(List<UUID> songIds) {
-        // ONE query for all requested songs (WHERE song_id IN ...) — the
+    public Map<UUID, List<TrackDto>> getByBeatIds(List<UUID> beatIds) {
+        // ONE query for all requested beats (WHERE beat_id IN ...) — the
         // whole point of the batch contract. groupingBy with LinkedHashMap
-        // + toList preserves the ORDER BY position ordering per song.
-        return trackRepository.findBySongIdInOrderByPositionAsc(songIds).stream()
+        // + toList preserves the ORDER BY position ordering per beat.
+        return trackRepository.findByBeatIdInOrderByPositionAsc(beatIds).stream()
                 .collect(Collectors.groupingBy(
-                        track -> track.getSong().getId(),
+                        track -> track.getBeat().getId(),
                         LinkedHashMap::new,
                         Collectors.mapping(trackMapper::toDto, Collectors.toList())));
     }

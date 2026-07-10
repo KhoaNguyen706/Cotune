@@ -1,8 +1,9 @@
 package com.cotune.track;
 
+import com.cotune.beat.Beat;
+import com.cotune.beat.BeatRepository;
 import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.song.Song;
-import com.cotune.song.SongRepository;
 import com.cotune.track.dto.AddTrackInput;
 import com.cotune.track.dto.TrackDto;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,27 +37,28 @@ class TrackServiceImplTest {
     private TrackRepository trackRepository;
 
     @Mock
-    private SongRepository songRepository;
+    private BeatRepository beatRepository;
 
     private TrackServiceImpl service;
 
-    private final UUID songId = UUID.randomUUID();
-    private final Song song = new Song("Test Song", 120, "4/4", UUID.randomUUID());
+    private final UUID beatId = UUID.randomUUID();
+    private final Beat beat =
+            new Beat(new Song("Test Song", 120, "4/4", UUID.randomUUID()), "Beat 1", 0);
 
     @BeforeEach
     void setUp() {
-        service = new TrackServiceImpl(trackRepository, songRepository, new TrackMapper());
+        service = new TrackServiceImpl(trackRepository, beatRepository, new TrackMapper());
     }
 
     @Test
     void addAssignsPositionAfterCurrentMax() {
-        when(songRepository.existsById(songId)).thenReturn(true);
-        when(songRepository.getReferenceById(songId)).thenReturn(song);
-        when(trackRepository.findMaxPositionBySongId(songId)).thenReturn(2);
-        // Echo back the entity passed to save(), like the real repo would.
-        when(trackRepository.save(any(Track.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(beatRepository.existsById(beatId)).thenReturn(true);
+        when(beatRepository.getReferenceById(beatId)).thenReturn(beat);
+        when(trackRepository.findMaxPositionByBeatId(beatId)).thenReturn(2);
+        // Echo back the entity passed to saveAndFlush(), like the real repo would.
+        when(trackRepository.saveAndFlush(any(Track.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        TrackDto dto = service.add(new AddTrackInput(songId, "Lead Synth", Instrument.SYNTH));
+        TrackDto dto = service.add(new AddTrackInput(beatId, "Lead Synth", Instrument.SYNTH));
 
         assertThat(dto.position()).isEqualTo(3);
         assertThat(dto.name()).isEqualTo("Lead Synth");
@@ -64,34 +66,34 @@ class TrackServiceImplTest {
     }
 
     @Test
-    void addStartsAtPositionZeroForEmptySong() {
-        when(songRepository.existsById(songId)).thenReturn(true);
-        when(songRepository.getReferenceById(songId)).thenReturn(song);
+    void addStartsAtPositionZeroForEmptyBeat() {
+        when(beatRepository.existsById(beatId)).thenReturn(true);
+        when(beatRepository.getReferenceById(beatId)).thenReturn(beat);
         // The COALESCE(..., -1) contract from the repository query.
-        when(trackRepository.findMaxPositionBySongId(songId)).thenReturn(-1);
-        when(trackRepository.save(any(Track.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(trackRepository.findMaxPositionByBeatId(beatId)).thenReturn(-1);
+        when(trackRepository.saveAndFlush(any(Track.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        TrackDto dto = service.add(new AddTrackInput(songId, "Drums", Instrument.DRUMS));
+        TrackDto dto = service.add(new AddTrackInput(beatId, "Drums", Instrument.DRUMS));
 
         assertThat(dto.position()).isZero();
     }
 
     @Test
-    void addRejectsUnknownSongBeforeTouchingTrackRepository() {
-        when(songRepository.existsById(songId)).thenReturn(false);
+    void addRejectsUnknownBeatBeforeTouchingTrackRepository() {
+        when(beatRepository.existsById(beatId)).thenReturn(false);
 
-        assertThatThrownBy(() -> service.add(new AddTrackInput(songId, "Bass", Instrument.BASS)))
+        assertThatThrownBy(() -> service.add(new AddTrackInput(beatId, "Bass", Instrument.BASS)))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(songId.toString());
+                .hasMessageContaining(beatId.toString());
 
         // Fail-fast means no partial work: nothing was saved.
-        verify(trackRepository, never()).save(any());
+        verify(trackRepository, never()).saveAndFlush(any());
     }
 
     @Test
     void updatePatternReplacesStepsAndRejectsInvalidOnes() {
         UUID trackId = UUID.randomUUID();
-        Track track = new Track(song, "Kick", Instrument.DRUMS, 0);
+        Track track = new Track(beat, "Kick", Instrument.DRUMS, 0);
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
 
         TrackDto dto = service.updatePattern(trackId, java.util.List.of(
@@ -119,7 +121,7 @@ class TrackServiceImplTest {
     @Test
     void updatePatternRejectsDuplicateEvents() {
         UUID trackId = UUID.randomUUID();
-        Track track = new Track(song, "Bass", Instrument.BASS, 0);
+        Track track = new Track(beat, "Bass", Instrument.BASS, 0);
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
 
         assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
@@ -127,6 +129,36 @@ class TrackServiceImplTest {
                 new com.cotune.track.dto.StepInput(3, "C2", 0.5, 2))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("duplicate");
+    }
+
+    @Test
+    void renameChangesNameAndNothingElse() {
+        UUID trackId = UUID.randomUUID();
+        Track track = new Track(beat, "Kick", Instrument.DRUMS, 2);
+        when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
+
+        TrackDto dto = service.rename(trackId, "  Kick 808  ");
+
+        // The entity strips whitespace; instrument and position untouched.
+        assertThat(dto.name()).isEqualTo("Kick 808");
+        assertThat(dto.instrument()).isEqualTo(Instrument.DRUMS);
+        assertThat(dto.position()).isEqualTo(2);
+    }
+
+    @Test
+    void renameRejectsUnknownTrackAndBlankName() {
+        UUID trackId = UUID.randomUUID();
+        when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> service.rename(trackId, "New Name"))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        // Blank is stopped by the entity's domain guard, even if Bean
+        // Validation at the REST boundary were bypassed.
+        Track track = new Track(beat, "Kick", Instrument.DRUMS, 0);
+        when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
+        assertThatThrownBy(() -> service.rename(trackId, "   "))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

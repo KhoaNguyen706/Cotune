@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // The dev-server proxy is why the frontend needs NO CORS setup on the
 // backend: the browser only ever talks to localhost:5173 (same origin),
@@ -10,7 +11,7 @@ import react from "@vitejs/plugin-react";
 const backend = process.env.VITE_PROXY_TARGET ?? "http://localhost:8080";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     proxy: {
       "/api": { target: backend, changeOrigin: true },

@@ -8,7 +8,7 @@ import java.util.UUID;
 
 public record TrackDto(
         UUID id,
-        UUID songId,
+        UUID beatId,
         String name,
         Instrument instrument,
         int position,

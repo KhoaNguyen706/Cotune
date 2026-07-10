@@ -19,6 +19,13 @@ spring:
     # load and hides missing-fetch bugs until production. Off from day one.
     open-in-view: false
 
+  servlet:
+    multipart:
+      # Matches AudioFile.MAX_SIZE_BYTES (the domain check is the real
+      # guarantee; this just rejects oversize uploads before buffering).
+      max-file-size: 15MB
+      max-request-size: 16MB
+
   graphql:
     graphiql:
       # In-browser IDE at /graphiql for exploring the API. Dev convenience;

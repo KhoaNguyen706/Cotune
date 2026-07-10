@@ -20,3 +20,15 @@ export const INSTRUMENT_COLORS: Record<string, string> = {
 export function colorFor(instrument: string): string {
   return INSTRUMENT_COLORS[instrument] ?? "#8b7cf8";
 }
+
+/**
+ * Beat colors — a beat groups many instruments, so it gets its own hue by
+ * POSITION (Beat 1 is always the same color in the palette, the timeline,
+ * everywhere). Distinct from the instrument palette on purpose: clips and
+ * lanes are different kinds of things and should read differently.
+ */
+const BEAT_COLORS = ["#8b7cf8", "#f5a524", "#34d399", "#fb7185", "#38bdf8", "#a3e635", "#f472b6", "#facc15"];
+
+export function beatColor(position: number): string {
+  return BEAT_COLORS[((position % BEAT_COLORS.length) + BEAT_COLORS.length) % BEAT_COLORS.length];
+}

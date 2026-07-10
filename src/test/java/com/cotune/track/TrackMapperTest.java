@@ -1,5 +1,6 @@
 package com.cotune.track;
 
+import com.cotune.beat.Beat;
 import com.cotune.song.Song;
 import com.cotune.track.dto.TrackDto;
 import org.junit.jupiter.api.Test;
@@ -13,31 +14,35 @@ class TrackMapperTest {
 
     private final TrackMapper mapper = new TrackMapper();
 
+    private Beat newBeat() {
+        Song song = new Song("Host Song", 100, "4/4", UUID.randomUUID());
+        return new Beat(song, "Beat 1", 0);
+    }
+
     @Test
     void toDtoCopiesAllFields() {
-        Song song = new Song("Host Song", 100, "4/4", UUID.randomUUID());
-        Track track = new Track(song, "Warm Pad", Instrument.STRINGS, 1);
+        Track track = new Track(newBeat(), "Warm Pad", Instrument.STRINGS, 1);
 
         TrackDto dto = mapper.toDto(track);
 
         assertThat(dto.name()).isEqualTo("Warm Pad");
         assertThat(dto.instrument()).isEqualTo(Instrument.STRINGS);
         assertThat(dto.position()).isEqualTo(1);
-        // Unsaved song → null id flows through; the mapper doesn't invent one.
-        assertThat(dto.songId()).isNull();
+        // Unsaved beat → null id flows through; the mapper doesn't invent one.
+        assertThat(dto.beatId()).isNull();
     }
 
     @Test
     void trackConstructionEnforcesInvariants() {
-        Song song = new Song("Host Song", 100, "4/4", UUID.randomUUID());
+        Beat beat = newBeat();
 
         assertThatThrownBy(() -> new Track(null, "Pad", Instrument.SYNTH, 0))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new Track(song, "  ", Instrument.SYNTH, 0))
+        assertThatThrownBy(() -> new Track(beat, "  ", Instrument.SYNTH, 0))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new Track(song, "Pad", null, 0))
+        assertThatThrownBy(() -> new Track(beat, "Pad", null, 0))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new Track(song, "Pad", Instrument.SYNTH, -1))
+        assertThatThrownBy(() -> new Track(beat, "Pad", Instrument.SYNTH, -1))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

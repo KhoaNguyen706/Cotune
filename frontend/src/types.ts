@@ -26,12 +26,46 @@ export interface Step {
   length: number;
 }
 
+/** One instrument LANE inside a beat (kick lane, bass lane, ...). */
 export interface Track {
   id: string;
   name: string;
   instrument: string;
   position: number;
   pattern: Step[];
+}
+
+/** A named multi-instrument pattern group — "Beat 1", "Beat 2" — the
+ *  FL-Studio pattern model. The unit the arrangement places on the
+ *  timeline: one beat clip plays ALL of the beat's lanes together. */
+export interface Beat {
+  id: string;
+  name: string;
+  position: number;
+  tracks: Track[];
+}
+
+export type ClipType = "BEAT" | "AUDIO";
+
+/** One placement on the arrangement timeline. Time in 16th-note steps
+ *  (16 = one 4/4 bar) — the arrangement survives BPM changes. */
+export interface Clip {
+  id: string;
+  lane: number;
+  startStep: number;
+  lengthSteps: number;
+  type: ClipType;
+  beatId: string | null;  // set when type === "BEAT" — the WHOLE beat plays
+  audioId: string | null; // set when type === "AUDIO"
+}
+
+/** Upload metadata; the bytes live at GET /api/audio/{id}. */
+export interface AudioFile {
+  id: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  durationSeconds: number;
 }
 
 export interface Song {
@@ -42,5 +76,7 @@ export interface Song {
   ownerId: string | null; // null = created before ownership existed
   version: number;
   createdAt: string;
-  tracks: Track[];
+  beats: Beat[];
+  clips: Clip[];
+  audioFiles: AudioFile[];
 }
