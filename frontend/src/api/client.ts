@@ -53,6 +53,21 @@ function authHeader(): Record<string, string> {
   return session ? { Authorization: `Bearer ${session.token}` } : {};
 }
 
+/**
+ * Session-death interceptor: when the server answers UNAUTHORIZED while we
+ * HOLD a token, that token is dead (expired, or referencing an account
+ * that no longer exists — e.g. minted against a different database).
+ * Holding onto it means every subsequent click fails identically, so drop
+ * it and land on /login. Deliberately NOT applied when there's no session:
+ * a failed login attempt is a normal 401, not a dead session.
+ */
+function onUnauthorized(): void {
+  if (loadSession()) {
+    clearSession();
+    window.location.assign("/login");
+  }
+}
+
 /** REST call to /api/**. Throws ApiError on any non-2xx. */
 export async function rest<T>(
   path: string,
@@ -71,6 +86,7 @@ export async function rest<T>(
     // RFC 7807 problem+json: { detail, status, errors? } — errors is the
     // field map our RestExceptionHandler adds for validation failures.
     const problem = await response.json().catch(() => null);
+    if (response.status === 401) onUnauthorized();
     throw new ApiError(
       problem?.detail ?? `Request failed (${response.status})`,
       response.status,
@@ -98,6 +114,7 @@ export async function gql<T>(
   // GraphQL runs, so it arrives as a real HTTP 401 — the one case where
   // /graphql doesn't answer 200.
   if (response.status === 401) {
+    onUnauthorized();
     throw new ApiError("Session expired — please sign in again", 401);
   }
 
@@ -109,6 +126,7 @@ export async function gql<T>(
       : classification === "FORBIDDEN" ? 403
       : classification === "NOT_FOUND" ? 404
       : 400;
+    if (status === 401) onUnauthorized();
     throw new ApiError(json.errors[0].message, status);
   }
   return json.data;

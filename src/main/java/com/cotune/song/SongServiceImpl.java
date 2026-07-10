@@ -1,9 +1,11 @@
 package com.cotune.song;
 
 import com.cotune.common.exception.ResourceNotFoundException;
+import com.cotune.common.exception.StaleAccountException;
 import com.cotune.song.dto.CreateSongInput;
 import com.cotune.song.dto.SongDto;
 import com.cotune.song.dto.UpdateSongInput;
+import com.cotune.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,9 +30,17 @@ public class SongServiceImpl implements SongService {
 
     private final SongRepository songRepository;
     private final SongMapper songMapper;
+    private final UserRepository userRepository;
 
     @Override
     public SongDto create(CreateSongInput input, UUID ownerId) {
+        // The token's signature proves WHO issued it, not that the account
+        // still exists — a stale-but-valid JWT (deleted account, or a token
+        // minted against a different database) would otherwise die on the
+        // owner_id FK as an opaque 500. Check first, fail as "re-login".
+        if (!userRepository.existsById(ownerId)) {
+            throw new StaleAccountException();
+        }
         Song song = songMapper.toEntity(input, ownerId);
         // save() returns the managed instance; use the return value, not the
         // argument — for entities with generated fields they can differ.

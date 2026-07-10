@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError, gql } from "../api/client";
+import { colorFor } from "../ui/trackColors";
 import type { Song } from "../types";
 
 // Queries live next to the component that owns them; each asks for exactly
@@ -92,12 +93,11 @@ export function SongsPage() {
   return (
     <main className="wide">
       <header className="topbar">
-        <h1>Cotune</h1>
-        <div>
-          <span className="who">
-            {user?.displayName} ({user?.role})
-          </span>
-          <button onClick={logout}>Sign out</button>
+        <h1 className="brand-text">Cotune</h1>
+        <div className="user-chip">
+          <span className="avatar">{user?.displayName?.[0]?.toUpperCase() ?? "?"}</span>
+          <span className="who">{user?.displayName}</span>
+          <button className="ghost" onClick={logout}>Sign out</button>
         </div>
       </header>
 
@@ -146,14 +146,16 @@ export function SongsPage() {
         ) : (
           <ul className="songs">
             {songs.map((song) => (
-              <li key={song.id} className="card">
+              <li key={song.id} className="card song-card">
                 <div className="song-head">
                   <strong>{song.title}</strong>
-                  <span>
-                    {song.bpm} BPM · {song.timeSignature} · v{song.version}
+                  <span className="chips">
+                    <span className="chip">{song.bpm} BPM</span>
+                    <span className="chip">{song.timeSignature}</span>
+                    {song.ownerId === user?.id && <span className="chip mine">yours</span>}
                   </span>
                   <Link className="open" to={`/songs/${song.id}`}>
-                    Open beat maker →
+                    Open →
                   </Link>
                   {/* UI mirrors the server rule (owner-only) for honest
                       affordances; the real gate is @PreAuthorize server-side. */}
@@ -164,17 +166,22 @@ export function SongsPage() {
                   )}
                 </div>
                 {song.tracks.length > 0 && (
-                  <ul className="tracks">
+                  <div className="pills">
                     {[...song.tracks]
                       // The API contract says: sort by position, never
                       // assume contiguity (gaps appear after deletes).
                       .sort((a, b) => a.position - b.position)
                       .map((track) => (
-                        <li key={track.id}>
-                          {track.position}. {track.name} — {track.instrument.toLowerCase()}
-                        </li>
+                        <span
+                          key={track.id}
+                          className="pill"
+                          style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
+                        >
+                          <i />
+                          {track.name}
+                        </span>
                       ))}
-                  </ul>
+                  </div>
                 )}
               </li>
             ))}

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import * as Tone from "tone";
 import { ApiError, gql } from "../api/client";
 import { createInstrument, type TrackInstrument } from "../audio/instruments";
+import { colorFor } from "../ui/trackColors";
 import type { Song, Step, Track } from "../types";
 
 const STEPS = 16;
@@ -434,8 +435,9 @@ export function BeatMakerPage() {
               onClick={() => setSelectedId(track.id)}
             >
               <div className="seq-label">
+                <span className="dot" style={{ background: colorFor(track.instrument) }} />
                 <strong>{track.name}</strong>
-                <span>{track.instrument.toLowerCase()}</span>
+                <span className="inst">{track.instrument.toLowerCase()}</span>
                 <span className="ms">
                   <button
                     className={`ms-btn ${isMuted ? "active-m" : ""}`}
@@ -468,7 +470,10 @@ export function BeatMakerPage() {
                   ×
                 </button>
               </div>
-              <div className="seq-cells mini">
+              <div
+                className="seq-cells mini"
+                style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
+              >
                 {Array.from({ length: STEPS }, (_, s) => (
                   <span
                     key={s}
@@ -564,7 +569,8 @@ export function BeatMakerPage() {
                       height: CELL_H - 4,
                       // Velocity is VISIBLE: quiet notes are translucent.
                       opacity: 0.35 + 0.65 * note.velocity,
-                    }}
+                      "--tc": colorFor(selected.instrument),
+                    } as React.CSSProperties}
                     onMouseDown={(e) => onNoteMouseDown(e, index, note, false)}
                     onContextMenu={(e) => onNoteContextMenu(e, index)}
                   >

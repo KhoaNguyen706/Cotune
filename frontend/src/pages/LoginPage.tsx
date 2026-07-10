@@ -31,10 +31,14 @@ export function LoginPage() {
   }
 
   return (
-    <main className="card">
-      <h1>Cotune</h1>
-      <h2>Sign in</h2>
-      <form onSubmit={onSubmit}>
+    <main className="auth-shell">
+      <div className="brand">
+        <span className="brand-mark">♪</span> Cotune
+      </div>
+      <div className="card">
+        <h2>Sign in</h2>
+        <p className="sub">Make beats in the browser. Your bandmates are waiting.</p>
+        <form onSubmit={onSubmit}>
         <label>
           Email
           <input
@@ -55,11 +59,12 @@ export function LoginPage() {
             autoComplete="current-password"
           />
         </label>
-        {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+          {error && <p className="error">{error}</p>}
+          <button type="submit" disabled={busy}>
+            {busy ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      </div>
       <p>
         No account? <Link to="/register">Create one</Link>
       </p>

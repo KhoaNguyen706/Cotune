@@ -1,6 +1,7 @@
 package com.cotune.common.graphql;
 
 import com.cotune.common.exception.ResourceNotFoundException;
+import com.cotune.common.exception.StaleAccountException;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
@@ -26,6 +27,16 @@ public class GraphqlExceptionResolver extends DataFetcherExceptionResolverAdapte
             return GraphqlErrorBuilder.newError(env)
                     .errorType(ErrorType.NOT_FOUND)
                     .message(notFound.getMessage())
+                    .build();
+        }
+
+        // Valid signature, vanished account (deleted user or a token from
+        // another environment's database). UNAUTHORIZED tells the client
+        // "drop this session and log in again".
+        if (ex instanceof StaleAccountException stale) {
+            return GraphqlErrorBuilder.newError(env)
+                    .errorType(ErrorType.UNAUTHORIZED)
+                    .message(stale.getMessage())
                     .build();
         }
 

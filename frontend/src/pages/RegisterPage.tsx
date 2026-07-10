@@ -37,10 +37,14 @@ export function RegisterPage() {
   }
 
   return (
-    <main className="card">
-      <h1>Cotune</h1>
-      <h2>Create account</h2>
-      <form onSubmit={onSubmit}>
+    <main className="auth-shell">
+      <div className="brand">
+        <span className="brand-mark">♪</span> Cotune
+      </div>
+      <div className="card">
+        <h2>Create account</h2>
+        <p className="sub">One form away from your first beat.</p>
+        <form onSubmit={onSubmit}>
         <label>
           Display name
           <input
@@ -79,11 +83,12 @@ export function RegisterPage() {
           />
           {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}
         </label>
-        {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={busy}>
-          {busy ? "Creating…" : "Create account"}
-        </button>
-      </form>
+          {error && <p className="error">{error}</p>}
+          <button type="submit" disabled={busy}>
+            {busy ? "Creating…" : "Create account"}
+          </button>
+        </form>
+      </div>
       <p>
         Already have an account? <Link to="/login">Sign in</Link>
       </p>
