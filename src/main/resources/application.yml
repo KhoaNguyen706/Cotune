@@ -33,6 +33,11 @@ spring:
       enabled: true
 
 cotune:
+  storage:
+    # Where uploaded audio bytes live (V9 moved them out of Postgres).
+    # Relative resolves against the working directory in dev; containers
+    # point this at a mounted volume (docker-compose.yml).
+    audio-dir: ${AUDIO_STORAGE_DIR:./data/audio}
   security:
     jwt:
       # HMAC-SHA256 signing key, Base64-encoded, >= 256 bits. The ${VAR:default}

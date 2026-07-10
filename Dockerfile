@@ -37,6 +37,10 @@ FROM eclipse-temurin:21-jre-alpine
 # Run as a non-root user: if the app is ever compromised, the attacker
 # lands in an unprivileged account, not root-inside-the-container.
 RUN addgroup -S cotune && adduser -S cotune -G cotune
+# Pre-create the audio-storage mount point OWNED BY the app user: a named
+# volume adopts the image directory's ownership on first use — without
+# this it materializes root-owned and uploads fail with EACCES.
+RUN mkdir -p /app/data/audio && chown -R cotune:cotune /app/data
 USER cotune
 WORKDIR /app
 COPY --from=build /build/target/*.jar app.jar

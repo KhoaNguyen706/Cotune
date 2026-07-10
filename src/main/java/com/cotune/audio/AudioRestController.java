@@ -1,5 +1,6 @@
 package com.cotune.audio;
 
+import com.cotune.audio.dto.AudioContent;
 import com.cotune.audio.dto.AudioFileDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -60,15 +61,15 @@ public class AudioRestController {
 
     @GetMapping("/api/audio/{id}")
     public ResponseEntity<byte[]> download(@PathVariable UUID id) {
-        AudioFile file = audioService.download(id);
+        AudioContent content = audioService.download(id);
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(file.getContentType()))
+                .contentType(MediaType.parseMediaType(content.contentType()))
                 // inline: the editor <audio>/decode path streams it; a
                 // browser hitting the URL directly still gets the filename
                 // when saving. attachment would force a download dialog.
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        ContentDisposition.inline().filename(file.getFilename()).build().toString())
-                .body(file.getData());
+                        ContentDisposition.inline().filename(content.filename()).build().toString())
+                .body(content.bytes());
     }
 
     @DeleteMapping("/api/audio/{id}")

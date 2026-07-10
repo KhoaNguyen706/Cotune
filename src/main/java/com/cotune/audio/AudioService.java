@@ -1,5 +1,6 @@
 package com.cotune.audio;
 
+import com.cotune.audio.dto.AudioContent;
 import com.cotune.audio.dto.AudioFileDto;
 
 import java.util.List;
@@ -11,8 +12,8 @@ public interface AudioService {
     AudioFileDto upload(UUID songId, String filename, String contentType,
                         double durationSeconds, byte[] data);
 
-    /** Full entity WITH bytes — download endpoint only. */
-    AudioFile download(UUID id);
+    /** Bytes + response headers — download endpoint only. */
+    AudioContent download(UUID id);
 
     void delete(UUID id);
 

@@ -25,10 +25,11 @@ import java.util.UUID;
  * what is actually used. That's the video-editor model: media bin entries
  * never change, edits happen on the timeline.
  *
- * Bytes live in a bytea column (see V6 migration for the trade-off and the
- * promotion path to object storage). IMPORTANT for readers: loading this
- * entity loads the bytes — listing endpoints must use the summary
- * projection in AudioFileRepository, never findAll().
+ * Since V9 the bytes live ON DISK (storagePath, see AudioStorage); the
+ * bytea column only remains for rows uploaded before V9 and is read as a
+ * fallback. IMPORTANT for readers: loading a legacy entity loads its
+ * bytes — listing endpoints must use the summary projection in
+ * AudioFileRepository, never findAll().
  */
 @Entity
 @Table(name = "audio_files")
@@ -63,15 +64,22 @@ public class AudioFile {
     @Column(name = "duration_seconds", nullable = false)
     private double durationSeconds;
 
-    @Column(nullable = false)
+    // LEGACY (pre-V9) rows only; new rows keep bytes on disk. Nullable —
+    // exactly one of data/storagePath is set (DB CHECK enforces it).
+    @Column
     private byte[] data;
+
+    // Relative path under AudioStorage's root. Server-generated, never
+    // from user input.
+    @Column(name = "storage_path", length = 300)
+    private String storagePath;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     public AudioFile(Song song, String filename, String contentType,
-                     double durationSeconds, byte[] data) {
+                     double durationSeconds, long sizeBytes, String storagePath) {
         if (song == null) {
             throw new IllegalArgumentException("Audio file must belong to a song");
         }
@@ -87,11 +95,14 @@ public class AudioFile {
         if (durationSeconds <= 0) {
             throw new IllegalArgumentException("Audio duration must be positive");
         }
-        if (data == null || data.length == 0) {
+        if (sizeBytes <= 0) {
             throw new IllegalArgumentException("Audio upload is empty");
         }
-        if (data.length > MAX_SIZE_BYTES) {
+        if (sizeBytes > MAX_SIZE_BYTES) {
             throw new IllegalArgumentException("Audio upload too large: max 15 MB");
+        }
+        if (storagePath == null || storagePath.isBlank()) {
+            throw new IllegalArgumentException("Audio file needs a storage path");
         }
         this.song = song;
         // Strip any path a browser might smuggle in; keep the tail.
@@ -100,8 +111,8 @@ public class AudioFile {
         this.filename = clean.length() > 255 ? clean.substring(clean.length() - 255) : clean;
         this.contentType = contentType;
         this.durationSeconds = durationSeconds;
-        this.data = data;
-        this.sizeBytes = data.length;
+        this.sizeBytes = sizeBytes;
+        this.storagePath = storagePath;
     }
 
     @Override

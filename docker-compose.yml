@@ -19,9 +19,16 @@ services:
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/cotune}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-cotune}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-cotune}
+      # Uploaded audio bytes (V9: on disk, not in Postgres) — points at the
+      # named volume below so files survive container recreation.
+      AUDIO_STORAGE_DIR: /app/data/audio
       # JWT_SECRET intentionally not set here: the dev fallback in
       # application.yml applies. Real deployments inject it (secret
       # manager / CI variable), never a file committed to git.
+    volumes:
+      # Audio uploads are DATA, same as the DB: a named volume, not
+      # container-layer storage that `docker compose up --build` discards.
+      - cotune-audio:/app/data/audio
     depends_on:
       # Not just "wait until the container starts" — wait until the
       # healthcheck below passes. Postgres accepts TCP connections a
@@ -52,3 +59,4 @@ services:
 
 volumes:
   cotune-pgdata:
+  cotune-audio:
