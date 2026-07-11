@@ -38,6 +38,7 @@ import {
   Canvas,
   CanvasBar,
   IconButton,
+  Modal,
   Readout,
   Sidebar,
   SidebarSection,
@@ -186,6 +187,8 @@ export function BeatMakerPage() {
   /** Notes that just arrived from someone else, for the landing flash. Keyed
    *  "trackId:step:pitch" so a note is only ever flashing once. */
   const [flashing, setFlashing] = useState<Set<string>>(new Set());
+  /** Which clear the user is being asked to confirm, if any. */
+  const [clearing, setClearing] = useState<"lane" | "beat" | null>(null);
   const [song, setSong] = useState<Song | null>(null);
   // Two editors, one page: "arrange" is the song timeline (clips place
   // whole beats), "beats" is where you build each beat — pick Beat 1/2/3,
@@ -368,13 +371,42 @@ export function BeatMakerPage() {
     setHistorySizes({ past: h.past.length, future: 0 });
   }
 
+  /**
+   * Which lanes actually changed between two grids.
+   *
+   * Undo used to restore the SNAPSHOT'S dirty set, which is a bug that had been
+   * sitting here since undo was written: recordHistory() runs before an edit, so
+   * the set it captures is usually EMPTY (auto-save had just flushed). Undo then
+   * restored the old notes and marked them clean — so the restoration was never
+   * saved. Reload the page and your undo was gone; the server still had the
+   * thing you undid. Real-time only made it visible, by having a collaborator
+   * sit there watching the notes not come back.
+   *
+   * Restoring a state is an EDIT. It has to be marked dirty like any other, and
+   * the only honest way to know which lanes to mark is to compare them.
+   */
+  function lanesThatDiffer(
+    before: Record<string, Step[]>,
+    after: Record<string, Step[]>,
+  ): string[] {
+    const key = (notes: Step[]) =>
+      notes
+        .map((n) => `${n.step}|${n.pitch}|${n.velocity}|${n.length}`)
+        .sort()
+        .join(","); // order-insensitive: a lane is a SET of notes, not a list
+    const laneIds = new Set([...Object.keys(before), ...Object.keys(after)]);
+    return [...laneIds].filter((id) => key(before[id] ?? []) !== key(after[id] ?? []));
+  }
+
   function undo() {
     const h = historyRef.current;
     const entry = h.past.pop();
     if (!entry) return;
-    h.future.push({ notes: notesRef.current, dirty: dirtyRef.current });
+    const current = notesRef.current;
+    h.future.push({ notes: current, dirty: dirtyRef.current });
     setNotesByTrack(entry.notes);
-    setDirty(entry.dirty);
+    // Union: whatever was already unsaved, PLUS every lane this undo changed.
+    setDirty(new Set([...entry.dirty, ...lanesThatDiffer(current, entry.notes)]));
     setSelectedNote(null); // indices may no longer exist in the restored grid
     setHistorySizes({ past: h.past.length, future: h.future.length });
   }
@@ -383,9 +415,10 @@ export function BeatMakerPage() {
     const h = historyRef.current;
     const entry = h.future.pop();
     if (!entry) return;
-    h.past.push({ notes: notesRef.current, dirty: dirtyRef.current });
+    const current = notesRef.current;
+    h.past.push({ notes: current, dirty: dirtyRef.current });
     setNotesByTrack(entry.notes);
-    setDirty(entry.dirty);
+    setDirty(new Set([...entry.dirty, ...lanesThatDiffer(current, entry.notes)]));
     setSelectedNote(null);
     setHistorySizes({ past: h.past.length, future: h.future.length });
   }
@@ -404,6 +437,42 @@ export function BeatMakerPage() {
       return { ...prev, [trackId]: notes };
     });
     setDirty((prev) => new Set(prev).add(trackId));
+  }
+
+  /**
+   * Wipe every note from some lanes.
+   *
+   * Note what this does NOT do: talk to the server. It empties local state and
+   * marks the lanes dirty, and the existing flush diffs them against the last
+   * server-confirmed pattern — which turns the wipe into one REMOVE op per note
+   * that was actually there. No new op type, no new endpoint, no new tests on
+   * the wire.
+   *
+   * And that is not merely convenient, it is more CORRECT than a "CLEAR_LANE"
+   * op would be. A clear op says "empty this lane", so it would also delete a
+   * note your collaborator added in the half-second before it arrived — a note
+   * you never saw and never meant to touch. Per-note removals say "delete the
+   * notes I could see", which is what you actually meant, and their note
+   * survives. Deltas keep being the right shape for concurrent editing.
+   *
+   * recordHistory() first, so Ctrl+Z brings it all back (and undo re-emits the
+   * notes as ADDs, so it un-clears for everyone else too).
+   */
+  function clearLanes(trackIds: string[]) {
+    if (!canEdit || trackIds.length === 0) return;
+    recordHistory();
+    setNotesByTrack((prev) => {
+      const next = { ...prev };
+      for (const id of trackIds) next[id] = [];
+      return next;
+    });
+    setDirty((prev) => {
+      const next = new Set(prev);
+      for (const id of trackIds) next.add(id);
+      return next;
+    });
+    setSelectedNote(null); // the selected note no longer exists
+    setClearing(null);
   }
 
   function preview(trackId: string, pitch: string, velocity = 0.9) {
@@ -1252,6 +1321,15 @@ export function BeatMakerPage() {
     else peerCells.set(key, [peer]);
   }
 
+  // What a clear would actually destroy. Counted across ALL octaves, not just
+  // the rows currently on screen — a "clear" that quietly spared the notes you
+  // had scrolled past would be the worst kind of surprise.
+  const laneNoteCount = selectedId ? (notesByTrack[selectedId] ?? []).length : 0;
+  const beatNoteCount = sortedLanes.reduce(
+    (total, lane) => total + (notesByTrack[lane.id] ?? []).length,
+    0,
+  );
+
   /** Where a collaborator is, in words. A peer with no beat is on the Arrange
    *  timeline (or hasn't touched a grid yet) — say so rather than guess. */
   function locationOf(peer: Peer): string {
@@ -1499,6 +1577,65 @@ export function BeatMakerPage() {
       />
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
+      {/* A confirm, even though Ctrl+Z would undo it. Undo protects YOU; it
+          does not protect the collaborator who is watching notes vanish out of
+          a beat they were working in, and who has no idea it was deliberate.
+          Destructive-and-shared earns one question. */}
+      {clearing && selectedBeat && (
+        <Modal
+          title={clearing === "lane" ? `Clear the ${selected?.name} lane?` : `Clear ${selectedBeat.name}?`}
+          onClose={() => setClearing(null)}
+        >
+          <p className="text-sm text-muted">
+            {clearing === "lane" ? (
+              <>
+                This deletes all <strong className="text-text">{laneNoteCount}</strong> note
+                {laneNoteCount === 1 ? "" : "s"} in{" "}
+                <strong className="text-text">{selected?.name}</strong>. Other lanes are untouched.
+              </>
+            ) : (
+              <>
+                This deletes all <strong className="text-text">{beatNoteCount}</strong> note
+                {beatNoteCount === 1 ? "" : "s"} across every lane in{" "}
+                <strong className="text-text">{selectedBeat.name}</strong>.
+              </>
+            )}{" "}
+            {Object.keys(peers).length > 0 && (
+              <>
+                <strong className="text-text">
+                  {Object.values(peers)
+                    .map((p) => p.displayName)
+                    .join(" and ")}
+                </strong>{" "}
+                {Object.keys(peers).length === 1 ? "is" : "are"} in this song right now and will see
+                it happen.{" "}
+              </>
+            )}
+            You can undo with Ctrl+Z.
+          </p>
+
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setClearing(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() =>
+                clearLanes(
+                  clearing === "lane"
+                    ? selectedId
+                      ? [selectedId]
+                      : []
+                    : sortedLanes.map((lane) => lane.id),
+                )
+              }
+            >
+              {clearing === "lane" ? "Clear lane" : "Clear beat"}
+            </Button>
+          </div>
+        </Modal>
+      )}
 
       <Workspace>
         {/* Folds while dragging a clip (the timeline needs the width) or
@@ -1793,6 +1930,32 @@ export function BeatMakerPage() {
                       title="Octave up"
                     >
                       +
+                    </IconButton>
+                  </ToolGroup>
+                )}
+
+                {/* Clearing. Two scopes, because "clear" is ambiguous the moment
+                    a beat has more than one lane and the roll only shows you
+                    one of them — a single button would wipe something the user
+                    couldn't see either way. Disabled when there is nothing to
+                    clear, so the button never lies about having work to do. */}
+                {selected && canEdit && (
+                  <ToolGroup>
+                    <IconButton
+                      tone="danger"
+                      disabled={laneNoteCount === 0}
+                      title={`Clear the ${selected.name} lane (${laneNoteCount} note${laneNoteCount === 1 ? "" : "s"})`}
+                      onClick={() => setClearing("lane")}
+                    >
+                      Clear lane
+                    </IconButton>
+                    <IconButton
+                      tone="danger"
+                      disabled={beatNoteCount === 0}
+                      title={`Clear every lane in ${selectedBeat.name} (${beatNoteCount} note${beatNoteCount === 1 ? "" : "s"})`}
+                      onClick={() => setClearing("beat")}
+                    >
+                      Clear beat
                     </IconButton>
                   </ToolGroup>
                 )}
