@@ -181,6 +181,24 @@ input[type="range"] {
   outline-offset: -2px;
 }
 
+/* A collaborator is hovering this step, in this lane.
+   --pcell is their hashed colour, so the ring here, the dot on the lane row and
+   the cursor up in the roll are all recognisably the same person.
+
+   The channel rack is the ONE view that can show everybody at once: it draws
+   every lane, so a peer's (lane, step) always maps to a cell in it — unlike the
+   piano roll, which can only render peers who happen to be on the lane you have
+   open. Ringing the cell rather than filling it keeps `.on` (a real note)
+   readable underneath; presence must never be mistakable for content. */
+.cell.peer {
+  box-shadow:
+    inset 0 0 0 2px var(--pcell),
+    0 0 6px color-mix(in srgb, var(--pcell) 70%, transparent);
+  /* Cursor frames arrive ~20/sec and the highlight hops cell to cell; a short
+     fade stops that from reading as a strobe. */
+  transition: box-shadow 90ms linear;
+}
+
 .seq-cells {
   display: flex;
   gap: 4px;

@@ -921,7 +921,37 @@ export function BeatMakerPage() {
       step: col,
       row,
     };
+    sendCursor();
+  }
 
+  /**
+   * The channel rack broadcasts a position too — otherwise your marker would
+   * sit frozen at wherever you last were in the roll while you are visibly
+   * working down here, which is a lie with a straight face.
+   *
+   * `row` keeps its previous value on purpose: the rack has no pitch axis, so
+   * there is nothing to say about it. The rack marker doesn't read row, and the
+   * roll cursor keeps pointing at the last pitch you actually touched.
+   */
+  function onRackCursorMove(e: React.MouseEvent, trackId: string) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const col = Math.max(
+      0,
+      Math.min(beatStepsRef.current - 1, Math.floor((e.clientX - rect.left) / CELL_W)),
+    );
+    cursorRef.current = {
+      ...cursorRef.current,
+      kind: "CURSOR",
+      beatId: selectedBeatIdRef.current,
+      trackId,
+      step: col,
+    };
+    sendCursor();
+  }
+
+  /** Throttle with a trailing edge, shared by every surface that can move a
+   *  cursor. See the comment below for why the trailing half is not optional. */
+  function sendCursor() {
     const now = Date.now();
     const since = now - lastCursorSentRef.current;
     if (since >= CURSOR_THROTTLE_MS) {
@@ -1206,6 +1236,21 @@ export function BeatMakerPage() {
   const sortedLanes = selectedBeat
     ? [...selectedBeat.tracks].sort((a, b) => a.position - b.position)
     : [];
+
+  /**
+   * "lane:step" → who is hovering it. Built once per render, so the rack can
+   * ask about a cell in O(1) instead of every cell re-scanning every peer —
+   * at 8 bars that would be 128 steps × lanes × peers comparisons per frame,
+   * on a component that re-renders ~20 times a second while a cursor moves.
+   */
+  const peerCells = new Map<string, Peer[]>();
+  for (const peer of Object.values(peers)) {
+    if (!peer.trackId) continue;
+    const key = `${peer.trackId}:${peer.step}`;
+    const at = peerCells.get(key);
+    if (at) at.push(peer);
+    else peerCells.set(key, [peer]);
+  }
 
   /** Where a collaborator is, in words. A peer with no beat is on the Arrange
    *  timeline (or hasn't touched a grid yet) — say so rather than guess. */
@@ -1954,22 +1999,47 @@ export function BeatMakerPage() {
                             </span>
                             <div
                               className="flex"
+                              onMouseMove={
+                                live ? (e) => onRackCursorMove(e, track.id) : undefined
+                              }
                               style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
                             >
-                              {Array.from({ length: beatSteps }, (_, s) => (
-                                <span
-                                  key={s}
-                                  className={[
-                                    "cell",
-                                    notes.some((n) => s >= n.step && s < n.step + n.length)
-                                      ? "on"
-                                      : "",
-                                    s === currentStep ? "playhead" : "",
-                                    s % 16 === 0 ? "bar" : s % 4 === 0 ? "beat" : "",
-                                  ].join(" ")}
-                                  style={{ width: CELL_W - 3, height: 16, marginRight: 3 }}
-                                />
-                              ))}
+                              {Array.from({ length: beatSteps }, (_, s) => {
+                                // Who is hovering THIS cell? The rack shows every
+                                // lane at once, so unlike the piano roll it can
+                                // point at a collaborator no matter which lane
+                                // they are on — this is the one view where
+                                // "where is everybody" is answerable in full.
+                                const here = peerCells.get(`${track.id}:${s}`);
+                                return (
+                                  <span
+                                    key={s}
+                                    title={
+                                      here && `${here.map((p) => p.displayName).join(", ")} here`
+                                    }
+                                    className={[
+                                      "cell",
+                                      notes.some((n) => s >= n.step && s < n.step + n.length)
+                                        ? "on"
+                                        : "",
+                                      s === currentStep ? "playhead" : "",
+                                      s % 16 === 0 ? "bar" : s % 4 === 0 ? "beat" : "",
+                                      here ? "peer" : "",
+                                    ].join(" ")}
+                                    style={
+                                      {
+                                        width: CELL_W - 3,
+                                        height: 16,
+                                        marginRight: 3,
+                                        // First one wins if two people share a
+                                        // cell — a blended colour would name
+                                        // neither of them.
+                                        ...(here ? { "--pcell": peerColor(here[0].userId) } : {}),
+                                      } as React.CSSProperties
+                                    }
+                                  />
+                                );
+                              })}
                             </div>
                           </div>
                         );
