@@ -16,6 +16,12 @@ export default defineConfig({
     proxy: {
       "/api": { target: backend, changeOrigin: true },
       "/graphql": { target: backend, changeOrigin: true },
+      // ws: true is the whole difference between a working socket and a
+      // baffling 400. Without it Vite proxies the HTTP request but not the
+      // Upgrade handshake, so the connection is answered as plain HTTP and
+      // never becomes a WebSocket. Same origin as everything else, so the
+      // CORS-free story above still holds.
+      "/ws": { target: backend, changeOrigin: true, ws: true },
     },
   },
 });

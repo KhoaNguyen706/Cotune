@@ -80,6 +80,20 @@ public class SecurityConfig {
                         // Reachable by anyone; per-operation auth via method
                         // security (see class comment).
                         .requestMatchers("/graphql").permitAll()
+
+                        // The WebSocket HANDSHAKE is open, and it has to be:
+                        // the browser's WebSocket API cannot send an
+                        // Authorization header, so there is no token to check
+                        // at this point. Authentication happens one frame
+                        // later, on STOMP CONNECT
+                        // (see StompAuthChannelInterceptor).
+                        //
+                        // "Open handshake" is only safe because an open socket
+                        // can do NOTHING until it authenticates: SUBSCRIBE and
+                        // SEND are both refused for a session with no user. If
+                        // you ever add a destination that skips that check,
+                        // this permitAll becomes a hole.
+                        .requestMatchers("/ws/**").permitAll()
                         // Dev-only IDE. Fine while local; gate or disable it
                         // before any public deployment (application.yml note).
                         .requestMatchers("/graphiql").permitAll()
@@ -163,7 +177,13 @@ public class SecurityConfig {
      * expects the "ROLE_" prefix. Skip this converter and every
      * hasRole check fails silently — deny-by-default hides miswiring.
      */
-    private JwtAuthenticationConverter jwtAuthenticationConverter() {
+    // A @Bean since session 16, not a private helper: the WebSocket layer
+    // authenticates its own CONNECT frames and must build Authentication
+    // objects EXACTLY the way the HTTP filter does. A second, hand-rolled
+    // converter over there would be a second place for the "roles" claim
+    // mapping to drift — and role checks fail silently when it does.
+    @Bean
+    JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter authoritiesConverter = new JwtGrantedAuthoritiesConverter();
         authoritiesConverter.setAuthoritiesClaimName("roles");
         authoritiesConverter.setAuthorityPrefix("ROLE_");

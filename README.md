@@ -1,6 +1,6 @@
 # Cotune
 
-Real-time collaborative music editor. Backend: Spring Boot (Java 21), PostgreSQL (local Docker or Supabase), GraphQL + REST auth. Frontend: React + Vite + TypeScript + Tone.js (`frontend/`) — sign in, open a song, and build a 16-step beat in the browser. Songs can be **shared** with other accounts as editors or viewers (V10); Redis pub/sub + WebSocket — so co-editors see each other's changes live rather than on refresh — arrive in later sessions.
+Real-time collaborative music editor. Backend: Spring Boot (Java 21), PostgreSQL (local Docker or Supabase), GraphQL + REST auth. Frontend: React + Vite + TypeScript + Tone.js (`frontend/`) — sign in, open a song, and build a 16-step beat in the browser. Songs can be **shared** with other accounts as editors or viewers (V10), and co-editors **build the same beat in real time** over a WebSocket (session 16). Redis pub/sub — which is what makes that survive more than one backend instance — arrives in a later session.
 
 **Beats are data, not audio**: a pattern is a JSONB array of `{step, pitch, velocity}` events on the track row (see `V4__add_track_pattern.sql` for the modeling rationale); the browser synthesizes all sound with Tone.js. Object storage (e.g. Supabase Storage) only becomes necessary for uploaded samples and exported audio — not for the sequencer.
 
@@ -101,6 +101,59 @@ touch them — adopt one with:
 UPDATE songs SET owner_id = (SELECT id FROM users WHERE email = 'you@example.com')
 WHERE owner_id IS NULL;
 ```
+
+## Real-time editing (session 16)
+
+Two people with edit access can build the same beat at the same time. Open a
+song in two browsers: notes appear on both grids as they're drawn, and a VIEWER
+watches without being able to touch anything. The editor's title bar shows a
+**live** badge when the socket is up.
+
+**The transport.** STOMP over a native WebSocket at `/ws`. The handshake is
+open, and it has to be — a browser's `WebSocket` constructor cannot set an
+`Authorization` header — so the JWT rides in the STOMP `CONNECT` frame and
+`StompAuthChannelInterceptor` authenticates it there. An unauthenticated socket
+can *open* and can do nothing: SUBSCRIBE is refused, and SEND is refused by
+`@PreAuthorize`. (The other common workaround, `?token=...` in the URL, writes
+the credential into access logs, proxy logs and browser history.)
+
+```
+client --SEND--> /app/songs/{id}/notes   (only this reaches our code)
+                     |  @PreAuthorize canEdit → merge → persist
+                     v
+       <--broadcast-- /topic/songs/{id}  (clients may only SUBSCRIBE; canView)
+```
+Clients can never publish straight to `/topic`, so every message on the wire has
+been authorized, validated, merged and persisted before anyone hears it.
+
+**Deltas, not blobs.** The wire carries `NOTE_ADD` / `NOTE_REMOVE` — *not* the
+whole lane. This is the difference between collaboration working and silently
+eating people's work: two editors each hold a snapshot from a moment ago, so if
+each sends its whole array, the second write erases the other's note simply
+because their array never contained it. A delta says what *changed*, so the
+server merges it into whatever the lane holds now — including edits it has never
+heard of. `TrackServiceImpl.applyNote` takes a `SELECT ... FOR UPDATE` on the
+lane and merges by `(step, pitch)`, which is a note's identity.
+
+This is **not** the event log that was deliberately cut earlier: nothing persists
+as events, the `pattern` column stays the single source of truth, and the ops
+exist only in flight. Both ops are idempotent (ADD upserts, REMOVE tolerates a
+missing note), so a client can safely re-send one it isn't sure landed.
+
+Nothing in the editor's mouse code changed. Edits still mark a lane dirty and
+flush on a 1s debounce; the flush now *diffs* the lane against the last
+server-confirmed state and sends the resulting ops. A note move falls out of that
+diff as a REMOVE plus an ADD, which is exactly how the server wants to hear it.
+When the socket is down the editor falls back to the whole-pattern GraphQL save,
+which still refuses (rather than clobbers) via `expectedVersion`.
+
+**Not built yet:** presence ("Bob is here", live cursors), and the broker is
+Spring's *simple* in-memory one — correct for a single instance, and precisely
+what breaks with two, since a note sent to instance A never reaches a subscriber
+on instance B. That is what Redis pub/sub is for, and the seam is
+`WebSocketConfig.configureMessageBroker`.
+
+## App-level roles
 
 The app-level ADMIN role is a *different axis* from the per-song roles above
 and does not override them: `hasRole('ADMIN')` says what kind of user you are,

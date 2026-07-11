@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import * as Tone from "tone";
+import { useAuth } from "../auth/AuthContext";
 import { useSettings } from "../ui/settings";
+import {
+  applyNoteEvent,
+  connectToSong,
+  diffNotes,
+  type NoteEvent,
+  type SongSocket,
+} from "../realtime/socket";
 import { ApiError, gql, rest } from "../api/client";
 import {
   arrangementEndSeconds,
@@ -119,9 +127,14 @@ function rowOf(pitch: string, octave: number): number | null {
 
 export function BeatMakerPage() {
   const { songId } = useParams<{ songId: string }>();
-  // No useAuth() here any more: the page used to need the current user's id
-  // to work out whether it could edit. It doesn't — the server sends myRole.
+  // We need our own id again — NOT to decide what we may do (the server sends
+  // myRole for that), but to recognise our own edits coming back on the
+  // broadcast. Different question, different answer.
+  const { user } = useAuth();
   const { autoSave } = useSettings();
+  /** Is the real-time channel actually up? Drives the badge, and decides
+   *  whether edits leave as deltas or as a whole-pattern HTTP save. */
+  const [live, setLive] = useState(false);
   const [song, setSong] = useState<Song | null>(null);
   // Two editors, one page: "arrange" is the song timeline (clips place
   // whole beats), "beats" is where you build each beat — pick Beat 1/2/3,
@@ -173,6 +186,12 @@ export function BeatMakerPage() {
   const beatsRef = useRef<Beat[]>([]);
   // Last-known @Version per lane, sent back as expectedVersion on save.
   const trackVersionsRef = useRef<Map<string, number>>(new Map());
+  // The server's confirmed picture of every lane. Diffing local state against
+  // THIS (rather than against the last thing we sent) is what lets a remote
+  // edit and a local edit coexist: their note is already in the baseline, so we
+  // never emit an op that would undo it.
+  const serverNotesRef = useRef<Record<string, Step[]>>({});
+  const socketRef = useRef<SongSocket | null>(null);
   // Steps in the SELECTED beat's grid (bars × 16). A ref because the
   // once-attached drag handlers must clamp against the current value.
   const beatStepsRef = useRef(STEPS);
@@ -211,6 +230,11 @@ export function BeatMakerPage() {
         }
       }
       setNotesByTrack(next);
+      // The baseline every outgoing delta is computed against: what the SERVER
+      // last confirmed each lane holds. Kept up to date by the broadcast
+      // handler, so it tracks other people's edits too — which is what makes
+      // our diff produce only OUR changes and not a re-send of theirs.
+      serverNotesRef.current = { ...next };
       // Server truth replaces local state — stale undo targets with it.
       historyRef.current = { past: [], future: [] };
       setHistorySizes({ past: 0, future: 0 });
@@ -673,21 +697,114 @@ export function BeatMakerPage() {
   const canEdit = song != null && canEditSong(song);
   const readOnly = song != null && !canEdit;
 
+  // ---- real-time channel -------------------------------------------------
+
+  /**
+   * Somebody (possibly us) changed a note.
+   *
+   * The two lines below look almost identical and are doing completely
+   * different jobs:
+   *
+   *   serverNotesRef — ALWAYS updated. It is our picture of the server, and the
+   *     server just told us what it holds. Skipping our own echo here would
+   *     leave the baseline stale, and the next diff would re-send an op we
+   *     already landed.
+   *
+   *   notesByTrack (the rendered grid) — updated only for OTHER people's ops.
+   *     Ours is already on screen; re-applying our own echo would resurrect a
+   *     stale note. Concretely: add a note, drag it one step right, and then
+   *     your own ADD (for the ORIGINAL position, sent before the drag) arrives
+   *     — apply it and you now have two notes, one of which you deliberately
+   *     moved away from. Silent, and maddening to debug.
+   */
+  const onNoteEvent = useCallback(
+    (event: NoteEvent) => {
+      trackVersionsRef.current.set(event.trackId, event.version);
+      serverNotesRef.current = {
+        ...serverNotesRef.current,
+        [event.trackId]: applyNoteEvent(serverNotesRef.current[event.trackId] ?? [], event),
+      };
+
+      if (event.actorId === user?.id) return; // our own echo: version only
+
+      setNotesByTrack((prev) => ({
+        ...prev,
+        [event.trackId]: applyNoteEvent(prev[event.trackId] ?? [], event),
+      }));
+    },
+    [user?.id],
+  );
+
+  useEffect(() => {
+    if (!songId || !song) return; // wait for the load, so the baseline exists
+    const socket = connectToSong(songId, {
+      onNote: onNoteEvent,
+      onError: (message) => setError(message),
+      onStatus: setLive,
+    });
+    socketRef.current = socket;
+    return () => {
+      socket.close();
+      socketRef.current = null;
+      setLive(false);
+    };
+    // song?.id, not `song`: the object identity changes on every reload (a
+    // rename, a new lane), and reconnecting the socket each time would drop
+    // and re-establish the subscription for no reason.
+  }, [songId, song?.id, onNoteEvent]);
+
   // ---- auto-save ---------------------------------------------------------
   // Debounced: fires a second after you STOP editing, not on every note.
   // The timer is keyed on `dirty` — each new edit replaces the pending
   // save, so a fast run of edits produces exactly one request at the end.
   const saveRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
-    if (!autoSave || readOnly || dirty.size === 0 || saving) return;
+    // `|| live`: while the real-time channel is up we ALWAYS flush on the
+    // debounce, even for someone who turned auto-save off. Auto-save is a
+    // preference about when your work is written to disk; it is not a
+    // preference about whether your collaborators can see what you are doing.
+    // Honouring it here would leave the other person staring at a stale grid
+    // and calling it a bug.
+    if (!(autoSave || live) || readOnly || dirty.size === 0 || saving) return;
     const timer = setTimeout(() => void saveRef.current(), 1000);
     return () => clearTimeout(timer);
-  }, [autoSave, readOnly, dirty, saving]);
+  }, [autoSave, live, readOnly, dirty, saving]);
 
   async function save() {
     // Belt and braces: even with the UI gated, never fire a write the
     // server is guaranteed to reject.
     if (readOnly) return;
+
+    // THE REAL-TIME PATH. Send what CHANGED, not what we hold.
+    //
+    // The whole-pattern save below is the same operation expressed as "here is
+    // my entire lane" — and that phrasing is what makes concurrent editing
+    // impossible, because our array cannot describe a note we have never heard
+    // of, so writing it deletes theirs. The diff says only "add C3 at 4", which
+    // the server merges into whatever the lane holds by now, including edits
+    // that landed while we were dragging.
+    //
+    // Note there is no await and no dirty-lane loop over the network: ops are
+    // fire-and-forget. Their acknowledgement is the broadcast coming back,
+    // which updates serverNotesRef — and if one never arrives, the next diff
+    // simply re-derives it. Re-sending is safe because every op is idempotent.
+    const socket = socketRef.current;
+    if (socket?.connected()) {
+      for (const trackId of dirty) {
+        const before = serverNotesRef.current[trackId] ?? [];
+        const after = notesRef.current[trackId] ?? [];
+        for (const op of diffNotes(trackId, before, after)) {
+          socket.send(op);
+        }
+      }
+      setDirty(new Set());
+      return;
+    }
+
+    // FALLBACK: socket down (backend restart, flaky wifi, a tab left open
+    // overnight). Fall back to the HTTP whole-pattern save, which still has
+    // expectedVersion to stop us silently overwriting somebody. Degraded, but
+    // honest: it refuses rather than clobbers.
     setSaving(true);
     setError(null);
     try {
@@ -703,12 +820,19 @@ export function BeatMakerPage() {
           { id: trackId, pattern, expectedVersion: trackVersionsRef.current.get(trackId) ?? null },
         );
         trackVersionsRef.current.set(trackId, data.updateTrackPattern.version);
+        // The server now holds exactly what we sent, so the delta baseline must
+        // say so too — otherwise, when the socket comes back, the next diff
+        // would re-emit every note in this lane as a fresh ADD.
+        serverNotesRef.current = {
+          ...serverNotesRef.current,
+          [trackId]: notesRef.current[trackId] ?? [],
+        };
       }
       setDirty(new Set());
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        // Conservative conflict resolution for now: reload the server's
-        // truth. Merging concurrent edits is the collaboration phase.
+        // Someone edited this lane while our socket was down. Reload rather
+        // than overwrite — the delta path merges, but this fallback cannot.
         setError(`${e.message} — reloaded the latest version`);
         await load();
         setDirty(new Set());
@@ -924,7 +1048,7 @@ export function BeatMakerPage() {
               ☰
             </IconButton>
             <span className="min-w-0">
-              <h1 className="truncate text-base font-bold leading-tight tracking-tight">
+              <h1 className="flex items-center gap-2 truncate text-base font-bold leading-tight tracking-tight">
                 {canEdit ? (
                   <EditableName
                     value={song.title}
@@ -934,16 +1058,41 @@ export function BeatMakerPage() {
                 ) : (
                   song.title
                 )}
+                {/* Honest about the socket. When this is dark, edits are still
+                    saved (the HTTP fallback) but nobody else sees them arrive —
+                    which is a thing the user genuinely needs to know, so it is
+                    not hidden behind a settings panel. */}
+                <span
+                  title={
+                    live
+                      ? "Live — collaborators see your edits as you make them"
+                      : "Offline — edits are saved, but not shared live"
+                  }
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[0.55rem] font-bold uppercase tracking-wider ${
+                    live
+                      ? "border-accent/40 bg-accent/10 text-accent"
+                      : "border-edge bg-surface-2 text-muted"
+                  }`}
+                >
+                  <i
+                    className={`h-1.5 w-1.5 rounded-full ${live ? "bg-accent" : "bg-muted"}`}
+                    aria-hidden
+                  />
+                  {live ? "live" : "offline"}
+                </span>
               </h1>
               {/* Save state lives WITH the title — it's a property of this
                   document, not a button you press. */}
               <span className="text-[0.68rem] text-muted">
                 {readOnly
-                  ? "Read-only — you don't own this song"
+                  ? // NOT "you don't own this song" any more: an EDITOR doesn't
+                    // own it either, and can edit it perfectly well. The thing
+                    // that stops you is the ROLE, so say that.
+                    "Read-only — you were invited to view this song"
                   : saving
                     ? "Saving…"
                     : dirty.size > 0
-                      ? autoSave
+                      ? autoSave || live
                         ? `${dirty.size} unsaved · saving shortly`
                         : `${dirty.size} unsaved`
                       : "All changes saved"}

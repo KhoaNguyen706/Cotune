@@ -5,13 +5,17 @@ import com.cotune.beat.BeatRepository;
 import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.common.exception.StaleVersionException;
 import com.cotune.track.dto.AddTrackInput;
+import com.cotune.track.dto.NoteApplied;
+import com.cotune.track.dto.NoteOp;
 import com.cotune.track.dto.StepInput;
 import com.cotune.track.dto.TrackDto;
 import com.cotune.track.dto.UpdateTrackInput;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -77,6 +81,51 @@ public class TrackServiceImpl implements TrackService {
         track.rename(name);
         trackRepository.flush();
         return trackMapper.toDto(track);
+    }
+
+    @Override
+    public NoteApplied applyNote(UUID songId, UUID trackId, NoteOp op) {
+        // AUTHORIZATION DEPENDS ON THIS LINE. The caller proved they may edit
+        // `songId` (@PreAuthorize on the message handler), but trackId came
+        // from the message body — an attacker with an editor seat on their own
+        // throwaway song could otherwise name any lane in the database here and
+        // have us happily write to it. Confusing "the id I checked" with "the
+        // id I acted on" is one of the most common authorization bugs there is.
+        UUID owningSong = trackRepository.findSongIdById(trackId)
+                .orElseThrow(() -> ResourceNotFoundException.track(trackId));
+        if (!owningSong.equals(songId)) {
+            throw new AccessDeniedException("Track " + trackId + " does not belong to song " + songId);
+        }
+
+        // FOR UPDATE: this is a read-modify-write, and two collaborators
+        // hitting the same lane at the same instant would otherwise each read
+        // the pre-change pattern and each write it back with only their own
+        // note — the exact silent overwrite that deltas exist to prevent. The
+        // lock makes the pair serial, so both notes land.
+        Track track = trackRepository.findByIdForUpdate(trackId)
+                .orElseThrow(() -> ResourceNotFoundException.track(trackId));
+
+        // Merge by IDENTITY, which for a note is (step, pitch) — the same key
+        // Track.replacePattern refuses duplicates on. Removing that key first
+        // makes ADD an upsert and makes both ops idempotent: re-applying either
+        // one leaves the lane exactly as it was, so a client that retries an op
+        // it wasn't sure landed cannot corrupt anything.
+        List<Step> merged = new ArrayList<>(track.getPattern());
+        merged.removeIf(note -> note.step() == op.step() && note.pitch().equals(op.pitch()));
+        if (op.type() == NoteOpType.ADD) {
+            // Step's constructor re-validates pitch/velocity/length, and
+            // replacePattern re-checks the note fits the beat's bar count.
+            // A hostile op cannot write a note the REST/GraphQL path would
+            // have rejected — the domain rules sit BELOW the transport, so
+            // adding a new transport cannot bypass them.
+            merged.add(new Step(op.step(), op.pitch(), op.velocity(), op.length()));
+        }
+        track.replacePattern(merged);
+
+        // Flush inside the lock so the version we broadcast is the version that
+        // is actually committed, not one the next op will invalidate.
+        trackRepository.flush();
+        return new NoteApplied(trackId, track.getVersion());
     }
 
     @Override

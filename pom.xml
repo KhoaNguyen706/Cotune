@@ -49,6 +49,22 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+        <!-- Real-time editing (session 16). WebSocket gives us a bidirectional
+             pipe; STOMP gives that pipe a grammar — destinations, SUBSCRIBE,
+             SEND — so we don't invent a message router by hand. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <!-- NOT pulled in by starter-security. It carries
+             SecurityContextChannelInterceptor, which copies the STOMP session's
+             authenticated user into the SecurityContextHolder of the thread
+             that handles the message — without it, @PreAuthorize on a
+             @MessageMapping sees an anonymous user and denies everything. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-messaging</artifactId>
+        </dependency>
         <!-- JWT support (Nimbus JOSE under the hood). "Resource server" is
              Spring's name for "an API that accepts bearer tokens". We use it
              even though we ISSUE our own tokens too — the starter gives us
