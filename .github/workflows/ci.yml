@@ -22,8 +22,12 @@ jobs:
           # once per pom change, not once per push.
           cache: maven
       # -B (batch) silences the interactive progress spam that makes CI
-      # logs unreadable. These are the same unit tests you run locally —
-      # no database needed, by design (mocked edges).
+      # logs unreadable. Since Session 12 this runs BOTH layers: the mocked
+      # unit tests AND the Testcontainers integration tests — ubuntu
+      # runners ship a Docker daemon, so the throwaway Postgres just works
+      # here, no service-container config needed. The suite in CI is
+      # byte-identical to `./mvnw test` locally; if it's green here it's
+      # green there, which is the whole point.
       - run: ./mvnw -B test
 
   frontend-build:

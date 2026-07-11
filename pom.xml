@@ -124,6 +124,36 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Integration tests boot the REAL stack against a REAL Postgres in
+             a throwaway container (Testcontainers): Flyway migrations, JSONB,
+             the security filter chain and both transports get exercised as
+             deployed — H2 would silently fake the first two. Versions come
+             from Boot's BOM. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- HttpGraphQlTester drives /graphql over real HTTP via
+             WebTestClient, which lives in the webflux module. Test scope
+             only: the application itself stays a plain servlet (MVC) app —
+             this is a test CLIENT, not a reactive server. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webflux</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
