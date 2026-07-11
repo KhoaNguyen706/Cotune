@@ -2,6 +2,7 @@ package com.cotune.realtime;
 
 import com.cotune.auth.dto.AuthPayload;
 import com.cotune.realtime.dto.NoteEvent;
+import com.cotune.realtime.dto.PresenceEvent;
 import com.cotune.realtime.dto.RealtimeError;
 import com.cotune.testsupport.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
@@ -293,6 +294,83 @@ class RealtimeStompIntegrationTest extends AbstractIntegrationTest {
 
         graphQl(victim.token()).document(SONG_PATTERN).variable("id", victimSong).execute()
                 .path("song.beats[0].tracks[0].pattern").entityList(Object.class).hasSize(0);
+    }
+
+    // ---- presence -----------------------------------------------------------
+
+    @Test
+    void presenceIsRelayedWithTheIdentityTakenFromTheTokenNotThePayload() throws Exception {
+        AuthPayload alice = registerFreshUser();
+        AuthPayload bob = registerFreshUser();
+        UUID songId = createSong(alice, "Who Is Here");
+        UUID trackId = addLane(alice, songId);
+        share(alice, songId, bob, "VIEWER"); // a VIEWER is in the room too
+
+        StompSession aliceSession = connect(alice.token());
+        BlockingQueue<PresenceEvent> seenByAlice = new ArrayBlockingQueue<>(16);
+        aliceSession.subscribe("/topic/songs/" + songId + "/presence", new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return PresenceEvent.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                seenByAlice.add((PresenceEvent) payload);
+            }
+        });
+
+        StompSession bobSession = connect(bob.token());
+        bobSession.send("/app/songs/" + songId + "/presence", Map.of(
+                "kind", "CURSOR",
+                "beatId", UUID.randomUUID().toString(),
+                "trackId", trackId.toString(),
+                "step", 7,
+                "row", 3));
+
+        PresenceEvent event = seenByAlice.poll(5, TimeUnit.SECONDS);
+        assertThat(event).as("Alice should be told where Bob's cursor is").isNotNull();
+        assertThat(event.step()).isEqualTo(7);
+        assertThat(event.row()).isEqualTo(3);
+
+        // THE ASSERTION THAT MATTERS. Bob's message carried no identity at all —
+        // the server filled it in from his signed token. If identity were
+        // accepted from the payload, anyone could paint a cursor labelled
+        // "Alice" onto her collaborators' screens.
+        assertThat(event.userId()).isEqualTo(bob.user().id());
+        assertThat(event.displayName()).isEqualTo("Integration Tester");
+    }
+
+    @Test
+    void aStrangerCannotWatchWhereTheEditorsCursorIs() throws Exception {
+        AuthPayload alice = registerFreshUser();
+        AuthPayload stranger = registerFreshUser();
+        UUID songId = createSong(alice, "Private Room");
+
+        StompSession session = connect(stranger.token());
+        BlockingQueue<PresenceEvent> received = new ArrayBlockingQueue<>(4);
+        session.subscribe("/topic/songs/" + songId + "/presence", new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return PresenceEvent.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                received.add((PresenceEvent) payload);
+            }
+        });
+
+        // The presence topic is a SEPARATE destination from the edit topic, so
+        // it needs its own place in the SUBSCRIBE rule — and a sub-topic that
+        // someone forgot to add to the pattern is exactly how a "secure" socket
+        // springs a leak. canView guards both.
+        StompSession aliceSession = connect(alice.token());
+        aliceSession.send("/app/songs/" + songId + "/presence",
+                Map.of("kind", "CURSOR", "step", 1, "row", 1));
+
+        assertThat(received.poll(1, TimeUnit.SECONDS))
+                .as("a stranger must not be told where the editors are working").isNull();
     }
 
     // ---- helpers ------------------------------------------------------------

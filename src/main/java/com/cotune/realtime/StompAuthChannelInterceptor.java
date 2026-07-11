@@ -47,9 +47,18 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
-    /** The only topic clients may listen to, and it is per-song. */
+    /**
+     * The only topics clients may listen to, and both are per-song: the edits
+     * themselves, and (optionally) who is in the room.
+     *
+     * The regex is anchored and the id group is fixed-width ON PURPOSE. A
+     * loose prefix match like destination.startsWith("/topic/songs/") would
+     * authorize "/topic/songs/../../everything" and any other destination that
+     * merely begins with the right letters — the check must parse the id it is
+     * going to authorize, not squint at the string.
+     */
     private static final Pattern SONG_TOPIC =
-            Pattern.compile("^/topic/songs/([0-9a-fA-F-]{36})$");
+            Pattern.compile("^/topic/songs/([0-9a-fA-F-]{36})(/presence)?$");
 
     private final JwtDecoder jwtDecoder;
     // The SAME converter the HTTP filter chain uses (a @Bean since session 16).

@@ -253,6 +253,82 @@ input[type="range"] {
 }
 
 /* ==========================================================================
+   Presence — seeing your collaborators work.
+
+   The point of all of it: a note that silently materialises tells you the
+   data changed; a cursor gliding toward a cell and a note that FLASHES where
+   it lands tells you a PERSON is working, and where. The first is a sync
+   protocol, the second is company.
+   ========================================================================== */
+
+/* A collaborator's cursor. --pc is their colour, hashed from their user id
+   (see peerColor) so Bob is the same green on everyone's screen. */
+.peer-cursor {
+  position: absolute;
+  width: 34px; /* CELL_W — the cell they're hovering */
+  height: 26px; /* CELL_H */
+  border: 2px solid var(--pc);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--pc) 18%, transparent);
+  /* Cursor updates arrive ~20/sec, i.e. one every 50ms. Interpolating between
+     them is what turns a row of discrete jumps into a glide — without this the
+     dot stutters across the grid and reads as lag rather than as a person.
+     Slightly longer than the send interval so frames overlap instead of
+     landing and stopping. */
+  transition:
+    left 90ms linear,
+    top 90ms linear;
+  pointer-events: none; /* never steal a click from the grid underneath */
+  z-index: 5;
+}
+
+.peer-label {
+  position: absolute;
+  bottom: 100%;
+  left: -2px;
+  margin-bottom: 3px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--pc);
+  color: #0b0b12;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* A note that somebody ELSE just placed. One pulse, then it settles into being
+   an ordinary note — a permanent highlight would just become visual noise. */
+.note.landed {
+  animation: note-landed 600ms ease-out;
+}
+
+@keyframes note-landed {
+  0% {
+    transform: scale(1.35);
+    filter: brightness(2);
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.55);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 0.55);
+  }
+}
+
+/* Honour a user's stated preference to not be moved at: keep the colour and the
+   position, drop the motion. Accessibility, but also just correct — the
+   information is the WHERE, not the animation. */
+@media (prefers-reduced-motion: reduce) {
+  .peer-cursor {
+    transition: none;
+  }
+  .note.landed {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
    Arrangement timeline — same deal as the sequencer: geometry comes from
    JS constants (STEP_W/BAR_W/LANE_H in ArrangementPanel), colors from
    tokens, per-clip tint via --tc. The bar/lane grid is painted with two

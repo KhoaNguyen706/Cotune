@@ -52,6 +52,16 @@ public class JwtService {
                 // demotion!) only takes effect when the user gets a new
                 // token — another reason to keep the TTL short.
                 .claim("roles", List.of(user.getRole().name()))
+                // Who you are, in a form a human can read. Presence needs to
+                // label a cursor "Bob" — and the ONE thing it must never do is
+                // ask the client for that name, because then anyone could
+                // relabel their cursor "Alice" and edit as her. Identity comes
+                // from the signed token or it isn't identity.
+                //
+                // Safe to put here: a display name is not a secret. A JWT is
+                // signed, not encrypted — anyone holding it can read every
+                // claim, so nothing private may ever go in one.
+                .claim("name", user.getDisplayName())
                 .build();
 
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();

@@ -7,7 +7,13 @@ import {
   applyNoteEvent,
   connectToSong,
   diffNotes,
+  peerColor,
+  HEARTBEAT_MS,
+  PEER_TIMEOUT_MS,
   type NoteEvent,
+  type Peer,
+  type PresenceEvent,
+  type PresenceInput,
   type SongSocket,
 } from "../realtime/socket";
 import { ApiError, gql, rest } from "../api/client";
@@ -51,6 +57,10 @@ const PITCH_ROWS = ["B", "A#", "A", "G#", "G", "F#", "F", "E", "D#", "D", "C#", 
 // instead of duplicating numbers in CSS.
 const CELL_W = 34;
 const CELL_H = 26;
+/** ~20 cursor frames a second while the mouse moves. Fast enough that the CSS
+ *  transition has something to interpolate between; slow enough that a mouse
+ *  sweep isn't a flood. */
+const CURSOR_THROTTLE_MS = 50;
 
 const SONG_QUERY = `
   query Song($id: ID!) {
@@ -135,6 +145,12 @@ export function BeatMakerPage() {
   /** Is the real-time channel actually up? Drives the badge, and decides
    *  whether edits leave as deltas or as a whole-pattern HTTP save. */
   const [live, setLive] = useState(false);
+  /** Everyone else in this song right now, keyed by user id. Built entirely
+   *  from the presence stream — the server keeps no such list. */
+  const [peers, setPeers] = useState<Record<string, Peer>>({});
+  /** Notes that just arrived from someone else, for the landing flash. Keyed
+   *  "trackId:step:pitch" so a note is only ever flashing once. */
+  const [flashing, setFlashing] = useState<Set<string>>(new Set());
   const [song, setSong] = useState<Song | null>(null);
   // Two editors, one page: "arrange" is the song timeline (clips place
   // whole beats), "beats" is where you build each beat — pick Beat 1/2/3,
@@ -192,6 +208,18 @@ export function BeatMakerPage() {
   // never emit an op that would undo it.
   const serverNotesRef = useRef<Record<string, Step[]>>({});
   const socketRef = useRef<SongSocket | null>(null);
+  // Our own last cursor position. A ref, because the heartbeat interval is
+  // created once and would otherwise re-send whatever position was current when
+  // it was created, forever.
+  const cursorRef = useRef<PresenceInput>({
+    kind: "CURSOR",
+    beatId: null,
+    trackId: null,
+    step: 0,
+    row: 0,
+  });
+  const lastCursorSentRef = useRef(0);
+  const cursorTimerRef = useRef<number | null>(null);
   // Steps in the SELECTED beat's grid (bars × 16). A ref because the
   // once-attached drag handlers must clamp against the current value.
   const beatStepsRef = useRef(STEPS);
@@ -731,6 +759,54 @@ export function BeatMakerPage() {
         ...prev,
         [event.trackId]: applyNoteEvent(prev[event.trackId] ?? [], event),
       }));
+
+      // Flash the note somebody else just placed. Without it, notes silently
+      // materialise and you cannot tell what changed — the whole value of
+      // watching a collaborator work is seeing WHERE they are working.
+      if (event.type === "ADD") {
+        const key = `${event.trackId}:${event.step}:${event.pitch}`;
+        setFlashing((prev) => new Set(prev).add(key));
+        window.setTimeout(
+          () =>
+            setFlashing((prev) => {
+              const next = new Set(prev);
+              next.delete(key);
+              return next;
+            }),
+          700, // must outlast the CSS animation, or it restarts mid-flash
+        );
+      }
+    },
+    [user?.id],
+  );
+
+  /**
+   * Somebody told us where they are.
+   *
+   * HELLO gets answered with our own position, so a newcomer sees the room the
+   * instant they arrive instead of waiting up to a heartbeat for everyone to
+   * speak. We answer with a CURSOR, never a HELLO — replying to a HELLO with a
+   * HELLO is an infinite greeting loop, and with three people in a song it
+   * would be a broadcast storm.
+   */
+  const onPresence = useCallback(
+    (event: PresenceEvent) => {
+      if (event.userId === user?.id) return; // our own echo
+
+      if (event.kind === "BYE") {
+        setPeers((prev) => {
+          const next = { ...prev };
+          delete next[event.userId];
+          return next;
+        });
+        return;
+      }
+
+      setPeers((prev) => ({ ...prev, [event.userId]: { ...event, lastSeen: Date.now() } }));
+
+      if (event.kind === "HELLO") {
+        socketRef.current?.sendPresence({ ...cursorRef.current, kind: "CURSOR" });
+      }
     },
     [user?.id],
   );
@@ -739,19 +815,101 @@ export function BeatMakerPage() {
     if (!songId || !song) return; // wait for the load, so the baseline exists
     const socket = connectToSong(songId, {
       onNote: onNoteEvent,
+      onPresence,
       onError: (message) => setError(message),
-      onStatus: setLive,
+      onStatus: (connected) => {
+        setLive(connected);
+        if (connected) socket.sendPresence({ ...cursorRef.current, kind: "HELLO" });
+        else setPeers({}); // socket died: we know nothing about anyone
+      },
     });
     socketRef.current = socket;
+
+    // The heartbeat. Presence is the ONE thing here that must keep speaking
+    // while nothing happens — a peer who has stopped moving their mouse is
+    // still in the room, and silence is how we decide someone left.
+    const heartbeat = setInterval(
+      () => socket.sendPresence({ ...cursorRef.current, kind: "CURSOR" }),
+      HEARTBEAT_MS,
+    );
+
+    // ...and the other half of that deal: expire anyone who has gone quiet. A
+    // crashed tab, a closed laptop and a dead network never send BYE, so a list
+    // that only removed people on BYE would fill up with ghosts.
+    const reaper = setInterval(() => {
+      const cutoff = Date.now() - PEER_TIMEOUT_MS;
+      setPeers((prev) => {
+        const alive = Object.fromEntries(
+          Object.entries(prev).filter(([, peer]) => peer.lastSeen > cutoff),
+        );
+        // Same object when nothing expired — a fresh one every second would
+        // re-render the whole grid twice a second for no reason.
+        return Object.keys(alive).length === Object.keys(prev).length ? prev : alive;
+      });
+    }, 2000);
+
     return () => {
+      clearInterval(heartbeat);
+      clearInterval(reaper);
+      if (cursorTimerRef.current !== null) {
+        clearTimeout(cursorTimerRef.current); // a pending cursor frame on a dead socket
+        cursorTimerRef.current = null;
+      }
+      socket.sendPresence({ ...cursorRef.current, kind: "BYE" }); // a courtesy, not a guarantee
       socket.close();
       socketRef.current = null;
       setLive(false);
+      setPeers({});
     };
     // song?.id, not `song`: the object identity changes on every reload (a
     // rename, a new lane), and reconnecting the socket each time would drop
     // and re-establish the subscription for no reason.
-  }, [songId, song?.id, onNoteEvent]);
+  }, [songId, song?.id, onNoteEvent, onPresence]);
+
+  /**
+   * Broadcast our cursor as it moves over the grid.
+   *
+   * Throttled, not debounced, and the difference matters: a debounce would send
+   * nothing at all until you STOPPED moving, so your cursor would teleport
+   * between rests instead of gliding. A throttle sends a steady ~20/sec while
+   * you move, which is what makes the remote dot look alive. The frames are
+   * tiny and nothing persists them, so the only real cost is bandwidth.
+   */
+  function onRollCursorMove(e: React.MouseEvent) {
+    if (!rollRef.current || !selectedId) return;
+    const rect = rollRef.current.getBoundingClientRect();
+    const { col, row } = cellFromEvent(e, rect);
+    cursorRef.current = {
+      kind: "CURSOR",
+      beatId: selectedBeatIdRef.current,
+      trackId: selectedId,
+      step: col,
+      row,
+    };
+
+    const now = Date.now();
+    const since = now - lastCursorSentRef.current;
+    if (since >= CURSOR_THROTTLE_MS) {
+      lastCursorSentRef.current = now;
+      socketRef.current?.sendPresence(cursorRef.current);
+      return;
+    }
+
+    // THE TRAILING EDGE, and it is not an optimisation — without it the throttle
+    // silently drops your FINAL position. Flick the mouse to a new cell and stop
+    // inside the throttle window and that last move is discarded; no further
+    // mousemove ever fires, because the mouse is now still. Your cursor then
+    // sits frozen at a stale cell on your collaborator's screen until the next
+    // heartbeat drags it over, three seconds later. The bug looks like lag and
+    // is actually a lost event.
+    if (cursorTimerRef.current === null) {
+      cursorTimerRef.current = window.setTimeout(() => {
+        cursorTimerRef.current = null;
+        lastCursorSentRef.current = Date.now();
+        socketRef.current?.sendPresence(cursorRef.current);
+      }, CURSOR_THROTTLE_MS - since);
+    }
+  }
 
   // ---- auto-save ---------------------------------------------------------
   // Debounced: fires a second after you STOP editing, not on every note.
@@ -766,7 +924,19 @@ export function BeatMakerPage() {
     // Honouring it here would leave the other person staring at a stale grid
     // and calling it a bug.
     if (!(autoSave || live) || readOnly || dirty.size === 0 || saving) return;
-    const timer = setTimeout(() => void saveRef.current(), 1000);
+
+    // TWO DEBOUNCES, because they are paying for completely different things.
+    //
+    // The 1s one exists to coalesce a burst of edits into a single HTTP save —
+    // the cost it is hiding is a round trip per note. Reusing it for the socket
+    // (which is what shipped first) put a full second of latency between your
+    // note and your collaborator seeing it, and made "real-time" feel broken.
+    //
+    // On the socket the cost being hidden is tiny — one small frame down an
+    // already-open pipe — so the delay only needs to be long enough to swallow
+    // the intermediate states of a drag, not long enough to be felt. 90ms is
+    // below the ~100ms threshold where a change stops reading as instant.
+    const timer = setTimeout(() => void saveRef.current(), live ? 90 : 1000);
     return () => clearTimeout(timer);
   }, [autoSave, live, readOnly, dirty, saving]);
 
@@ -1080,6 +1250,20 @@ export function BeatMakerPage() {
                   />
                   {live ? "live" : "offline"}
                 </span>
+
+                {/* Who else is in here. Same colour as their cursor down in the
+                    grid, so the dot beside a note and the face up here are
+                    obviously the same person. */}
+                {Object.values(peers).map((peer) => (
+                  <span
+                    key={peer.userId}
+                    title={`${peer.displayName} is here`}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.6rem] font-bold text-bg ring-2 ring-bg"
+                    style={{ background: peerColor(peer.userId) }}
+                  >
+                    {peer.displayName[0]?.toUpperCase() ?? "?"}
+                  </span>
+                ))}
               </h1>
               {/* Save state lives WITH the title — it's a property of this
                   document, not a button you press. */}
@@ -1591,6 +1775,10 @@ export function BeatMakerPage() {
                         className="roll"
                         ref={rollRef}
                         onMouseDown={canEdit ? onRollMouseDown : undefined}
+                        // Presence is NOT gated on canEdit: a viewer looking
+                        // over your shoulder is exactly who you want to see the
+                        // cursor of. Watching is not writing.
+                        onMouseMove={live ? onRollCursorMove : undefined}
                         style={{ width: beatSteps * CELL_W, height: PITCH_ROWS.length * CELL_H }}
                       >
                         {PITCH_ROWS.map((p, row) =>
@@ -1612,13 +1800,41 @@ export function BeatMakerPage() {
                             />
                           )),
                         )}
+                        {/* Other people's cursors, drawn INSIDE the roll so
+                            they share its coordinate system — the same
+                            col*CELL_W the notes use. Only peers looking at THIS
+                            beat and THIS lane appear; a cursor from a lane you
+                            can't see would be a dot floating over unrelated
+                            notes, which is worse than nothing. */}
+                        {Object.values(peers)
+                          .filter(
+                            (peer) =>
+                              peer.trackId === selected.id && peer.beatId === selectedBeatId,
+                          )
+                          .map((peer) => (
+                            <div
+                              key={peer.userId}
+                              className="peer-cursor"
+                              style={
+                                {
+                                  left: peer.step * CELL_W,
+                                  top: peer.row * CELL_H,
+                                  "--pc": peerColor(peer.userId),
+                                } as React.CSSProperties
+                              }
+                            >
+                              <span className="peer-label">{peer.displayName}</span>
+                            </div>
+                          ))}
+
                         {selectedNotes.map((note, index) => {
                           const row = rowOf(note.pitch, octave);
                           if (row === null) return null;
+                          const remote = flashing.has(`${selected.id}:${note.step}:${note.pitch}`);
                           return (
                             <div
                               key={index}
-                              className={`note ${index === selectedNote ? "selected" : ""}`}
+                              className={`note ${index === selectedNote ? "selected" : ""} ${remote ? "landed" : ""}`}
                               style={
                                 {
                                   left: note.step * CELL_W + 1,

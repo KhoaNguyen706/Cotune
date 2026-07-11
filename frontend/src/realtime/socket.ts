@@ -32,8 +32,45 @@ export interface NoteEvent extends NoteOp {
   actorId: string;
 }
 
+/* ---------- presence ---------- */
+
+export type PresenceKind = "HELLO" | "CURSOR" | "BYE";
+
+/** Where I am. Note there is no userId: the server stamps identity from the
+ *  token, so a client cannot claim to be someone else. */
+export interface PresenceInput {
+  kind: PresenceKind;
+  beatId: string | null;
+  trackId: string | null;
+  step: number;
+  row: number;
+}
+
+/** Where somebody else is — identity added server-side. */
+export interface PresenceEvent extends Omit<PresenceInput, "kind"> {
+  kind: PresenceKind;
+  userId: string;
+  displayName: string;
+}
+
+/** A peer as the editor tracks them: their last known cursor, and WHEN we last
+ *  heard from them — which is how they get expired, since a crashed tab never
+ *  says goodbye. */
+export interface Peer extends PresenceEvent {
+  lastSeen: number;
+}
+
+/** Silence longer than this and we assume they're gone. Comfortably more than
+ *  the heartbeat, so a dropped packet doesn't make people flicker in and out. */
+export const PEER_TIMEOUT_MS = 8000;
+/** How often to say "still here" when the mouse isn't moving. */
+export const HEARTBEAT_MS = 3000;
+
 export interface SongSocket {
   send(op: NoteOp): void;
+  /** Announce where my cursor is. Cheap and fire-and-forget — nothing is
+   *  persisted, so a lost presence frame costs nothing but a stale dot. */
+  sendPresence(presence: PresenceInput): void;
   /** Are we actually connected right now? The editor falls back to the HTTP
    *  whole-pattern save when we aren't, so this must tell the truth. */
   connected(): boolean;
@@ -54,6 +91,7 @@ export function connectToSong(
   songId: string,
   handlers: {
     onNote: (event: NoteEvent) => void;
+    onPresence?: (event: PresenceEvent) => void;
     onError?: (message: string) => void;
     onStatus?: (connected: boolean) => void;
   },
@@ -77,6 +115,9 @@ export function connectToSong(
   client.onConnect = () => {
     client.subscribe(`/topic/songs/${songId}`, (frame: IMessage) => {
       handlers.onNote(JSON.parse(frame.body) as NoteEvent);
+    });
+    client.subscribe(`/topic/songs/${songId}/presence`, (frame: IMessage) => {
+      handlers.onPresence?.(JSON.parse(frame.body) as PresenceEvent);
     });
     // Our own private queue. Without it, a refused op fails SILENTLY: the note
     // stays on screen, the server never stored it, and the two disagree until
@@ -105,9 +146,33 @@ export function connectToSong(
         body: JSON.stringify(op),
       });
     },
+    sendPresence(presence: PresenceInput) {
+      if (!client.connected) return;
+      client.publish({
+        destination: `/app/songs/${songId}/presence`,
+        body: JSON.stringify(presence),
+      });
+    },
     connected: () => client.connected,
     close: () => void client.deactivate(),
   };
+}
+
+/**
+ * A stable colour per collaborator, derived from their id.
+ *
+ * Derived, not assigned: a server-side colour allocator would need to remember
+ * who has which colour, and to hand it back when they leave. Hashing the id
+ * means Bob is the same green on everyone's screen, in every session, forever,
+ * and nothing has to remember anything. Golden-angle spacing keeps adjacent
+ * hashes visually far apart instead of two collaborators both getting "blue-ish".
+ */
+export function peerColor(userId: string): string {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
+  }
+  return `hsl(${(hash * 137.508) % 360} 75% 62%)`;
 }
 
 /**

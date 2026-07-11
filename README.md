@@ -147,11 +147,25 @@ diff as a REMOVE plus an ADD, which is exactly how the server wants to hear it.
 When the socket is down the editor falls back to the whole-pattern GraphQL save,
 which still refuses (rather than clobbers) via `expectedVersion`.
 
-**Not built yet:** presence ("Bob is here", live cursors), and the broker is
-Spring's *simple* in-memory one — correct for a single instance, and precisely
-what breaks with two, since a note sent to instance A never reaches a subscriber
-on instance B. That is what Redis pub/sub is for, and the seam is
-`WebSocketConfig.configureMessageBroker`.
+**Presence.** You see your collaborators' cursors glide across the grid, labelled
+with their name and coloured by a hash of their user id (so Bob is the same green
+on everyone's screen, forever, with nothing to remember). A note somebody else
+places *flashes* where it lands — the difference between a sync protocol and
+company. Their avatars sit in the title bar.
+
+The server keeps **no session registry**: it stamps identity onto each presence
+frame and relays it, remembering nothing. Clients heartbeat every 3s and expire a
+peer they haven't heard from in 8s. A registry would be mutable state that leaks
+an entry every time a laptop lid closes without a clean DISCONNECT — and it would
+be *wrong* the moment there are two instances, since each could only see its own
+half of the room. Identity is always taken from the signed token, never from the
+payload; otherwise anyone could paint a cursor labelled "Alice" onto her
+collaborators' screens.
+
+**Not built yet:** the broker is Spring's *simple* in-memory one — correct for a
+single instance, and precisely what breaks with two, since a note sent to instance
+A never reaches a subscriber on instance B. That is what Redis pub/sub is for, and
+the seam is `WebSocketConfig.configureMessageBroker`.
 
 ## App-level roles
 

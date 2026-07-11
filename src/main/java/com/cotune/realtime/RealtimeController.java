@@ -1,10 +1,14 @@
 package com.cotune.realtime;
 
 import com.cotune.realtime.dto.NoteEvent;
+import com.cotune.realtime.dto.PresenceEvent;
+import com.cotune.realtime.dto.PresenceInput;
 import com.cotune.realtime.dto.RealtimeError;
 import com.cotune.track.TrackService;
 import com.cotune.track.dto.NoteApplied;
 import com.cotune.track.dto.NoteOp;
+import com.cotune.user.User;
+import com.cotune.user.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -17,10 +21,13 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The real-time editing surface. Same shape as every other controller in this
@@ -38,6 +45,11 @@ public class RealtimeController {
 
     private final TrackService trackService;
     private final SimpMessagingTemplate broker;
+    private final UserRepository userRepository;
+
+    /** Display names for tokens minted before they carried one. Bounded by the
+     *  number of accounts that hold a stale token; empties itself on restart. */
+    private final Map<UUID, String> legacyNames = new ConcurrentHashMap<>();
 
     /**
      * A client edited one note.
@@ -77,6 +89,61 @@ public class RealtimeController {
                 op.length(),
                 applied.version(),
                 actor));
+    }
+
+    /**
+     * "I am here, my cursor is on this cell." Relayed to the rest of the room.
+     *
+     * canVIEW, not canEdit: a viewer is in the room too, and hiding them would
+     * be a lie about who is watching. They still cannot change a note — that is
+     * a different destination with a different rule.
+     *
+     * The server persists NOTHING here and remembers nothing. It stamps the
+     * identity and forwards. Everything else — who is present, who has gone
+     * quiet — is worked out by each client from the stream it receives; see
+     * PresenceKind for why a server-side session registry would be both leakier
+     * and wrong the moment there are two instances.
+     */
+    @MessageMapping("/songs/{songId}/presence")
+    @PreAuthorize("@songAccess.canView(#songId, authentication)")
+    public void presence(@DestinationVariable UUID songId,
+                         @Payload @Valid PresenceInput input,
+                         Authentication authentication) {
+
+        broker.convertAndSend("/topic/songs/" + songId + "/presence", new PresenceEvent(
+                input.kind(),
+                // Identity from the TOKEN, never from the payload. Accept a
+                // client-supplied name here and anyone can paint a cursor
+                // labelled "Alice" onto her collaborators' screens.
+                UUID.fromString(authentication.getName()),
+                displayNameOf(authentication),
+                input.beatId(),
+                input.trackId(),
+                input.step(),
+                input.row()));
+    }
+
+    /**
+     * The signed token carries the display name (session 17), so labelling a
+     * cursor costs zero queries — which matters, because cursor messages arrive
+     * many times a second and a database hit per message would make moving the
+     * mouse a load test.
+     *
+     * Tokens minted before that claim existed fall back to one lookup, memoised
+     * for the life of the process. Without the memo, every old session would put
+     * that load test back.
+     */
+    private String displayNameOf(Authentication authentication) {
+        if (authentication.getPrincipal() instanceof Jwt jwt) {
+            String name = jwt.getClaimAsString("name");
+            if (name != null && !name.isBlank()) {
+                return name;
+            }
+        }
+        UUID userId = UUID.fromString(authentication.getName());
+        return legacyNames.computeIfAbsent(userId, id -> userRepository.findById(id)
+                .map(User::getDisplayName)
+                .orElse("Collaborator"));
     }
 
     /**
