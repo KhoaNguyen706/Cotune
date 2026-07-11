@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError, gql, rest } from "../api/client";
-import { colorFor } from "../ui/trackColors";
+import { beatColor } from "../ui/trackColors";
 import { coverFor } from "../ui/cover";
 import { Button, EditableName, ErrorBanner, Field, Skeleton, TextInput } from "../ui/kit";
-import { AppShell, Canvas, IconButton, Modal, TopBar } from "../ui/shell";
+import { AppShell, Canvas, Modal, NavItem, NavRail, Workspace } from "../ui/shell";
 import type { Song } from "../types";
 
 // Queries live next to the component that owns them; each asks for exactly
@@ -34,6 +34,7 @@ const DELETE_SONG = `
 
 export function SongsPage() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,160 +113,227 @@ export function SongsPage() {
 
   return (
     <AppShell>
-      <TopBar
-        left={
-          <span className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent-2 text-base text-bg shadow-glow">
+      <Workspace>
+        <NavRail
+          footer={
+            <>
+              {/* The account card: who am I, on what plan. Pinned to the
+                  bottom of the rail because identity is ambient — always
+                  available, never the thing you came here to do. */}
+              <div className="flex items-center gap-3 rounded-xl border border-edge bg-bg-soft/60 p-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-sm font-bold text-bg">
+                  {user?.displayName?.[0]?.toUpperCase() ?? "?"}
+                </span>
+                <span className="min-w-0 leading-tight">
+                  <span className="block truncate text-sm font-bold">{user?.displayName}</span>
+                  <span className="block text-xs text-muted">Free plan</span>
+                </span>
+              </div>
+              <button
+                onClick={logout}
+                className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-muted transition-colors hover:bg-surface-2/60 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              >
+                Sign out
+              </button>
+            </>
+          }
+        >
+          <div className="mb-4 flex items-center gap-3 px-1 py-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-base text-bg shadow-glow">
               ♪
             </span>
-            <span className="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-lg font-extrabold tracking-tight text-transparent">
-              Cotune
-            </span>
-          </span>
-        }
-        right={
-          <>
-            <Button onClick={() => setCreating(true)}>+ New song</Button>
-            <span className="ml-2 flex items-center gap-2 border-l border-edge pl-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-sm font-bold text-text">
-                {user?.displayName?.[0]?.toUpperCase() ?? "?"}
-              </span>
-              <span className="hidden text-sm text-muted sm:inline">{user?.displayName}</span>
-              <IconButton onClick={logout} title="Sign out" aria-label="Sign out">
-                ⏻
-              </IconButton>
-            </span>
-          </>
-        }
-      />
-
-      <Canvas className="p-8">
-        {/* A real max-width, and only to stop lines from getting absurd on
-            ultrawides — the grid still fills a 1440 screen, which the old
-            max-w-3xl column did not. */}
-        <div className="mx-auto max-w-[1600px]">
-          <div className="mb-6 flex items-end justify-between">
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-tight">Your songs</h1>
-              <p className="text-sm text-muted">
-                {loading ? "Loading…" : `${songs.length} song${songs.length === 1 ? "" : "s"}`}
-              </p>
-            </div>
+            <span className="text-lg font-extrabold tracking-tight">Cotune</span>
           </div>
 
-          {error && <ErrorBanner>{error}</ErrorBanner>}
+          <NavItem icon="▤" label="My songs" active />
+          {/* Rendered but inert: sharing and a sample library are real
+              roadmap items (they need the collaborators table and an asset
+              store). Showing them as "soon" is honest; wiring them to a
+              blank page would not be. */}
+          <NavItem icon="◎" label="Shared with me" soon />
+          <NavItem icon="☰" label="Library" soon />
+        </NavRail>
 
-          {loading ? (
-            // Skeletons mirror the CARD shape (cover + two text lines) — no
-            // spinner, no layout shift when the real grid lands.
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-5">
-              {[0, 1, 2, 3, 4].map((i) => (
-                <div key={i} className="flex flex-col gap-3">
-                  <Skeleton className="aspect-square w-full rounded-xl" />
-                  <Skeleton className="h-4 w-2/3" />
-                  <Skeleton className="h-3 w-1/3" />
-                </div>
-              ))}
+        <Canvas className="p-8">
+          <div className="mx-auto max-w-[1400px]">
+            <div className="mb-8 flex items-start justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-extrabold tracking-tight">My songs</h1>
+                <p className="mt-1 text-sm text-muted">
+                  {loading
+                    ? "Loading…"
+                    : `${songs.length} song${songs.length === 1 ? "" : "s"} · sketches sync automatically`}
+                </p>
+              </div>
+              <Button className="shadow-glow" onClick={() => setCreating(true)}>
+                + New song
+              </Button>
             </div>
-          ) : (
-            <ul className="grid list-none grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-5 p-0">
-              {songs.map((song) => {
-                const cover = coverFor(song.id);
-                const mine = song.ownerId === user?.id;
-                const lanes = song.beats.flatMap((b) => b.tracks);
-                return (
-                  <li key={song.id} className="group relative">
-                    {/* The WHOLE card is the link (stretched-link pattern):
-                        a 220px target instead of a 50px "Open →" text link.
-                        Interactive children below sit above it via z-index. */}
-                    <Link
-                      to={`/songs/${song.id}`}
-                      className="absolute inset-0 z-10 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                      aria-label={`Open ${song.title}`}
-                    />
-                    <div
-                      className="relative mb-3 flex aspect-square items-end overflow-hidden rounded-xl border border-edge shadow-card transition-transform duration-200 group-hover:-translate-y-1"
-                      style={{ backgroundImage: cover.backgroundImage }}
+
+            {error && <ErrorBanner>{error}</ErrorBanner>}
+
+            {loading ? (
+              // Skeletons mirror the CARD shape (art + two text lines) — no
+              // spinner, no layout shift when the real grid lands.
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="overflow-hidden rounded-2xl border border-edge">
+                    <Skeleton className="h-32 w-full rounded-none" />
+                    <div className="flex flex-col gap-2 p-4">
+                      <Skeleton className="h-5 w-1/2" />
+                      <Skeleton className="h-3 w-2/3" />
+                      <Skeleton className="h-6 w-20" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="grid list-none grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6 p-0">
+                {songs.map((song) => {
+                  const cover = coverFor(song.id);
+                  const mine = song.ownerId === user?.id;
+                  const trackCount = song.beats.reduce((n, b) => n + b.tracks.length, 0);
+                  return (
+                    <li
+                      key={song.id}
+                      className="group relative overflow-hidden rounded-2xl border border-edge bg-surface transition-[transform,border-color] duration-200 hover:-translate-y-1 hover:border-edge-strong"
                     >
-                      {/* Play affordance on hover — the card looks like it
-                          DOES something, which a flat gradient does not. */}
-                      <span className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/95 text-lg text-black shadow-lg">
-                          ▶
-                        </span>
-                      </span>
+                      {/* Stretched link: the WHOLE card opens the song — a
+                          300px target, not a 50px text link. Interactive
+                          children sit above it via z-index. */}
+                      <Link
+                        to={`/songs/${song.id}`}
+                        className="absolute inset-0 z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        aria-label={`Open ${song.title}`}
+                      />
 
-                      {/* Instrument dots = the song's actual contents, read
-                          at a glance without opening it. */}
-                      <span className="relative flex w-full items-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-8">
-                        {lanes.slice(0, 8).map((lane) => (
-                          <i
-                            key={lane.id}
-                            className="h-1.5 w-1.5 rounded-full ring-1 ring-black/30"
-                            style={{ background: colorFor(lane.instrument) }}
-                          />
-                        ))}
-                        {lanes.length === 0 && (
-                          <span className="text-[0.65rem] font-semibold text-white/70">empty</span>
-                        )}
-                      </span>
-
-                      {mine && (
-                        // z-20: above the stretched link, or it would never
-                        // receive the click.
-                        <span className="absolute right-2 top-2 z-20 opacity-0 transition-opacity group-hover:opacity-100">
-                          <IconButton
-                            tone="danger"
-                            className="bg-black/50 backdrop-blur-sm hover:bg-black/70"
-                            title="Delete song"
-                            onClick={() => void onDelete(song.id)}
-                          >
-                            🗑
-                          </IconButton>
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="relative z-20 flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <strong className="block truncate text-sm font-semibold tracking-tight">
-                          {mine ? (
-                            <EditableName
-                              value={song.title}
-                              maxLength={120}
-                              onRename={(next) => onRename(song.id, next)}
+                      {/* -- waveform art --------------------------------
+                          The art is `relative` but NOT overflow-hidden: the
+                          play FAB below deliberately hangs over its bottom
+                          edge, and clipping here would slice it in half.
+                          The bars get their own clipped box instead. */}
+                      <div className="relative h-32" style={{ background: cover.backdrop }}>
+                        <div className="flex h-full items-center gap-[2px] overflow-hidden px-5">
+                          {cover.bars.map((height, i) => (
+                            <i
+                              key={i}
+                              // flex-1: the bars DIVIDE the card's width, so
+                              // the waveform spans it edge to edge at any
+                              // card size instead of huddling in the middle.
+                              className="min-w-0 flex-1 rounded-full"
+                              style={{
+                                height: `${height}%`,
+                                background: cover.accent,
+                                // Falloff at the edges so the waveform reads
+                                // as a clip, not a wall of bars.
+                                opacity: 0.45 + 0.55 * Math.sin((i / cover.bars.length) * Math.PI),
+                              }}
                             />
-                          ) : (
-                            song.title
-                          )}
-                        </strong>
-                        <span className="text-xs text-muted">
-                          {song.bpm} BPM · {song.timeSignature}
-                          {song.beats.length > 0 &&
-                            ` · ${song.beats.length} beat${song.beats.length === 1 ? "" : "s"}`}
-                        </span>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
+                          ))}
+                        </div>
 
-              {/* The create affordance lives IN the grid, where your eye
-                  already is after scanning the songs — instead of a
-                  permanent form block above them. */}
-              <li>
-                <button
-                  onClick={() => setCreating(true)}
-                  className="flex aspect-square w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-edge text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  <span className="text-3xl">+</span>
-                  <span className="text-sm font-semibold">New song</span>
-                </button>
-              </li>
-            </ul>
-          )}
-        </div>
-      </Canvas>
+                        {/* Play FAB — opens the song in the editor. z-20 so
+                            it beats the stretched link and keeps its own
+                            label for screen readers. */}
+                        <button
+                          className="absolute -bottom-5 right-5 z-20 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-2 pl-0.5 text-sm text-bg shadow-glow transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                          title={`Open ${song.title} in the editor`}
+                          aria-label={`Open ${song.title} in the editor`}
+                          onClick={() => navigate(`/songs/${song.id}`)}
+                        >
+                          ▶
+                        </button>
+                      </div>
+
+                      {/* -- body --------------------------------------- */}
+                      <div className="p-5 pt-6">
+                        <div className="flex items-center gap-2">
+                          <strong className="min-w-0 truncate text-lg font-bold tracking-tight">
+                            {mine ? (
+                              // z-20: sits above the stretched link so
+                              // double-click-to-rename still reaches it.
+                              <span className="relative z-20">
+                                <EditableName
+                                  value={song.title}
+                                  maxLength={120}
+                                  onRename={(next) => onRename(song.id, next)}
+                                />
+                              </span>
+                            ) : (
+                              song.title
+                            )}
+                          </strong>
+                          {mine && (
+                            <span className="shrink-0 rounded-md border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wider text-accent">
+                              yours
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="mt-1 text-sm text-muted">
+                          {song.bpm} BPM · {song.timeSignature} · {trackCount} track
+                          {trackCount === 1 ? "" : "s"}
+                        </p>
+
+                        <div className="mt-4 flex items-center gap-2">
+                          {[...song.beats]
+                            // The API contract says: sort by position, never
+                            // assume contiguity (gaps appear after deletes).
+                            .sort((a, b) => a.position - b.position)
+                            .slice(0, 3)
+                            .map((beat) => {
+                              const tint = beatColor(beat.position);
+                              return (
+                                <span
+                                  key={beat.id}
+                                  className="rounded-md px-2 py-1 text-xs font-bold"
+                                  style={{
+                                    color: tint,
+                                    background: `color-mix(in srgb, ${tint} 14%, transparent)`,
+                                    border: `1px solid color-mix(in srgb, ${tint} 35%, transparent)`,
+                                  }}
+                                >
+                                  {beat.name}
+                                </span>
+                              );
+                            })}
+                          {song.beats.length === 0 && (
+                            <span className="text-xs text-muted">no beats yet</span>
+                          )}
+
+                          {/* UI mirrors the server rule (owner-only) for
+                              honest affordances; the real gate is
+                              @PreAuthorize server-side. */}
+                          {mine && (
+                            <button
+                              className="relative z-20 ml-auto cursor-pointer rounded px-1 text-sm font-medium text-muted opacity-0 transition-[color,opacity] duration-150 hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover:opacity-100"
+                              onClick={() => void onDelete(song.id)}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+
+                {/* The create affordance lives IN the grid too, where your
+                    eye already is after scanning the songs. */}
+                <li>
+                  <button
+                    onClick={() => setCreating(true)}
+                    className="flex h-full min-h-[240px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-edge text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <span className="text-3xl">+</span>
+                    <span className="text-sm font-semibold">New song</span>
+                  </button>
+                </li>
+              </ul>
+            )}
+          </div>
+        </Canvas>
+      </Workspace>
 
       {creating && (
         <Modal title="New song" onClose={() => setCreating(false)}>

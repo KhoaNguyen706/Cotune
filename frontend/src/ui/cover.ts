@@ -1,17 +1,18 @@
 /**
- * Deterministic cover art: every song gets a unique gradient derived from
+ * Deterministic cover art: every song gets a unique WAVEFORM derived from
  * its id. No uploads, no storage, no empty-image placeholders — and the
- * SAME song is the same color forever, on every device, because the id is
- * the only input.
+ * same song draws the same waveform forever, on every device, because the
+ * id is the only input.
  *
- * Why bother: a gallery of identically-gray cards forces you to READ every
- * title to find your song. Give each one a stable hue and you start
- * recognizing them pre-attentively — the same reason tracks are colored
- * (see trackColors.ts). This is the cheapest possible visual identity.
+ * Why a waveform rather than a gradient: it says "audio" at a glance, and
+ * the bar heights give each card a silhouette you recognize before you've
+ * read the title — the same pre-attentive trick as instrument colors
+ * (trackColors.ts). It is ART, not data: it does not depict the song's
+ * actual audio, which doesn't exist until the arrangement is rendered.
  */
 
 /** FNV-1a: a tiny, well-distributed string hash. Any decent hash works;
- *  what matters is that it's PURE — same id in, same hue out, always. */
+ *  what matters is that it's PURE — same id in, same art out, always. */
 function hash(input: string): number {
   let h = 2166136261;
   for (let i = 0; i < input.length; i++) {
@@ -21,35 +22,49 @@ function hash(input: string): number {
   return h >>> 0; // force unsigned — bit ops in JS yield signed int32
 }
 
-export interface Cover {
-  /** Ready to drop into `style={{ backgroundImage }}`. */
-  backgroundImage: string;
-  /** The dominant hue, for accents that must match the cover. */
-  accent: string;
+/** Mulberry32: a seeded PRNG. Math.random() would give a DIFFERENT
+ *  waveform on every render (and every reload) — the id must be the only
+ *  source of randomness, so we carry the seed forward explicitly. */
+function seeded(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
+
+export interface Cover {
+  /** Bar heights as percentages (0–100), left to right. */
+  bars: number[];
+  /** The song's hue, used for the bars and the card's ambient tint. */
+  accent: string;
+  /** A dark, tinted backdrop for the art area — the bars sit ON this. */
+  backdrop: string;
+}
+
+const BAR_COUNT = 32;
 
 export function coverFor(id: string): Cover {
   const h = hash(id);
-  // Two hues a fixed distance apart on the wheel: related enough to look
-  // designed, far enough apart to read as a gradient rather than a smudge.
+  const rand = seeded(h);
   const hue = h % 360;
-  const hue2 = (hue + 48) % 360;
-  // Saturation/lightness stay in a narrow, DEEP band: covers must sit on a
-  // near-black canvas without glowing off it. The first pass used ~58%
-  // lightness and the gallery read as confetti — bright enough that the
-  // titles beneath them looked like an afterthought. Muted and darker lets
-  // the art identify the song while the text stays the loudest thing.
-  const from = `hsl(${hue} 48% 42%)`;
-  const to = `hsl(${hue2} 55% 24%)`;
-  // The angle varies too, so same-hue neighbors still differ.
-  const angle = 115 + (h % 5) * 20;
+
+  const bars = Array.from({ length: BAR_COUNT }, (_, i) => {
+    // A slow sine sets the overall arc so the waveform reads as a musical
+    // phrase (a shape with a build and a fall) rather than white noise,
+    // and the random term keeps neighbors from looking identical.
+    const arc = Math.sin((i / BAR_COUNT) * Math.PI * 2 + (h % 10)) * 0.25 + 0.6;
+    return Math.round(Math.max(18, Math.min(100, (arc + rand() * 0.45 - 0.15) * 100)));
+  });
 
   return {
-    backgroundImage:
-      `linear-gradient(${angle}deg, ${from}, ${to}), ` +
-      // A faint diagonal weave over the gradient: texture at zero cost,
-      // and it keeps large flat covers from looking like dead CSS.
-      `repeating-linear-gradient(${angle + 90}deg, rgb(255 255 255 / 0.06) 0 2px, transparent 2px 9px)`,
-    accent: from,
+    bars,
+    accent: `hsl(${hue} 70% 62%)`,
+    // Deep and desaturated: the art must sit ON the near-black canvas, not
+    // glow off it. The tint is just enough to identify the song.
+    backdrop: `linear-gradient(160deg, hsl(${hue} 40% 14%), hsl(${(hue + 40) % 360} 45% 8%))`,
   };
 }

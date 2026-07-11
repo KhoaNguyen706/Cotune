@@ -55,6 +55,66 @@ export function Workspace({ children }: { children: ReactNode }) {
   return <div className="flex min-h-0 flex-1">{children}</div>;
 }
 
+/**
+ * The NAV RAIL: the app's primary navigation, pinned left for the whole
+ * session. Distinct from Sidebar below — that one is a *document* browser
+ * (this song's beats and audio), this one is *app* navigation (which
+ * screen am I on). Keeping them separate components keeps the distinction
+ * legible; a DAW has both, and conflating them is how sidebars turn into
+ * junk drawers.
+ */
+export function NavRail({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
+  return (
+    <nav className="flex w-60 shrink-0 flex-col border-r border-edge bg-surface/40 p-3">
+      <div className="flex flex-1 flex-col gap-1">{children}</div>
+      {footer && <div className="mt-4 flex flex-col gap-2">{footer}</div>}
+    </nav>
+  );
+}
+
+export function NavItem({
+  icon,
+  label,
+  active,
+  soon,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  active?: boolean;
+  /** Not built yet. Rendered, but visibly inert — an honest "coming", not
+   *  a dead link that pretends to work. */
+  soon?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      disabled={soon}
+      onClick={onClick}
+      title={soon ? "Coming soon" : undefined}
+      className={cx(
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors duration-150 " +
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+        soon
+          ? "cursor-default text-muted/45"
+          : active
+            ? "cursor-pointer bg-surface-2 text-text"
+            : "cursor-pointer text-muted hover:bg-surface-2/60 hover:text-text",
+      )}
+    >
+      <span aria-hidden className="w-4 text-center">
+        {icon}
+      </span>
+      {label}
+      {soon && (
+        <span className="ml-auto rounded-full border border-edge px-1.5 py-0.5 text-[0.55rem] font-bold uppercase tracking-wider">
+          soon
+        </span>
+      )}
+    </button>
+  );
+}
+
 /** The browser column: fixed width, scrolls on its own. */
 export function Sidebar({ children }: { children: ReactNode }) {
   return (
