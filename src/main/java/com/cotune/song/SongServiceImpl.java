@@ -61,11 +61,16 @@ public class SongServiceImpl implements SongService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<SongDto> getAll() {
-        // Unpaged is acceptable only while this is a dev-scale table.
-        // Session goal for later: switch to Pageable before any real data —
-        // findAll() on a big table is a classic production incident.
-        return songRepository.findAll().stream()
+    public List<SongDto> getVisibleTo(UUID userId) {
+        // Was findAll() until V10 — i.e. every user was served every other
+        // user's songs. The fix is in the QUERY (see findAllVisibleTo), not
+        // in a filter here: rows the caller may not see must never be loaded
+        // in the first place, or the next person to add a code path that
+        // forgets the filter re-opens the hole.
+        //
+        // Still unpaged, and still only acceptable at dev scale: a user with
+        // 10,000 songs would fetch all of them. Pageable before real traffic.
+        return songRepository.findAllVisibleTo(userId).stream()
                 .map(songMapper::toDto)
                 .toList();
     }

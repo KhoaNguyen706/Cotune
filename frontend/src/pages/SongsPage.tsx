@@ -7,7 +7,8 @@ import { coverFor } from "../ui/cover";
 import { Button, EditableName, ErrorBanner, Field, Skeleton, TextInput } from "../ui/kit";
 import { AppShell, Canvas, Modal, NavItem, NavRail, Workspace } from "../ui/shell";
 import { SettingsModal } from "../ui/SettingsModal";
-import type { Song } from "../types";
+import { ShareModal } from "../ui/ShareModal";
+import { canEditSong, type Song } from "../types";
 
 // Queries live next to the component that owns them; each asks for exactly
 // the fields this screen renders — that per-view field selection is the
@@ -16,10 +17,15 @@ import type { Song } from "../types";
 // a real histogram of note density, not decoration (see ui/cover.ts). This
 // is exactly the field-selection GraphQL exists for — the editor's query
 // asks for the same graph with more of it.
+// `songs` returns YOUR library — songs you own plus songs shared with you.
+// The split into "My songs" / "Shared with me" below is a view over this one
+// response, not a second request: the server already told us our role on each
+// song, so filtering by it locally costs nothing and keeps both lists in sync.
 const SONGS_QUERY = `
   query Songs {
     songs {
-      id title bpm timeSignature ownerId version createdAt
+      id title bpm timeSignature ownerId myRole version createdAt
+      collaborators { userId email displayName role }
       beats {
         id name position bars
         tracks { id name instrument position version pattern { step pitch velocity length } }
@@ -40,15 +46,28 @@ const DELETE_SONG = `
   }
 `;
 
+/** Which slice of the library is on screen. Both come from the same query. */
+type View = "mine" | "shared";
+
 export function SongsPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<View>("mine");
 
   const [creating, setCreating] = useState(false); // modal open?
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /**
+   * The share sheet tracks a song ID, not a Song object. Holding the object
+   * would freeze a copy: after an invite we re-query, `songs` gets a fresh
+   * list, and the modal would still be rendering the snapshot it captured
+   * when it opened — so the person you just added wouldn't appear until you
+   * closed and reopened it. Looking the song up by id each render keeps the
+   * modal reading the same state everything else does.
+   */
+  const [sharingId, setSharingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [bpm, setBpm] = useState(120);
   const [timeSignature, setTimeSignature] = useState("4/4");
@@ -70,6 +89,12 @@ export function SongsPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // One query, two views. `myRole` is the server's answer, not our guess.
+  const mine = songs.filter((song) => song.myRole === "OWNER");
+  const shared = songs.filter((song) => song.myRole !== "OWNER");
+  const visible = view === "mine" ? mine : shared;
+  const sharing = songs.find((song) => song.id === sharingId) ?? null;
 
   async function onCreate(event: FormEvent) {
     event.preventDefault();
@@ -154,12 +179,22 @@ export function SongsPage() {
             <span className="text-lg font-extrabold tracking-tight">Cotune</span>
           </div>
 
-          <NavItem icon="▤" label="My songs" active />
-          {/* Rendered but inert: sharing and a sample library are real
-              roadmap items (they need the collaborators table and an asset
-              store). Showing them as "soon" is honest; wiring them to a
-              blank page would not be. */}
-          <NavItem icon="◎" label="Shared with me" soon />
+          <NavItem
+            icon="▤"
+            label="My songs"
+            active={view === "mine"}
+            onClick={() => setView("mine")}
+          />
+          {/* No longer "soon": V10 added the collaborators table, so this is
+              a real destination. A sample library still isn't — it needs an
+              asset store — and it stays honestly inert rather than linking
+              to a blank page. */}
+          <NavItem
+            icon="◎"
+            label="Shared with me"
+            active={view === "shared"}
+            onClick={() => setView("shared")}
+          />
           <NavItem icon="☰" label="Library" soon />
           <NavItem icon="⚙" label="Settings" onClick={() => setSettingsOpen(true)} />
         </NavRail>
@@ -168,16 +203,22 @@ export function SongsPage() {
           <div className="mx-auto max-w-[1400px]">
             <div className="mb-8 flex items-start justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-extrabold tracking-tight">My songs</h1>
+                <h1 className="text-3xl font-extrabold tracking-tight">
+                  {view === "mine" ? "My songs" : "Shared with me"}
+                </h1>
                 <p className="mt-1 text-sm text-muted">
                   {loading
                     ? "Loading…"
-                    : `${songs.length} song${songs.length === 1 ? "" : "s"} · sketches sync automatically`}
+                    : view === "mine"
+                      ? `${mine.length} song${mine.length === 1 ? "" : "s"} · sketches sync automatically`
+                      : `${shared.length} song${shared.length === 1 ? "" : "s"} shared with you`}
                 </p>
               </div>
-              <Button className="shadow-glow" onClick={() => setCreating(true)}>
-                + New song
-              </Button>
+              {view === "mine" && (
+                <Button className="shadow-glow" onClick={() => setCreating(true)}>
+                  + New song
+                </Button>
+              )}
             </div>
 
             {error && <ErrorBanner>{error}</ErrorBanner>}
@@ -199,7 +240,7 @@ export function SongsPage() {
               </div>
             ) : (
               <ul className="grid list-none grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6 p-0">
-                {songs.map((song) => {
+                {visible.map((song) => {
                   // Lay the song's beats end to end and collect every note's
                   // absolute step — that histogram IS the card's waveform.
                   const steps: number[] = [];
@@ -213,7 +254,11 @@ export function SongsPage() {
                     offset += (beat.bars ?? 1) * 16;
                   }
                   const cover = coverFor(song.id, { steps, totalSteps: offset });
-                  const mine = song.ownerId === user?.id;
+                  // Straight from the server's myRole — never `ownerId === me`.
+                  // Since sharing exists, an EDITOR can write to a song they
+                  // don't own, so ownership no longer answers "can I edit?".
+                  const isOwner = song.myRole === "OWNER";
+                  const editable = canEditSong(song);
                   const trackCount = song.beats.reduce((n, b) => n + b.tracks.length, 0);
                   return (
                     <li
@@ -271,7 +316,7 @@ export function SongsPage() {
                       <div className="p-5 pt-6">
                         <div className="flex items-center gap-2">
                           <strong className="min-w-0 truncate text-lg font-bold tracking-tight">
-                            {mine ? (
+                            {editable ? (
                               // z-20: sits above the stretched link so
                               // double-click-to-rename still reaches it.
                               <span className="relative z-20">
@@ -285,11 +330,7 @@ export function SongsPage() {
                               song.title
                             )}
                           </strong>
-                          {mine && (
-                            <span className="shrink-0 rounded-md border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wider text-accent">
-                              yours
-                            </span>
-                          )}
+                          <RoleBadge role={song.myRole} />
                         </div>
 
                         <p className="mt-1 text-sm text-muted">
@@ -323,16 +364,27 @@ export function SongsPage() {
                             <span className="text-xs text-muted">no beats yet</span>
                           )}
 
-                          {/* UI mirrors the server rule (owner-only) for
-                              honest affordances; the real gate is
-                              @PreAuthorize server-side. */}
-                          {mine && (
-                            <button
-                              className="relative z-20 ml-auto cursor-pointer rounded px-1 text-sm font-medium text-muted opacity-0 transition-[color,opacity] duration-150 hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover:opacity-100"
-                              onClick={() => void onDelete(song.id)}
-                            >
-                              Delete
-                            </button>
+                          {/* Sharing and deleting are OWNER rights — an editor
+                              has neither (see SongAccess). The UI mirrors the
+                              server rule so nobody meets a button that is
+                              guaranteed to 403; the real gate is @PreAuthorize
+                              server-side, and it stays the only one that
+                              decides anything. */}
+                          {isOwner && (
+                            <span className="relative z-20 ml-auto flex items-center gap-1 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
+                              <button
+                                className="cursor-pointer rounded px-1 text-sm font-medium text-muted transition-colors duration-150 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                                onClick={() => setSharingId(song.id)}
+                              >
+                                Share
+                              </button>
+                              <button
+                                className="cursor-pointer rounded px-1 text-sm font-medium text-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                                onClick={() => void onDelete(song.id)}
+                              >
+                                Delete
+                              </button>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -340,17 +392,30 @@ export function SongsPage() {
                   );
                 })}
 
-                {/* The create affordance lives IN the grid too, where your
-                    eye already is after scanning the songs. */}
-                <li>
-                  <button
-                    onClick={() => setCreating(true)}
-                    className="flex h-full min-h-[240px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-edge text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    <span className="text-3xl">+</span>
-                    <span className="text-sm font-semibold">New song</span>
-                  </button>
-                </li>
+                {/* The create affordance lives IN the grid too, where your eye
+                    already is after scanning the songs — but only on YOUR
+                    songs. "New song" in the Shared-with-me grid would create
+                    a song that promptly vanishes from the view you made it in. */}
+                {view === "mine" && (
+                  <li>
+                    <button
+                      onClick={() => setCreating(true)}
+                      className="flex h-full min-h-[240px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-edge text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      <span className="text-3xl">+</span>
+                      <span className="text-sm font-semibold">New song</span>
+                    </button>
+                  </li>
+                )}
+
+                {view === "shared" && shared.length === 0 && (
+                  <li className="col-span-full rounded-2xl border-2 border-dashed border-edge p-10 text-center">
+                    <p className="text-sm font-semibold">Nothing shared with you yet</p>
+                    <p className="mt-1 text-sm text-muted">
+                      When someone invites you to a song, it shows up here.
+                    </p>
+                  </li>
+                )}
               </ul>
             )}
           </div>
@@ -358,6 +423,17 @@ export function SongsPage() {
       </Workspace>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
+      {sharing && (
+        <ShareModal
+          song={sharing}
+          onClose={() => setSharingId(null)}
+          // Re-query rather than patching local state by hand: the server is
+          // the source of truth for who's on a song, and the modal renders
+          // straight out of the refreshed list (see sharingId above).
+          onChanged={refresh}
+        />
+      )}
 
       {creating && (
         <Modal title="New song" onClose={() => setCreating(false)}>
@@ -409,5 +485,26 @@ export function SongsPage() {
         </Modal>
       )}
     </AppShell>
+  );
+}
+
+/**
+ * The card's permission chip. It states what the SERVER said you may do —
+ * "yours", "can edit", "view only" — so the badge and the buttons next to it
+ * can never disagree: both read the same myRole.
+ */
+function RoleBadge({ role }: { role: Song["myRole"] }) {
+  const style = {
+    OWNER: { label: "yours", className: "border-accent/40 bg-accent/10 text-accent" },
+    EDITOR: { label: "can edit", className: "border-edge-strong bg-surface-2 text-text" },
+    VIEWER: { label: "view only", className: "border-edge bg-surface-2 text-muted" },
+  }[role];
+
+  return (
+    <span
+      className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wider ${style.className}`}
+    >
+      {style.label}
+    </span>
   );
 }

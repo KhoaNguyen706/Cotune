@@ -1,6 +1,6 @@
 # Cotune
 
-Real-time collaborative music editor. Backend: Spring Boot (Java 21), PostgreSQL (local Docker or Supabase), GraphQL + REST auth. Frontend: React + Vite + TypeScript + Tone.js (`frontend/`) — sign in, open a song, and build a 16-step beat in the browser. Redis pub/sub + WebSocket arrive in later sessions.
+Real-time collaborative music editor. Backend: Spring Boot (Java 21), PostgreSQL (local Docker or Supabase), GraphQL + REST auth. Frontend: React + Vite + TypeScript + Tone.js (`frontend/`) — sign in, open a song, and build a 16-step beat in the browser. Songs can be **shared** with other accounts as editors or viewers (V10); Redis pub/sub + WebSocket — so co-editors see each other's changes live rather than on refresh — arrive in later sessions.
 
 **Beats are data, not audio**: a pattern is a JSONB array of `{step, pitch, velocity}` events on the track row (see `V4__add_track_pattern.sql` for the modeling rationale); the browser synthesizes all sound with Tone.js. Object storage (e.g. Supabase Storage) only becomes necessary for uploaded samples and exported audio — not for the sequencer.
 
@@ -62,7 +62,50 @@ Then send the token on every request as a header (in GraphiQL: the "Headers" tab
 { "Authorization": "Bearer <token from register/login>" }
 ```
 
-`deleteSong` additionally requires the ADMIN role. Roles are assigned
+## Sharing & permissions (session 15)
+
+A song has one **owner** (its creator) and any number of **collaborators**
+(`song_collaborators`, V10). What you may do is decided server-side and sent
+back on every song as `myRole` — clients must branch on that, never on
+`ownerId == me`, because an EDITOR can write to a song they don't own:
+
+|            | view | edit music | share | delete |
+|------------|------|-----------|-------|--------|
+| **OWNER**  | ✓    | ✓         | ✓     | ✓      |
+| **EDITOR** | ✓    | ✓         | ✗     | ✗      |
+| **VIEWER** | ✓    | ✗         | ✗     | ✗      |
+
+Note where EDITOR stops. An editor who could share could invite further
+editors, and access would escalate away from the owner unseen; an editor who
+could delete could destroy work they don't own. "Can change the music" and
+"can change who gets in" are different powers. The whole rule lives in
+`SongAccess` — every child resource (beats, lanes, patterns, clips, audio)
+resolves up to its song and delegates there.
+
+```graphql
+mutation {                                   # owner only; re-sharing an existing
+  shareSong(input: {                         # collaborator UPDATES their role
+    songId: "<id>", email: "bob@example.com", role: EDITOR
+  }) { userId displayName role }
+}
+```
+
+`songs` returns **your** library — songs you own plus songs shared with you.
+Before V10 it returned every song in the database to every logged-in user;
+`GET /api/audio/{id}` was likewise open to any authenticated caller. Both are
+now object-level authorized. Legacy songs with no owner (created before V5)
+belong to nobody, so they appear in nobody's library and only an ADMIN can
+touch them — adopt one with:
+
+```sql
+UPDATE songs SET owner_id = (SELECT id FROM users WHERE email = 'you@example.com')
+WHERE owner_id IS NULL;
+```
+
+The app-level ADMIN role is a *different axis* from the per-song roles above
+and does not override them: `hasRole('ADMIN')` says what kind of user you are,
+not what you own, so an admin still cannot edit or delete someone else's song.
+Its only power over songs is the ownerless legacy rows. Roles are assigned
 server-side (never via the API — that would be mass assignment); promote a
 user by hand, then **re-login** (roles ride inside the token):
 
@@ -125,6 +168,12 @@ GraphQL request
 SongMapper translates Entity ↔ DTO at the service boundary;
 entities never cross the API surface.
 ```
+
+Session 15 adds `com.cotune.collab` (song membership) and makes `SongAccess`
+the single authority on song permissions — it is the only class that knows the
+matrix above, and the client is *told* its role rather than deriving one. That
+is a deliberate correction: Session 14's 403 storm came from the UI keeping its
+own copy of the edit rule, and the copy drifted.
 
 Session 3 adds stateless JWT auth (`com.cotune.auth`, `com.cotune.user`).
 Token issuance is REST (`AuthRestController`, secured by URL rules in

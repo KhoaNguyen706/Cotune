@@ -11,6 +11,10 @@ type Query {
     # for a missing resource. If this were Song!, a miss would nullify the
     # whole response instead of just this field.
     song(id: ID!): Song
+    # YOUR library: songs you own plus songs shared with you. It has no
+    # arguments because the audience is not a parameter a client gets to
+    # choose — it is the identity in your token. (Before V10 this returned
+    # every song in the database to everyone; see SongRepository.)
     songs: [Song!]!
 }
 
@@ -50,6 +54,15 @@ type Mutation {
     # Geometry only (move/resize); what a clip points at never changes.
     updateClip(id: ID!, input: UpdateClipInput!): Clip!
     deleteClip(id: ID!): Boolean!
+
+    # ---- sharing (owner only) ----
+    #
+    # One mutation covers both "invite" and "change their role": sharing with
+    # someone who is already a collaborator UPDATES them. A share sheet needs
+    # that (you re-open it and flip EDITOR to VIEWER), and it makes the call
+    # idempotent — a retried invite is not a duplicate and not an error.
+    shareSong(input: ShareSongInput!): Collaborator!
+    unshareSong(songId: ID!, userId: ID!): Boolean!
 }
 
 type Song {
@@ -57,9 +70,22 @@ type Song {
     title: String!
     bpm: Int!
     timeSignature: String!
-    # The creator's user id. Only the owner may deleteSong. Nullable solely
-    # for songs that predate ownership (admin-managed leftovers).
+    # The creator's user id. Nullable solely for songs that predate ownership
+    # (admin-managed leftovers).
     ownerId: ID
+    # What YOU may do with this song — computed server-side per caller.
+    #
+    # Clients must branch on THIS, never on `ownerId == me`. That is not
+    # style advice: the UI shipped its own copy of the edit rule in Session
+    # 14, the copy was wrong, and users got rename/save buttons that were
+    # guaranteed to 403. Since sharing exists, "can I edit?" is no longer
+    # derivable from ownerId at all. One rule, one implementation, sent to
+    # the client as an answer instead of re-created there from parts.
+    myRole: SongRole!
+    # Everyone invited to this song (the owner is NOT in this list — they
+    # are not a collaborator, they are the owner). Visible to anyone who can
+    # open the song; only the owner may change it.
+    collaborators: [Collaborator!]!
     # Exposed so clients can later send it back for conflict detection
     # (optimistic concurrency across the wire).
     version: Int!
@@ -229,4 +255,47 @@ input AddTrackInput {
 input UpdateTrackInput {
     name: String!
     instrument: Instrument!
+}
+
+# ---- sharing ---------------------------------------------------------------
+
+# One invited person on a song. The membership row stores only a user id;
+# the server joins the identity in, because a UI cannot render a UUID at a
+# human.
+type Collaborator {
+    userId: ID!
+    email: String!
+    displayName: String!
+    role: CollaboratorRole!
+    createdAt: DateTime!
+}
+
+# What can be GRANTED to someone else.
+enum CollaboratorRole {
+    # May open, listen, export — every mutation is refused.
+    VIEWER
+    # May change the music. May NOT share or delete: an editor who could
+    # invite more editors would let access escalate away from the owner
+    # unseen (transitive delegation), and an editor who could delete could
+    # destroy work that isn't theirs.
+    EDITOR
+}
+
+# What you effectively ARE on a song. A superset of CollaboratorRole, and a
+# separate type on purpose: OWNER belongs here but must never be grantable,
+# and one shared enum would make `shareSong(role: OWNER)` typecheck. Keeping
+# them apart makes the illegal state unrepresentable in the contract itself.
+enum SongRole {
+    OWNER
+    EDITOR
+    VIEWER
+}
+
+# Invite by EMAIL, not by user id: a UUID is not something a human can type,
+# so an id-based API would force clients to search the user directory first
+# — a far larger privacy surface than confirming one address you already know.
+input ShareSongInput {
+    songId: ID!
+    email: String!
+    role: CollaboratorRole!
 }

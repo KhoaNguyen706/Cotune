@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import * as Tone from "tone";
-import { useAuth } from "../auth/AuthContext";
 import { useSettings } from "../ui/settings";
 import { ApiError, gql, rest } from "../api/client";
 import {
@@ -32,6 +31,7 @@ import {
   TopBar,
   Workspace,
 } from "../ui/shell";
+import { canEditSong } from "../types";
 import type { AudioFile, Beat, Clip, Song, Step } from "../types";
 
 const STEPS = 16;
@@ -47,7 +47,8 @@ const CELL_H = 26;
 const SONG_QUERY = `
   query Song($id: ID!) {
     song(id: $id) {
-      id title bpm timeSignature ownerId
+      id title bpm timeSignature ownerId myRole
+      collaborators { userId email displayName role }
       beats {
         id name position bars
         tracks { id name instrument position version pattern { step pitch velocity length } }
@@ -118,7 +119,8 @@ function rowOf(pitch: string, octave: number): number | null {
 
 export function BeatMakerPage() {
   const { songId } = useParams<{ songId: string }>();
-  const { user } = useAuth();
+  // No useAuth() here any more: the page used to need the current user's id
+  // to work out whether it could edit. It doesn't — the server sends myRole.
   const { autoSave } = useSettings();
   const [song, setSong] = useState<Song | null>(null);
   // Two editors, one page: "arrange" is the song timeline (clips place
@@ -656,16 +658,19 @@ export function BeatMakerPage() {
   }, []);
 
   /**
-   * Can this account edit this song? Mirrors the server's rule exactly
-   * (SongAccess: owner only; ownerless legacy songs are admin-managed).
+   * Can this account edit this song? ASK THE SERVER — don't re-derive it.
    *
-   * This is why the console was full of 403s: the UI offered rename, bar
-   * changes and pattern saves on songs the server would always refuse —
-   * including "Cloud Beat", whose ownerId is null because it predates
-   * ownership, so NOBODY can edit it. The server was right every time; the
-   * UI was lying. Affordances must match permissions.
+   * Session 14 filled the console with 403s because this line was a COPY of
+   * the server's rule, and copies drift: the UI offered rename, bar changes
+   * and pattern saves on songs the server would always refuse. The fix then
+   * was to copy the rule more carefully. That was the wrong fix — V10 proved
+   * it, because with sharing the rule stopped being derivable from ownerId at
+   * all (an EDITOR doesn't own the song and can still write to it).
+   *
+   * So the server now sends its verdict as `myRole` and the client reads it.
+   * One rule, one implementation, no drift possible.
    */
-  const canEdit = song != null && song.ownerId != null && song.ownerId === user?.id;
+  const canEdit = song != null && canEditSong(song);
   const readOnly = song != null && !canEdit;
 
   // ---- auto-save ---------------------------------------------------------

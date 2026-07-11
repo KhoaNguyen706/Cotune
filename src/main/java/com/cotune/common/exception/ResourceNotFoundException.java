@@ -28,6 +28,24 @@ public class ResourceNotFoundException extends RuntimeException {
         return new ResourceNotFoundException("User not found: " + id);
     }
 
+    /**
+     * Sharing needs to say "nobody here by that name" in a way the inviter
+     * can act on ("typo? ask them to sign up?"), so the message names the
+     * address. That does make the endpoint an account-existence oracle —
+     * accepted knowingly: registration already leaks the same fact (it
+     * refuses duplicate emails), so hiding it here would buy nothing while
+     * making a legitimate invite unexplainable. If Cotune ever needs to be
+     * enumeration-proof, BOTH endpoints have to change together.
+     */
+    public static ResourceNotFoundException userByEmail(String email) {
+        return new ResourceNotFoundException("No Cotune account for " + email);
+    }
+
+    public static ResourceNotFoundException collaborator(UUID songId, UUID userId) {
+        return new ResourceNotFoundException(
+                "User %s is not a collaborator on song %s".formatted(userId, songId));
+    }
+
     public static ResourceNotFoundException beat(UUID id) {
         return new ResourceNotFoundException("Beat not found: " + id);
     }

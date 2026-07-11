@@ -54,12 +54,38 @@ export type AudioFile = Pick<
   "id" | "filename" | "contentType" | "sizeBytes" | "durationSeconds"
 >;
 
+/** What can be GRANTED to someone else. Not OWNER — see SongRole. */
+export type CollaboratorRole = gql.CollaboratorRole;
+
+/**
+ * What YOU may do with a song. Sent by the server on every Song.
+ *
+ * Do not reconstruct this from `ownerId === user.id`. Session 14 shipped
+ * exactly that, the client's copy of the rule drifted from the server's, and
+ * the UI offered rename/save buttons that were guaranteed to 403. Since
+ * sharing exists the rule isn't even derivable from ownerId any more: an
+ * EDITOR doesn't own the song and can still write to it.
+ */
+export type SongRole = gql.SongRole;
+
+/** One invited person on a song. The owner is NOT in this list. */
+export type Collaborator = Pick<
+  gql.Collaborator,
+  "userId" | "email" | "displayName" | "role"
+>;
+
 export interface Song
   extends Pick<
     gql.Song,
-    "id" | "title" | "bpm" | "timeSignature" | "ownerId" | "version" | "createdAt"
+    "id" | "title" | "bpm" | "timeSignature" | "ownerId" | "myRole" | "version" | "createdAt"
   > {
   beats: Beat[];
   clips: Clip[];
   audioFiles: AudioFile[];
+  collaborators: Collaborator[];
 }
+
+/** The single place the client interprets a role — and it decides nothing:
+ *  it reads the answer the server already computed. */
+export const canEditSong = (song: Pick<Song, "myRole">): boolean =>
+  song.myRole === "OWNER" || song.myRole === "EDITOR";

@@ -25,7 +25,17 @@ public interface SongService {
 
     SongDto getById(UUID id);
 
-    List<SongDto> getAll();
+    /**
+     * The caller's library: songs they own plus songs shared with them.
+     *
+     * The viewer is a REQUIRED parameter, not an optional filter, and that is
+     * the whole design. This method used to be getAll() — a name that made
+     * "return everyone's songs" the natural implementation, and that is
+     * exactly what it did. Making the audience part of the signature means a
+     * caller cannot forget to scope the query; there is no longer an
+     * unscoped version to reach for.
+     */
+    List<SongDto> getVisibleTo(UUID userId);
 
     SongDto update(UUID id, UpdateSongInput input);
 

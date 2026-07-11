@@ -27,8 +27,10 @@ import java.util.UUID;
  * Metadata (listing a song's files) still lives in the graph where the
  * editor already queries everything else.
  *
- * All routes sit under /api/** which SecurityConfig locks to authenticated
- * requests — no extra annotations needed (URL-identified operations).
+ * All routes sit under /api/**, which SecurityConfig locks to authenticated
+ * requests. That is the FLOOR, not the rule: each route below adds an
+ * object-level @PreAuthorize on top, because "is logged in" says nothing
+ * about whether this particular song is any of their business.
  */
 @RestController
 @RequiredArgsConstructor
@@ -36,8 +38,10 @@ public class AudioRestController {
 
     private final AudioService audioService;
 
-    // Mutations are owner-only (object-level); download stays open to any
-    // authenticated user, same as GraphQL reads.
+    // Every route here carries an object-level rule: /api/** only proves the
+    // caller is SOMEBODY, and these operations need to know it is the RIGHT
+    // somebody. Upload/delete require edit rights, download requires view
+    // rights — see SongAccess for the full permission table.
     @PostMapping(value = "/api/songs/{songId}/audio", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@songAccess.canEdit(#songId, authentication)")
     public AudioFileDto upload(@PathVariable UUID songId,
@@ -60,6 +64,7 @@ public class AudioRestController {
     }
 
     @GetMapping("/api/audio/{id}")
+    @PreAuthorize("@audioAccess.canView(#id, authentication)")
     public ResponseEntity<byte[]> download(@PathVariable UUID id) {
         AudioContent content = audioService.download(id);
         return ResponseEntity.ok()

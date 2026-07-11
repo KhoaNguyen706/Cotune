@@ -70,6 +70,18 @@ export type ClipType =
   | 'AUDIO'
   | 'BEAT';
 
+export type Collaborator = {
+  createdAt: Scalars['DateTime']['output'];
+  displayName: Scalars['String']['output'];
+  email: Scalars['String']['output'];
+  role: CollaboratorRole;
+  userId: Scalars['ID']['output'];
+};
+
+export type CollaboratorRole =
+  | 'EDITOR'
+  | 'VIEWER';
+
 export type CreateSongInput = {
   bpm: Scalars['Int']['input'];
   timeSignature: Scalars['String']['input'];
@@ -93,6 +105,8 @@ export type Mutation = {
   deleteClip: Scalars['Boolean']['output'];
   deleteSong: Scalars['Boolean']['output'];
   deleteTrack: Scalars['Boolean']['output'];
+  shareSong: Collaborator;
+  unshareSong: Scalars['Boolean']['output'];
   updateClip: Clip;
   updateSong: Song;
   updateTrack: Track;
@@ -140,6 +154,17 @@ export type MutationDeleteTrackArgs = {
 };
 
 
+export type MutationShareSongArgs = {
+  input: ShareSongInput;
+};
+
+
+export type MutationUnshareSongArgs = {
+  songId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+
 export type MutationUpdateClipArgs = {
   id: Scalars['ID']['input'];
   input: UpdateClipInput;
@@ -174,19 +199,32 @@ export type QuerySongArgs = {
   id: Scalars['ID']['input'];
 };
 
+export type ShareSongInput = {
+  email: Scalars['String']['input'];
+  role: CollaboratorRole;
+  songId: Scalars['ID']['input'];
+};
+
 export type Song = {
   audioFiles: Array<AudioFile>;
   beats: Array<Beat>;
   bpm: Scalars['Int']['output'];
   clips: Array<Clip>;
+  collaborators: Array<Collaborator>;
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
+  myRole: SongRole;
   ownerId?: Maybe<Scalars['ID']['output']>;
   timeSignature: Scalars['String']['output'];
   title: Scalars['String']['output'];
   updatedAt: Scalars['DateTime']['output'];
   version: Scalars['Int']['output'];
 };
+
+export type SongRole =
+  | 'EDITOR'
+  | 'OWNER'
+  | 'VIEWER';
 
 export type Step = {
   length: Scalars['Int']['output'];
