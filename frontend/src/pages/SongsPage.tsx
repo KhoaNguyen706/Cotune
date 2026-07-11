@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError, gql, rest } from "../api/client";
 import { colorFor } from "../ui/trackColors";
-import { Button, Card, Chip, EditableName, EmptyState, ErrorBanner, Field, Skeleton, TextInput } from "../ui/kit";
+import { coverFor } from "../ui/cover";
+import { Button, EditableName, ErrorBanner, Field, Skeleton, TextInput } from "../ui/kit";
+import { AppShell, Canvas, IconButton, Modal, TopBar } from "../ui/shell";
 import type { Song } from "../types";
 
 // Queries live next to the component that owns them; each asks for exactly
@@ -36,6 +38,7 @@ export function SongsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [creating, setCreating] = useState(false); // modal open?
   const [title, setTitle] = useState("");
   const [bpm, setBpm] = useState(120);
   const [timeSignature, setTimeSignature] = useState("4/4");
@@ -65,6 +68,7 @@ export function SongsPage() {
     try {
       await gql(CREATE_SONG, { input: { title, bpm, timeSignature } });
       setTitle("");
+      setCreating(false);
       // Re-query instead of hand-patching local state: one source of truth
       // (the server), and we automatically see songs other collaborators
       // created — a habit that matters once real-time editing arrives.
@@ -98,35 +102,177 @@ export function SongsPage() {
       // Shouldn't normally happen (the button only renders for the owner),
       // but the SERVER is the enforcement — this catch is for devtools
       // adventurers and stale pages.
-      setError(e instanceof ApiError && e.status === 403
-        ? "Only the song's creator can delete it"
-        : "Failed to delete song");
+      setError(
+        e instanceof ApiError && e.status === 403
+          ? "Only the song's creator can delete it"
+          : "Failed to delete song",
+      );
     }
   }
 
   return (
-    <main className="w-full max-w-3xl">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-2xl font-extrabold tracking-tight text-transparent">
-          Cotune
-        </h1>
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-sm font-bold text-bg">
-            {user?.displayName?.[0]?.toUpperCase() ?? "?"}
+    <AppShell>
+      <TopBar
+        left={
+          <span className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent-2 text-base text-bg shadow-glow">
+              ♪
+            </span>
+            <span className="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-lg font-extrabold tracking-tight text-transparent">
+              Cotune
+            </span>
           </span>
-          <span className="mr-2 text-sm text-muted">{user?.displayName}</span>
-          <Button variant="ghost" size="sm" onClick={logout}>
-            Sign out
-          </Button>
-        </div>
-      </header>
+        }
+        right={
+          <>
+            <Button onClick={() => setCreating(true)}>+ New song</Button>
+            <span className="ml-2 flex items-center gap-2 border-l border-edge pl-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-sm font-bold text-text">
+                {user?.displayName?.[0]?.toUpperCase() ?? "?"}
+              </span>
+              <span className="hidden text-sm text-muted sm:inline">{user?.displayName}</span>
+              <IconButton onClick={logout} title="Sign out" aria-label="Sign out">
+                ⏻
+              </IconButton>
+            </span>
+          </>
+        }
+      />
 
-      <Card className="mb-4">
-        <h2 className="mb-4 font-semibold">New song</h2>
-        <form onSubmit={onCreate} className="flex flex-wrap items-end gap-4">
-          <div className="min-w-48 flex-1">
+      <Canvas className="p-8">
+        {/* A real max-width, and only to stop lines from getting absurd on
+            ultrawides — the grid still fills a 1440 screen, which the old
+            max-w-3xl column did not. */}
+        <div className="mx-auto max-w-[1600px]">
+          <div className="mb-6 flex items-end justify-between">
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight">Your songs</h1>
+              <p className="text-sm text-muted">
+                {loading ? "Loading…" : `${songs.length} song${songs.length === 1 ? "" : "s"}`}
+              </p>
+            </div>
+          </div>
+
+          {error && <ErrorBanner>{error}</ErrorBanner>}
+
+          {loading ? (
+            // Skeletons mirror the CARD shape (cover + two text lines) — no
+            // spinner, no layout shift when the real grid lands.
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-5">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex flex-col gap-3">
+                  <Skeleton className="aspect-square w-full rounded-xl" />
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-1/3" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <ul className="grid list-none grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-5 p-0">
+              {songs.map((song) => {
+                const cover = coverFor(song.id);
+                const mine = song.ownerId === user?.id;
+                const lanes = song.beats.flatMap((b) => b.tracks);
+                return (
+                  <li key={song.id} className="group relative">
+                    {/* The WHOLE card is the link (stretched-link pattern):
+                        a 220px target instead of a 50px "Open →" text link.
+                        Interactive children below sit above it via z-index. */}
+                    <Link
+                      to={`/songs/${song.id}`}
+                      className="absolute inset-0 z-10 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      aria-label={`Open ${song.title}`}
+                    />
+                    <div
+                      className="relative mb-3 flex aspect-square items-end overflow-hidden rounded-xl border border-edge shadow-card transition-transform duration-200 group-hover:-translate-y-1"
+                      style={{ backgroundImage: cover.backgroundImage }}
+                    >
+                      {/* Play affordance on hover — the card looks like it
+                          DOES something, which a flat gradient does not. */}
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/95 text-lg text-black shadow-lg">
+                          ▶
+                        </span>
+                      </span>
+
+                      {/* Instrument dots = the song's actual contents, read
+                          at a glance without opening it. */}
+                      <span className="relative flex w-full items-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-8">
+                        {lanes.slice(0, 8).map((lane) => (
+                          <i
+                            key={lane.id}
+                            className="h-1.5 w-1.5 rounded-full ring-1 ring-black/30"
+                            style={{ background: colorFor(lane.instrument) }}
+                          />
+                        ))}
+                        {lanes.length === 0 && (
+                          <span className="text-[0.65rem] font-semibold text-white/70">empty</span>
+                        )}
+                      </span>
+
+                      {mine && (
+                        // z-20: above the stretched link, or it would never
+                        // receive the click.
+                        <span className="absolute right-2 top-2 z-20 opacity-0 transition-opacity group-hover:opacity-100">
+                          <IconButton
+                            tone="danger"
+                            className="bg-black/50 backdrop-blur-sm hover:bg-black/70"
+                            title="Delete song"
+                            onClick={() => void onDelete(song.id)}
+                          >
+                            🗑
+                          </IconButton>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="relative z-20 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <strong className="block truncate text-sm font-semibold tracking-tight">
+                          {mine ? (
+                            <EditableName
+                              value={song.title}
+                              maxLength={120}
+                              onRename={(next) => onRename(song.id, next)}
+                            />
+                          ) : (
+                            song.title
+                          )}
+                        </strong>
+                        <span className="text-xs text-muted">
+                          {song.bpm} BPM · {song.timeSignature}
+                          {song.beats.length > 0 &&
+                            ` · ${song.beats.length} beat${song.beats.length === 1 ? "" : "s"}`}
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+
+              {/* The create affordance lives IN the grid, where your eye
+                  already is after scanning the songs — instead of a
+                  permanent form block above them. */}
+              <li>
+                <button
+                  onClick={() => setCreating(true)}
+                  className="flex aspect-square w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-edge text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  <span className="text-3xl">+</span>
+                  <span className="text-sm font-semibold">New song</span>
+                </button>
+              </li>
+            </ul>
+          )}
+        </div>
+      </Canvas>
+
+      {creating && (
+        <Modal title="New song" onClose={() => setCreating(false)}>
+          <form onSubmit={onCreate} className="flex flex-col gap-4">
             <Field label="Title">
               <TextInput
+                autoFocus
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Midnight Sketch"
@@ -134,133 +280,42 @@ export function SongsPage() {
                 maxLength={120}
               />
             </Field>
-          </div>
-          <div className="w-24">
-            <Field label="BPM">
-              <TextInput
-                type="number"
-                min={20}
-                max={400}
-                value={bpm}
-                onChange={(e) => setBpm(Number(e.target.value))}
-                required
-              />
-            </Field>
-          </div>
-          <div className="w-28">
-            <Field label="Time sig">
-              <TextInput
-                value={timeSignature}
-                onChange={(e) => setTimeSignature(e.target.value)}
-                required
-                pattern="\d{1,2}/\d{1,2}"
-                title="e.g. 4/4"
-              />
-            </Field>
-          </div>
-          <Button type="submit" disabled={busy}>
-            {busy ? "Creating…" : "Create"}
-          </Button>
-        </form>
-      </Card>
-
-      {error && <ErrorBanner>{error}</ErrorBanner>}
-
-      <h2 className="mb-4 font-semibold">Songs</h2>
-
-      {loading ? (
-        // Skeletons mirror the card shape — no spinner, no layout shift.
-        <div className="flex flex-col gap-4">
-          {[0, 1, 2].map((i) => (
-            <Card key={i}>
-              <div className="flex items-center gap-4">
-                <Skeleton className="h-6 w-40" />
-                <Skeleton className="h-6 w-16" />
-                <Skeleton className="h-6 w-12" />
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <Field label="BPM">
+                  <TextInput
+                    type="number"
+                    min={20}
+                    max={400}
+                    value={bpm}
+                    onChange={(e) => setBpm(Number(e.target.value))}
+                    required
+                  />
+                </Field>
               </div>
-              <div className="mt-4 flex gap-2">
-                <Skeleton className="h-6 w-24" />
-                <Skeleton className="h-6 w-20" />
+              <div className="flex-1">
+                <Field label="Time sig">
+                  <TextInput
+                    value={timeSignature}
+                    onChange={(e) => setTimeSignature(e.target.value)}
+                    required
+                    pattern="\d{1,2}/\d{1,2}"
+                    title="e.g. 4/4"
+                  />
+                </Field>
               </div>
-            </Card>
-          ))}
-        </div>
-      ) : songs.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon="🎛️"
-            title="No songs yet"
-            hint='Every track starts with a first beat. Name one above — "Midnight Sketch" at 120 BPM is a classic place to begin.'
-          />
-        </Card>
-      ) : (
-        <ul className="flex list-none flex-col gap-4 p-0">
-          {songs.map((song) => (
-            <li key={song.id}>
-              <Card className="transition-[transform,border-color] duration-150 hover:-translate-y-0.5 hover:border-edge-strong">
-                <div className="flex flex-wrap items-center gap-4">
-                  <strong className="text-base tracking-tight">
-                    {song.ownerId === user?.id ? (
-                      <EditableName
-                        value={song.title}
-                        maxLength={120}
-                        onRename={(next) => onRename(song.id, next)}
-                      />
-                    ) : (
-                      song.title
-                    )}
-                  </strong>
-                  <span className="flex flex-1 gap-2">
-                    <Chip>{song.bpm} BPM</Chip>
-                    <Chip>{song.timeSignature}</Chip>
-                    {song.ownerId === user?.id && <Chip tone="accent">yours</Chip>}
-                  </span>
-                  <Link
-                    className="rounded text-sm font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                    to={`/songs/${song.id}`}
-                  >
-                    Open →
-                  </Link>
-                  {/* UI mirrors the server rule (owner-only) for honest
-                      affordances; the real gate is @PreAuthorize server-side. */}
-                  {song.ownerId === user?.id && (
-                    <Button variant="danger" size="sm" onClick={() => void onDelete(song.id)}>
-                      Delete
-                    </Button>
-                  )}
-                </div>
-                {song.beats.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {[...song.beats]
-                      // The API contract says: sort by position, never
-                      // assume contiguity (gaps appear after deletes).
-                      .sort((a, b) => a.position - b.position)
-                      .map((beat) => (
-                        <span
-                          key={beat.id}
-                          className="inline-flex items-center gap-2 rounded-full border border-edge bg-bg-soft px-2 py-0.5 text-xs text-muted"
-                        >
-                          <span className="inline-flex gap-1">
-                            {[...beat.tracks]
-                              .sort((a, b) => a.position - b.position)
-                              .map((track) => (
-                                <i
-                                  key={track.id}
-                                  className="h-2 w-2 rounded-full"
-                                  style={{ background: colorFor(track.instrument) }}
-                                />
-                              ))}
-                          </span>
-                          {beat.name}
-                        </span>
-                      ))}
-                  </div>
-                )}
-              </Card>
-            </li>
-          ))}
-        </ul>
+            </div>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setCreating(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? "Creating…" : "Create song"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
       )}
-    </main>
+    </AppShell>
   );
 }

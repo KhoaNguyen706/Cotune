@@ -39,20 +39,43 @@
   --shadow-glow: 0 6px 18px rgb(139 124 248 / 0.35);
 }
 
-/* ---------- base ---------- */
+/* ---------- base ----------
+
+   THE LAYOUT RULE: this is a DAW, not a document. The app owns the whole
+   viewport — a fixed transport bar, a browser sidebar, and a canvas that
+   takes every remaining pixel. Nothing here centers a narrow column
+   (#root used to do exactly that, which is what made the app read as a
+   blog with a grid pasted into it). Pages that DO want a centered column
+   (login) opt in via .page-center; they are the exception.
+   -------------------------------------------------------------------- */
+
+html,
+body,
+#root {
+  height: 100%;
+}
 
 #root {
-  @apply flex justify-center px-6 pt-8 pb-16;
+  /* h-screen + overflow-hidden = the app never scrolls as a page. Scroll
+     lives INSIDE panes (sidebar, canvas), which is what makes a fixed
+     transport bar possible at all. */
+  @apply flex h-screen flex-col overflow-hidden;
 }
 
 body {
   @apply bg-bg text-text font-sans antialiased;
   font-size: 15px;
-  /* two soft brand glows anchor the dark canvas — depth without imagery */
-  background-image:
-    radial-gradient(1100px 520px at 85% -10%, rgb(139 124 248 / 0.13), transparent 60%),
-    radial-gradient(900px 480px at -10% 108%, rgb(56 189 248 / 0.09), transparent 55%);
-  min-height: 100vh;
+  /* one soft brand glow, top-right — depth without imagery. Fixed, so it
+     doesn't smear when a pane scrolls under it. */
+  background-image: radial-gradient(1200px 600px at 88% -12%, rgb(139 124 248 / 0.1), transparent 62%);
+  background-attachment: fixed;
+  overflow: hidden;
+}
+
+/** The one place a centered column is right: auth screens have no
+ *  workspace to fill. */
+.page-center {
+  @apply flex h-full items-center justify-center overflow-y-auto p-6;
 }
 
 ::-webkit-scrollbar {
@@ -184,18 +207,31 @@ input[type="range"] {
 
 .tl-ruler {
   display: flex;
-  height: 22px;
+  height: 26px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-edge);
+  /* The canvas scrolls; the bar numbers must stay readable while it does.
+     sticky beats a scroll-listener that repositions a copy of the ruler. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .tl-ruler-bar {
   flex: none;
-  padding-left: 4px;
+  padding-left: 5px;
   font-size: 0.62rem;
-  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+  line-height: 26px;
   color: var(--color-muted);
   border-left: 1px solid var(--color-edge);
+}
+
+/* Every 4th bar gets a brighter number + stronger rule: the eye needs
+   anchors to count from once the timeline is 60 bars wide. */
+.tl-ruler-bar.major {
+  color: var(--color-text);
+  border-left-color: var(--color-edge-strong);
 }
 
 .tl-ruler-bar:first-child {

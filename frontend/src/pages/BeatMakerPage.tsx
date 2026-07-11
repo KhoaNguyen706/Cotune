@@ -14,9 +14,21 @@ import {
 } from "../audio/engine";
 import { encodeMp3 } from "../audio/mp3";
 import { createInstrument, type TrackInstrument } from "../audio/instruments";
-import { ArrangementPanel } from "../components/ArrangementPanel";
+import { ArrangementPalette, ArrangementTimeline, type Armed } from "../components/ArrangementPanel";
 import { beatColor, colorFor } from "../ui/trackColors";
-import { Button, Card, EditableName, EmptyState, ErrorBanner, Field, Select, Skeleton, TextInput } from "../ui/kit";
+import { Button, EditableName, EmptyState, ErrorBanner, Select, Skeleton, TextInput } from "../ui/kit";
+import {
+  AppShell,
+  Canvas,
+  CanvasBar,
+  IconButton,
+  Readout,
+  Sidebar,
+  SidebarSection,
+  ToolGroup,
+  TopBar,
+  Workspace,
+} from "../ui/shell";
 import type { AudioFile, Beat, Clip, Song, Step } from "../types";
 
 const STEPS = 16;
@@ -112,6 +124,10 @@ export function BeatMakerPage() {
   const [notesByTrack, setNotesByTrack] = useState<Record<string, Step[]>>({});
   const [clips, setClips] = useState<Clip[]>([]);
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
+  // The armed material ("what am I about to place?") is shared by the
+  // palette (sidebar) and the timeline (canvas) — two siblings, so the
+  // state lives in their closest common ancestor: here.
+  const [armed, setArmed] = useState<Armed>(null);
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null); // lane id
   const [selectedNote, setSelectedNote] = useState<number | null>(null);
@@ -124,7 +140,6 @@ export function BeatMakerPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [newBeatName, setNewBeatName] = useState("");
   const [newTrackName, setNewTrackName] = useState("");
   const [newInstrument, setNewInstrument] = useState("DRUMS");
 
@@ -663,13 +678,15 @@ export function BeatMakerPage() {
     }
   }
 
-  async function addBeat(event: React.FormEvent) {
-    event.preventDefault();
+  // No name field any more: "+" in the beat browser creates "Beat N"
+  // immediately, and the name is editable in place (double-click) like
+  // every other name in the app. A form standing between you and the work
+  // is exactly the MVP smell we're removing.
+  async function addBeat() {
     setError(null);
     try {
-      const name = newBeatName.trim() || `Beat ${beatsRef.current.length + 1}`;
+      const name = `Beat ${beatsRef.current.length + 1}`;
       const data = await gql<{ addBeat: { id: string } }>(ADD_BEAT, { input: { songId, name } });
-      setNewBeatName("");
       await load();
       setSelectedBeatId(data.addBeat.id);
     } catch (e) {
@@ -788,29 +805,22 @@ export function BeatMakerPage() {
 
   if (!song) {
     return (
-      <main className="w-full max-w-6xl">
-        {error ? (
-          <ErrorBanner>{error}</ErrorBanner>
-        ) : (
-          // Skeleton mirrors the real layout: header row, beat list, roll.
-          <>
-            <div className="mb-6 flex items-center justify-between">
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-8 w-64" />
-            </div>
-            <Card className="mb-4">
-              <div className="flex flex-col gap-4">
-                <Skeleton className="h-6 w-full" />
-                <Skeleton className="h-6 w-full" />
-                <Skeleton className="h-6 w-2/3" />
-              </div>
-            </Card>
-            <Card>
-              <Skeleton className="h-64 w-full" />
-            </Card>
-          </>
-        )}
-      </main>
+      <AppShell>
+        {/* The skeleton mirrors the SHELL, not a stack of cards: bar on top,
+            sidebar left, canvas right. Loading looks like the app it's
+            becoming, so nothing jumps when the data lands. */}
+        <TopBar left={<Skeleton className="h-6 w-48" />} right={<Skeleton className="h-8 w-64" />} />
+        <Workspace>
+          <Sidebar>
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </Sidebar>
+          <Canvas className="p-4">
+            {error ? <ErrorBanner>{error}</ErrorBanner> : <Skeleton className="h-full w-full" />}
+          </Canvas>
+        </Workspace>
+      </AppShell>
     );
   }
 
@@ -831,258 +841,264 @@ export function BeatMakerPage() {
     selected !== null && selectedNote !== null ? selectedNotes[selectedNote] ?? null : null;
 
   const msButton =
-    "rounded border px-2 py-0.5 text-[0.68rem] font-bold transition-colors duration-150 cursor-pointer " +
+    "rounded border px-1.5 py-0.5 text-[0.62rem] font-bold transition-colors duration-150 cursor-pointer " +
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
-  const tabButton = (tab: "arrange" | "beats", label: string) => (
-    <button
-      className={
-        "rounded-md px-4 py-1 text-sm font-semibold transition-colors duration-150 cursor-pointer " +
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 " +
-        (mode === tab ? "bg-surface-2 text-text" : "text-muted hover:text-text")
-      }
-      onClick={() => switchMode(tab)}
+  // Tabs pick which CANVAS is mounted; the transport, sidebar and title bar
+  // are shared chrome. That's the whole reason for a shell — the frame
+  // stays, only the work surface swaps.
+  const tab = (id: "arrange" | "beats", label: string) => (
+    <IconButton
+      active={mode === id}
+      className="px-3"
+      onClick={() => switchMode(id)}
+      title={id === "arrange" ? "Arrange the song timeline" : "Build the beats"}
     >
       {label}
-    </button>
+    </IconButton>
   );
 
   return (
-    <main className="w-full max-w-6xl">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Link
-            className="rounded text-xs text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-            to="/"
-          >
-            ← Songs
-          </Link>
-          <h1 className="text-2xl font-extrabold tracking-tight">
-            <EditableName value={song.title} maxLength={120} onRename={(title) => patchSong({ title })} />
-          </h1>
-          <span className="text-sm text-muted">
-            <EditableName value={String(song.bpm)} maxLength={3} onRename={changeBpm} />
-            {" BPM · "}
-            <EditableName
-              value={song.timeSignature}
-              maxLength={5}
-              onRename={(timeSignature) => void patchSong({ timeSignature })}
-            />
-          </span>
-        </div>
+    <AppShell>
+      <TopBar
+        left={
+          <>
+            <Link
+              to="/"
+              title="Back to songs"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            >
+              ←
+            </Link>
+            <span className="min-w-0">
+              <h1 className="truncate text-base font-bold leading-tight tracking-tight">
+                <EditableName
+                  value={song.title}
+                  maxLength={120}
+                  onRename={(title) => patchSong({ title })}
+                />
+              </h1>
+              {/* Save state lives WITH the title — it's a property of this
+                  document, not a button you press. It only becomes a button
+                  when there's something to save. */}
+              <span className="text-[0.68rem] text-muted">
+                {saving ? "Saving…" : dirty.size > 0 ? `${dirty.size} unsaved` : "All changes saved"}
+              </span>
+            </span>
+          </>
+        }
+        center={
+          <>
+            <ToolGroup>
+              {tab("arrange", "Arrange")}
+              {tab("beats", "Beats")}
+            </ToolGroup>
 
-        <div className="flex rounded-lg border border-edge bg-bg-soft p-1">
-          {tabButton("arrange", "Arrange")}
-          {tabButton("beats", "Beats")}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 text-sm" title="Master volume">
-            <span aria-hidden>🔊</span>
-            <input
-              type="range"
-              className="w-24"
-              min={0}
-              max={100}
-              value={volume}
-              onChange={(e) => applyVolume(Number(e.target.value))}
-            />
-          </label>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void testSound()}
-            title="Play a test blip — if you can't hear this, check your tab/OS volume"
-          >
-            Test
-          </Button>
-          <Button
-            className="min-w-24"
-            onClick={() => void togglePlay()}
-            title={mode === "arrange" ? "Play the arrangement" : "Loop the selected beat"}
-          >
-            {playing ? "■ Stop" : "▶ Play"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={undo}
-            disabled={historySizes.past === 0}
-            title="Undo pattern edit (Ctrl+Z)"
-          >
-            ↺
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={redo}
-            disabled={historySizes.future === 0}
-            title="Redo pattern edit (Ctrl+Shift+Z)"
-          >
-            ↻
-          </Button>
-          <Button variant="ghost" onClick={() => void save()} disabled={saving || dirty.size === 0}>
-            {saving ? "Saving…" : dirty.size > 0 ? `Save (${dirty.size})` : "Saved"}
-          </Button>
-          {mode === "arrange" && (
-            <>
-              <Button
-                variant="ghost"
-                onClick={() => void exportAs("wav")}
-                disabled={exporting}
-                title="Render the arrangement to a WAV file (lossless)"
+            {/* TRANSPORT: the one primary action, flanked by the edit
+                history. Grouped and sized identically — the old header had
+                these as four differently-shaped buttons in a loose row. */}
+            <ToolGroup>
+              <IconButton onClick={undo} disabled={historySizes.past === 0} title="Undo (Ctrl+Z)">
+                ↺
+              </IconButton>
+              <IconButton
+                onClick={redo}
+                disabled={historySizes.future === 0}
+                title="Redo (Ctrl+Shift+Z)"
               >
-                {exporting ? "Rendering…" : "⬇ WAV"}
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => void exportAs("mp3")}
-                disabled={exporting}
-                title="Render the arrangement to an MP3 file (192 kbps)"
+                ↻
+              </IconButton>
+              <IconButton
+                tone="solid"
+                className="min-w-16"
+                onClick={() => void togglePlay()}
+                title={
+                  mode === "arrange" ? "Play the arrangement (Space)" : "Loop the selected beat (Space)"
+                }
               >
-                {exporting ? "Rendering…" : "⬇ MP3"}
-              </Button>
-            </>
-          )}
-        </div>
-      </header>
+                {playing ? "■ Stop" : "▶ Play"}
+              </IconButton>
+            </ToolGroup>
 
-      {error && <ErrorBanner>{error}</ErrorBanner>}
-
-      {mode === "arrange" && (
-        <Card className="mb-4">
-          <ArrangementPanel
-            songId={song.id}
-            bpm={song.bpm}
-            beats={sortedBeats}
-            audioFiles={audioFiles}
-            clips={clips}
-            onClipsChange={setClips}
-            onAudioFilesChange={setAudioFiles}
-            playheadStep={arrangeStep}
-            onError={setError}
-            onOpenBeat={(beatId) => {
-              setSelectedBeatId(beatId);
-              const beat = sortedBeats.find((b) => b.id === beatId);
-              setSelectedId(beat?.tracks[0]?.id ?? null);
-              switchMode("beats");
-            }}
-          />
-        </Card>
-      )}
-
-      {mode === "beats" && (
-        <>
-          {/* -- beat selector: Beat 1 | Beat 2 | ... | + new ------------- */}
-          <Card className="mb-4">
-            <div className="flex flex-wrap items-center gap-2">
-              {sortedBeats.map((beat) => (
-                <span
-                  key={beat.id}
-                  className={
-                    "inline-flex cursor-pointer items-center gap-2 rounded-full border px-2 py-1 text-sm font-semibold transition-colors duration-150 " +
-                    (beat.id === selectedBeatId
-                      ? "border-edge-strong bg-surface-2 text-text"
-                      : "border-edge text-muted hover:border-edge-strong")
-                  }
-                  onClick={() => {
-                    setSelectedBeatId(beat.id);
-                    setSelectedId(
-                      [...beat.tracks].sort((a, b) => a.position - b.position)[0]?.id ?? null,
-                    );
-                  }}
-                >
-                  <i className="h-2.5 w-2.5 rounded-full" style={{ background: beatColor(beat.position) }} />
-                  <EditableName value={beat.name} onRename={(name) => patchBeat(beat.id, { name })} />
-                  <button
-                    className="rounded text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                    title="Delete beat (removes its lanes and timeline clips)"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void removeBeat(beat.id);
-                    }}
-                  >
-                    ×
-                  </button>
+            <ToolGroup>
+              {/* Tempo and meter are DATA, so they read as data (a numeric
+                  readout), not as two more buttons. Still editable —
+                  double-click, same as everywhere else in the app. */}
+              <Readout label="BPM">
+                <EditableName value={String(song.bpm)} maxLength={3} onRename={changeBpm} />
+              </Readout>
+              <Readout label="Sig">
+                <EditableName
+                  value={song.timeSignature}
+                  maxLength={5}
+                  onRename={(timeSignature) => void patchSong({ timeSignature })}
+                />
+              </Readout>
+            </ToolGroup>
+          </>
+        }
+        right={
+          <>
+            <ToolGroup>
+              <label className="flex items-center gap-2 px-2" title="Master volume">
+                <span aria-hidden className="text-xs">
+                  🔊
                 </span>
-              ))}
-              <form onSubmit={(e) => void addBeat(e)} className="ml-auto flex items-center gap-2">
-                <TextInput
-                  className="w-40 !py-1 text-sm"
-                  value={newBeatName}
-                  onChange={(e) => setNewBeatName(e.target.value)}
-                  placeholder={`Beat ${sortedBeats.length + 1}`}
-                  maxLength={80}
+                <input
+                  type="range"
+                  className="w-20"
+                  min={0}
+                  max={100}
+                  value={volume}
+                  onChange={(e) => applyVolume(Number(e.target.value))}
                 />
-                <Button type="submit" size="sm">+ Beat</Button>
-              </form>
-            </div>
-            {sortedBeats.length === 0 && (
-              <EmptyState
-                icon="🧱"
-                title="No beats yet"
-                hint='A beat is a full multi-instrument groove — "Beat 1" with kick, snare and bass lanes. Create one above, build it below, then place it on the Arrange timeline.'
-              />
-            )}
-          </Card>
+              </label>
+              <IconButton
+                onClick={() => void testSound()}
+                title="Play a test blip — if you can't hear this, check your tab/OS volume"
+              >
+                🎧
+              </IconButton>
+            </ToolGroup>
 
-          {selectedBeat && (
-            <Card className="mb-4">
-              <div className="mb-4 flex flex-wrap items-center gap-3">
-                <h2 className="font-semibold">
-                  {selectedBeat.name} — lanes
-                  <span className="ml-2 text-xs font-normal text-muted">
-                    these instruments play together as one beat
-                  </span>
-                </h2>
-                <label className="ml-auto flex items-center gap-2 text-xs text-muted">
-                  length
-                  <Select
-                    className="w-24 !py-1 text-sm"
-                    value={selectedBeat.bars}
-                    onChange={(e) => void patchBeat(selectedBeat.id, { bars: Number(e.target.value) })}
-                  >
-                    {[1, 2, 4, 8].map((b) => (
-                      <option key={b} value={b}>
-                        {b} bar{b > 1 ? "s" : ""}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              </div>
-              {sortedLanes.length === 0 && (
-                <EmptyState
-                  icon="🥁"
-                  title="No lanes in this beat"
-                  hint="Add a drums lane below, then click cells in the piano roll to lay down your first kick pattern."
-                />
-              )}
-              <div className="flex flex-col gap-2">
-                {sortedLanes.map((track) => {
-                  const notes = notesByTrack[track.id] ?? [];
-                  const isMuted = muted.has(track.id);
-                  const isSolo = soloed.has(track.id);
-                  return (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void save()}
+              disabled={saving || dirty.size === 0}
+            >
+              {saving ? "Saving…" : dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
+            </Button>
+
+            {mode === "arrange" && (
+              <ToolGroup>
+                <IconButton
+                  onClick={() => void exportAs("wav")}
+                  disabled={exporting}
+                  title="Render the arrangement to a WAV file (lossless)"
+                >
+                  {exporting ? "…" : "WAV"}
+                </IconButton>
+                <IconButton
+                  onClick={() => void exportAs("mp3")}
+                  disabled={exporting}
+                  title="Render the arrangement to an MP3 file (192 kbps)"
+                >
+                  {exporting ? "…" : "MP3"}
+                </IconButton>
+              </ToolGroup>
+            )}
+          </>
+        }
+      />
+
+      <Workspace>
+        <Sidebar>
+          {mode === "arrange" ? (
+            <ArrangementPalette
+              songId={song.id}
+              beats={sortedBeats}
+              audioFiles={audioFiles}
+              armed={armed}
+              onArmedChange={setArmed}
+              onClipsChange={setClips}
+              onAudioFilesChange={setAudioFiles}
+              onError={setError}
+            />
+          ) : (
+            <>
+              {/* -- beat browser ---------------------------------------- */}
+              <SidebarSection
+                title="Beats"
+                action={
+                  <IconButton onClick={() => void addBeat()} title="New beat">
+                    +
+                  </IconButton>
+                }
+              >
+                <div className="flex flex-col gap-1">
+                  {sortedBeats.length === 0 && (
+                    <p className="text-xs text-muted">
+                      A beat is a full multi-instrument groove. Create one to start.
+                    </p>
+                  )}
+                  {sortedBeats.map((beat) => (
                     <div
-                      key={track.id}
+                      key={beat.id}
                       className={
-                        "flex items-center gap-4 rounded-lg border px-2 py-1 cursor-pointer transition-colors duration-150 " +
-                        (track.id === selectedId
-                          ? "border-edge-strong bg-surface-2"
-                          : "border-transparent hover:bg-surface-2")
+                        "group flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors duration-150 " +
+                        (beat.id === selectedBeatId
+                          ? "border-accent bg-accent/15 text-text"
+                          : "border-edge bg-bg-soft text-muted hover:border-edge-strong hover:text-text")
                       }
-                      onClick={() => setSelectedId(track.id)}
+                      onClick={() => {
+                        setSelectedBeatId(beat.id);
+                        setSelectedId(
+                          [...beat.tracks].sort((a, b) => a.position - b.position)[0]?.id ?? null,
+                        );
+                      }}
                     >
-                      <div className="flex w-48 shrink-0 items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ background: colorFor(track.instrument) }}
+                      <i
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ background: beatColor(beat.position) }}
+                      />
+                      <strong className="min-w-0 flex-1 truncate font-semibold">
+                        <EditableName
+                          value={beat.name}
+                          onRename={(name) => patchBeat(beat.id, { name })}
                         />
-                        <strong className="truncate text-sm">
-                          <EditableName value={track.name} onRename={(name) => renameTrack(track.id, name)} />
-                        </strong>
-                        <span className="text-xs text-muted">{track.instrument.toLowerCase()}</span>
-                        <span className="ml-auto inline-flex gap-1">
+                      </strong>
+                      <span className="shrink-0 text-[0.6rem] tabular-nums">
+                        {beat.bars} bar{beat.bars > 1 ? "s" : ""}
+                      </span>
+                      <button
+                        className="shrink-0 rounded text-muted opacity-0 transition-opacity hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover:opacity-100"
+                        title="Delete beat (removes its lanes and timeline clips)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void removeBeat(beat.id);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </SidebarSection>
+
+              {/* -- lane browser (the "channel rack") -------------------- */}
+              {selectedBeat && (
+                <SidebarSection title={`${selectedBeat.name} · lanes`}>
+                  <div className="flex flex-col gap-1">
+                    {sortedLanes.length === 0 && (
+                      <p className="text-xs text-muted">
+                        No lanes yet — add drums below, then draw a kick in the roll.
+                      </p>
+                    )}
+                    {sortedLanes.map((track) => {
+                      const isMuted = muted.has(track.id);
+                      const isSolo = soloed.has(track.id);
+                      return (
+                        <div
+                          key={track.id}
+                          className={
+                            "flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs transition-colors duration-150 " +
+                            (track.id === selectedId
+                              ? "border-edge-strong bg-surface-2 text-text"
+                              : "border-edge bg-bg-soft text-muted hover:border-edge-strong")
+                          }
+                          onClick={() => setSelectedId(track.id)}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ background: colorFor(track.instrument) }}
+                          />
+                          <strong className="min-w-0 flex-1 truncate font-semibold">
+                            <EditableName
+                              value={track.name}
+                              onRename={(name) => renameTrack(track.id, name)}
+                            />
+                          </strong>
                           <button
                             className={
                               msButton +
@@ -1113,182 +1129,312 @@ export function BeatMakerPage() {
                           >
                             S
                           </button>
-                        </span>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void removeTrack(track.id);
-                          }}
-                        >
-                          ×
-                        </Button>
-                      </div>
-                      <div
-                        className="seq-cells mini"
-                        style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
-                      >
-                        {Array.from({ length: beatSteps }, (_, s) => (
-                          <span
-                            key={s}
-                            className={[
-                              "cell",
-                              notes.some((n) => s >= n.step && s < n.step + n.length) ? "on" : "",
-                              s === currentStep ? "playhead" : "",
-                              s % 4 === 0 ? "beat" : "",
-                            ].join(" ")}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
+                          <button
+                            className="shrink-0 rounded px-0.5 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                            title="Delete lane"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void removeTrack(track.id);
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-          {selected && (
-            <Card className="mb-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-semibold">{selected.name} — piano roll</h2>
-                <div className="flex items-center gap-2 text-sm text-muted">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setOctaves((p) => ({ ...p, [selected.id]: Math.max(0, octave - 1) }))}
-                  >
-                    Oct −
-                  </Button>
-                  <span>octave {octave}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setOctaves((p) => ({ ...p, [selected.id]: Math.min(7, octave + 1) }))}
-                  >
-                    Oct +
-                  </Button>
-                  {currentNote && (
-                    <label className="flex items-center gap-2 whitespace-nowrap text-xs">
-                      velocity {Math.round(currentNote.velocity * 100)}%
-                      <input
-                        type="range"
-                        className="w-32"
-                        min={10}
-                        max={100}
-                        value={Math.round(currentNote.velocity * 100)}
-                        onPointerDown={recordHistory}
-                        onChange={(e) => {
-                          const velocity = Number(e.target.value) / 100;
-                          updateNote(selected.id, selectedNote!, { velocity });
-                          preview(selected.id, currentNote.pitch, velocity);
-                        }}
-                      />
-                    </label>
-                  )}
-                  {hiddenNotes > 0 && <span className="text-xs">{hiddenNotes} note(s) in other octaves</span>}
-                </div>
-              </div>
-              <p className="mt-2 mb-4 text-xs text-muted">
-                Click empty cell = add note (keep dragging to stretch) · drag note = move (up/down =
-                pitch) · right edge = resize · click note = select, then slide velocity or press
-                Delete · right-click = delete · Space = play/stop.
-              </p>
-              <div className="flex select-none overflow-x-auto rounded-lg">
-                <div className="w-11 shrink-0 text-[0.68rem] text-muted">
-                  {PITCH_ROWS.map((p) => (
-                    <div
-                      key={p}
-                      style={{ height: CELL_H }}
-                      className={
-                        "flex items-center justify-end pr-2" + (p.includes("#") ? " text-muted/50" : "")
-                      }
-                    >
-                      {p}{octave}
-                    </div>
-                  ))}
-                </div>
-                <div
-                  className="roll"
-                  ref={rollRef}
-                  onMouseDown={onRollMouseDown}
-                  style={{ width: beatSteps * CELL_W, height: PITCH_ROWS.length * CELL_H }}
-                >
-                  {PITCH_ROWS.map((p, row) =>
-                    Array.from({ length: beatSteps }, (_, col) => (
-                      <div
-                        key={`${row}-${col}`}
-                        className={[
-                          "roll-cell",
-                          p.includes("#") ? "dark" : "",
-                          col % 4 === 0 ? "beat" : "",
-                          col === currentStep ? "playcol" : "",
-                        ].join(" ")}
-                        style={{ left: col * CELL_W, top: row * CELL_H, width: CELL_W, height: CELL_H }}
-                      />
-                    )),
-                  )}
-                  {selectedNotes.map((note, index) => {
-                    const row = rowOf(note.pitch, octave);
-                    if (row === null) return null;
-                    return (
-                      <div
-                        key={index}
-                        className={`note ${index === selectedNote ? "selected" : ""}`}
-                        style={{
-                          left: note.step * CELL_W + 1,
-                          top: row * CELL_H + 2,
-                          width: note.length * CELL_W - 3,
-                          height: CELL_H - 4,
-                          // Velocity is VISIBLE: quiet notes are translucent.
-                          opacity: 0.35 + 0.65 * note.velocity,
-                          "--tc": colorFor(selected.instrument),
-                        } as React.CSSProperties}
-                        onMouseDown={(e) => onNoteMouseDown(e, index, note, false)}
-                        onContextMenu={(e) => onNoteContextMenu(e, index)}
-                      >
-                        <span
-                          className="note-handle"
-                          onMouseDown={(e) => onNoteMouseDown(e, index, note, true)}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {selectedBeat && (
-            <Card>
-              <h2 className="mb-4 font-semibold">Add lane to {selectedBeat.name}</h2>
-              <form onSubmit={(e) => void addTrack(e)} className="flex flex-wrap items-end gap-4">
-                <div className="min-w-48 flex-1">
-                  <Field label="Name">
+                  <form onSubmit={(e) => void addTrack(e)} className="mt-2 flex flex-col gap-2">
                     <TextInput
+                      className="!py-1 text-xs"
                       value={newTrackName}
                       onChange={(e) => setNewTrackName(e.target.value)}
                       placeholder="808 Kick"
                       required
                       maxLength={80}
                     />
-                  </Field>
-                </div>
-                <div className="w-36">
-                  <Field label="Instrument">
-                    <Select value={newInstrument} onChange={(e) => setNewInstrument(e.target.value)}>
-                      {["DRUMS", "BASS", "SYNTH", "PIANO", "GUITAR", "STRINGS"].map((i) => (
-                        <option key={i} value={i}>{i.toLowerCase()}</option>
-                      ))}
-                    </Select>
-                  </Field>
-                </div>
-                <Button type="submit">Add</Button>
-              </form>
-            </Card>
+                    <div className="flex gap-2">
+                      <Select
+                        className="!py-1 text-xs"
+                        value={newInstrument}
+                        onChange={(e) => setNewInstrument(e.target.value)}
+                      >
+                        {["DRUMS", "BASS", "SYNTH", "PIANO", "GUITAR", "STRINGS"].map((i) => (
+                          <option key={i} value={i}>
+                            {i.toLowerCase()}
+                          </option>
+                        ))}
+                      </Select>
+                      <Button type="submit" size="sm">
+                        Add
+                      </Button>
+                    </div>
+                  </form>
+                </SidebarSection>
+              )}
+            </>
           )}
-        </>
-      )}
-    </main>
+        </Sidebar>
+
+        {/* ---- CANVAS -------------------------------------------------- */}
+        {mode === "arrange" ? (
+          <Canvas>
+            {error && (
+              <div className="px-4 pt-4">
+                <ErrorBanner>{error}</ErrorBanner>
+              </div>
+            )}
+            <ArrangementTimeline
+              songId={song.id}
+              bpm={song.bpm}
+              beats={sortedBeats}
+              audioFiles={audioFiles}
+              clips={clips}
+              onClipsChange={setClips}
+              armed={armed}
+              onArmedChange={setArmed}
+              playheadStep={arrangeStep}
+              onError={setError}
+              onOpenBeat={(beatId) => {
+                setSelectedBeatId(beatId);
+                const beat = sortedBeats.find((b) => b.id === beatId);
+                setSelectedId(beat?.tracks[0]?.id ?? null);
+                switchMode("beats");
+              }}
+            />
+          </Canvas>
+        ) : (
+          <Canvas>
+            {/* The contextual strip: what you can do to THIS beat / THIS
+                note. Everything global already lives in the transport. */}
+            {selectedBeat && (
+              <CanvasBar>
+                <span className="text-sm font-bold tracking-tight">
+                  {selected ? selected.name : selectedBeat.name}
+                </span>
+                {selected && (
+                  <span className="text-xs text-muted">{selected.instrument.toLowerCase()}</span>
+                )}
+
+                <label className="ml-auto flex items-center gap-2 text-xs text-muted">
+                  length
+                  <Select
+                    className="!w-auto !py-0.5 text-xs"
+                    value={selectedBeat.bars}
+                    onChange={(e) => void patchBeat(selectedBeat.id, { bars: Number(e.target.value) })}
+                  >
+                    {[1, 2, 4, 8].map((b) => (
+                      <option key={b} value={b}>
+                        {b} bar{b > 1 ? "s" : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+
+                {selected && (
+                  <ToolGroup>
+                    <IconButton
+                      onClick={() =>
+                        setOctaves((p) => ({ ...p, [selected.id]: Math.max(0, octave - 1) }))
+                      }
+                      title="Octave down"
+                    >
+                      −
+                    </IconButton>
+                    <span className="px-1 font-mono text-xs tabular-nums text-muted">
+                      oct {octave}
+                    </span>
+                    <IconButton
+                      onClick={() =>
+                        setOctaves((p) => ({ ...p, [selected.id]: Math.min(7, octave + 1) }))
+                      }
+                      title="Octave up"
+                    >
+                      +
+                    </IconButton>
+                  </ToolGroup>
+                )}
+
+                {/* Velocity only exists when a note is selected — a control
+                    with nothing to control is noise, so it isn't rendered. */}
+                {currentNote && selected && (
+                  <label className="flex items-center gap-2 whitespace-nowrap text-xs text-muted">
+                    vel {Math.round(currentNote.velocity * 100)}%
+                    <input
+                      type="range"
+                      className="w-24"
+                      min={10}
+                      max={100}
+                      value={Math.round(currentNote.velocity * 100)}
+                      onPointerDown={recordHistory}
+                      onChange={(e) => {
+                        const velocity = Number(e.target.value) / 100;
+                        updateNote(selected.id, selectedNote!, { velocity });
+                        preview(selected.id, currentNote.pitch, velocity);
+                      }}
+                    />
+                  </label>
+                )}
+
+                {hiddenNotes > 0 && (
+                  <span className="text-xs text-muted">{hiddenNotes} note(s) in other octaves</span>
+                )}
+              </CanvasBar>
+            )}
+
+            {error && (
+              <div className="px-4 pt-4">
+                <ErrorBanner>{error}</ErrorBanner>
+              </div>
+            )}
+
+            {!selectedBeat ? (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  icon="🧱"
+                  title="No beats yet"
+                  hint='A beat is a full multi-instrument groove — "Beat 1" with kick, snare and bass lanes. Create one in the left panel, build it here, then place it on the Arrange timeline.'
+                />
+              </div>
+            ) : !selected ? (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  icon="🥁"
+                  title="No lanes in this beat"
+                  hint="Add a drums lane in the left panel, then click cells here to lay down your first kick pattern."
+                />
+              </div>
+            ) : (
+              <div className="p-4">
+                {/* -- piano roll --------------------------------------- */}
+                <div className="inline-flex select-none rounded-lg border border-edge bg-bg-soft p-2">
+                  <div className="w-11 shrink-0 text-[0.68rem] text-muted">
+                    {PITCH_ROWS.map((p) => (
+                      <div
+                        key={p}
+                        style={{ height: CELL_H }}
+                        className={
+                          "flex items-center justify-end pr-2" +
+                          (p.includes("#") ? " text-muted/50" : "")
+                        }
+                      >
+                        {p}
+                        {octave}
+                      </div>
+                    ))}
+                  </div>
+                  <div
+                    className="roll"
+                    ref={rollRef}
+                    onMouseDown={onRollMouseDown}
+                    style={{ width: beatSteps * CELL_W, height: PITCH_ROWS.length * CELL_H }}
+                  >
+                    {PITCH_ROWS.map((p, row) =>
+                      Array.from({ length: beatSteps }, (_, col) => (
+                        <div
+                          key={`${row}-${col}`}
+                          className={[
+                            "roll-cell",
+                            p.includes("#") ? "dark" : "",
+                            col % 4 === 0 ? "beat" : "",
+                            col === currentStep ? "playcol" : "",
+                          ].join(" ")}
+                          style={{
+                            left: col * CELL_W,
+                            top: row * CELL_H,
+                            width: CELL_W,
+                            height: CELL_H,
+                          }}
+                        />
+                      )),
+                    )}
+                    {selectedNotes.map((note, index) => {
+                      const row = rowOf(note.pitch, octave);
+                      if (row === null) return null;
+                      return (
+                        <div
+                          key={index}
+                          className={`note ${index === selectedNote ? "selected" : ""}`}
+                          style={
+                            {
+                              left: note.step * CELL_W + 1,
+                              top: row * CELL_H + 2,
+                              width: note.length * CELL_W - 3,
+                              height: CELL_H - 4,
+                              // Velocity is VISIBLE: quiet notes are translucent.
+                              opacity: 0.35 + 0.65 * note.velocity,
+                              "--tc": colorFor(selected.instrument),
+                            } as React.CSSProperties
+                          }
+                          onMouseDown={(e) => onNoteMouseDown(e, index, note, false)}
+                          onContextMenu={(e) => onNoteContextMenu(e, index)}
+                        >
+                          <span
+                            className="note-handle"
+                            onMouseDown={(e) => onNoteMouseDown(e, index, note, true)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* -- the channel rack: every lane of this beat at a glance,
+                       so you can see the groove without switching lanes. --- */}
+                <div className="mt-4 flex flex-col gap-1">
+                  {sortedLanes.map((track) => {
+                    const notes = notesByTrack[track.id] ?? [];
+                    return (
+                      <div
+                        key={track.id}
+                        className={
+                          "flex cursor-pointer items-center gap-3 rounded-lg border px-2 py-1 transition-colors duration-150 " +
+                          (track.id === selectedId
+                            ? "border-edge-strong bg-surface-2"
+                            : "border-transparent hover:bg-surface-2/60")
+                        }
+                        onClick={() => setSelectedId(track.id)}
+                      >
+                        <span className="flex w-28 shrink-0 items-center gap-2">
+                          <i
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ background: colorFor(track.instrument) }}
+                          />
+                          <span className="truncate text-xs font-semibold">{track.name}</span>
+                        </span>
+                        <div
+                          className="seq-cells mini"
+                          style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
+                        >
+                          {Array.from({ length: beatSteps }, (_, s) => (
+                            <span
+                              key={s}
+                              className={[
+                                "cell",
+                                notes.some((n) => s >= n.step && s < n.step + n.length) ? "on" : "",
+                                s === currentStep ? "playhead" : "",
+                                s % 4 === 0 ? "beat" : "",
+                              ].join(" ")}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* The roll's interaction vocabulary — one quiet line under
+                    the grid instead of a paragraph above it. */}
+                <p className="mt-4 text-xs text-muted">
+                  Click empty cell = add note (drag to stretch) · drag note = move · right edge =
+                  resize · click = select, then slide velocity or press Delete · right-click = delete
+                  · Space = play/stop
+                </p>
+              </div>
+            )}
+          </Canvas>
+        )}
+      </Workspace>
+    </AppShell>
   );
 }

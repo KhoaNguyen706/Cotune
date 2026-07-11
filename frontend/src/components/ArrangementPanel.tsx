@@ -2,25 +2,35 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, fetchBinary, gql, rest } from "../api/client";
 import { downloadBlob, evictAudioBuffer, secondsPerStep, STEPS_PER_BAR, uploadAudioFile } from "../audio/engine";
 import { beatColor, colorFor } from "../ui/trackColors";
-import { Button, EmptyState } from "../ui/kit";
+import { EmptyState } from "../ui/kit";
+import { IconButton, SidebarSection } from "../ui/shell";
 import type { AudioFile, Beat, Clip } from "../types";
 
 /**
- * The timeline: lanes × bars, video-editor style. BEATS (whole
- * multi-instrument grooves — Beat 1, Beat 2...) and uploaded audio are
- * MATERIAL (left palette); the timeline holds PLACEMENTS (clips). One
- * beat clip plays every lane of that beat, looping bar by bar.
- * Arm material by clicking it, then click a lane to place a clip. Drag to
- * move, drag the right edge to resize, right-click to delete, double-click
- * a beat clip to open that beat in the Beats tab.
+ * The arrangement, split across the shell: the PALETTE (material — beats
+ * and uploaded audio) lives in the sidebar, the TIMELINE (placements —
+ * clips) owns the canvas. They were one centered card before; a DAW puts
+ * the browser on the left and gives the timeline every remaining pixel.
+ *
+ * Splitting them means the `armed` selection — "which material am I about
+ * to place?" — no longer fits inside either component, so BeatMakerPage
+ * owns it and passes it down. That's lifting state to the closest common
+ * ancestor: the standard React answer to "two siblings share a fact".
  */
 
 // Geometry constants shared by rendering and drag math — same rule as the
 // piano roll: one source, pixel-exact agreement.
-const STEP_W = 3.5; // px per 16th step → 56px per bar
+const STEP_W = 4.5; // px per 16th step → 72px per bar (was 56: too cramped
+// to read a clip label once the canvas got wide)
 const BAR_W = STEP_W * STEPS_PER_BAR;
-const LANE_H = 44;
 const LANES = 8;
+// Lane height is MEASURED, not constant: the 8 lanes divide whatever height
+// the canvas actually has, so the timeline FILLS the window instead of
+// stopping halfway down and leaving a void — the single most MVP-looking
+// thing about the old editor. A floor keeps lanes usable on short screens
+// (below that the canvas scrolls, which is correct).
+const MIN_LANE_H = 48;
+const RULER_H = 26; // must match .tl-ruler in styles.css
 const MAX_STEPS = 16 * 128; // mirrors Clip.MAX_TIMELINE_STEPS server-side
 
 const ADD_CLIP = `
@@ -39,7 +49,7 @@ const DELETE_CLIP = `
   mutation DeleteClip($id: ID!) { deleteClip(id: $id) }
 `;
 
-type Armed =
+export type Armed =
   | { kind: "BEAT"; beatId: string }
   | { kind: "AUDIO"; audioId: string }
   | null;
@@ -52,39 +62,266 @@ interface DragState {
   moved: boolean;
 }
 
-interface ArrangementPanelProps {
+const paletteItem =
+  "flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs cursor-pointer " +
+  "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
+
+/* ==========================================================================
+   PALETTE — the material browser (sidebar)
+   ========================================================================== */
+
+export function ArrangementPalette({
+  songId,
+  beats,
+  audioFiles,
+  armed,
+  onArmedChange,
+  onClipsChange,
+  onAudioFilesChange,
+  onError,
+}: {
   songId: string;
-  bpm: number;
   beats: Beat[];
   audioFiles: AudioFile[];
-  clips: Clip[];
+  armed: Armed;
+  onArmedChange: (armed: Armed) => void;
   onClipsChange: (updater: (prev: Clip[]) => Clip[]) => void;
   onAudioFilesChange: (updater: (prev: AudioFile[]) => AudioFile[]) => void;
-  /** Absolute playhead step during arrangement playback; -1 when stopped. */
-  playheadStep: number;
   onError: (message: string | null) => void;
-  onOpenBeat: (beatId: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // same file re-selectable
+    if (!file) return;
+    setUploading(true);
+    onError(null);
+    try {
+      const dto = await uploadAudioFile(songId, file);
+      onAudioFilesChange((prev) => [...prev, dto]);
+      onArmedChange({ kind: "AUDIO", audioId: dto.id }); // ready to place
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function downloadAudio(file: AudioFile) {
+    onError(null);
+    try {
+      const bytes = await fetchBinary(`/api/audio/${file.id}`);
+      downloadBlob(new Blob([bytes], { type: file.contentType }), file.filename);
+    } catch {
+      onError("Failed to download audio file");
+    }
+  }
+
+  async function deleteAudio(file: AudioFile) {
+    onError(null);
+    try {
+      await rest<void>(`/api/audio/${file.id}`, { method: "DELETE" });
+      evictAudioBuffer(file.id);
+      onAudioFilesChange((prev) => prev.filter((f) => f.id !== file.id));
+      // Server cascades clip deletion; mirror it locally.
+      onClipsChange((prev) => prev.filter((c) => c.audioId !== file.id));
+      if (armed?.kind === "AUDIO" && armed.audioId === file.id) onArmedChange(null);
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : "Failed to delete audio file");
+    }
+  }
+
+  return (
+    <>
+      <SidebarSection title="Beats">
+        <div className="flex flex-col gap-1">
+          {beats.length === 0 && (
+            <p className="text-xs text-muted">No beats yet — build one in the Beats tab.</p>
+          )}
+          {beats.map((beat) => {
+            const isArmed = armed?.kind === "BEAT" && armed.beatId === beat.id;
+            return (
+              <button
+                key={beat.id}
+                className={
+                  paletteItem +
+                  (isArmed
+                    ? " border-accent bg-accent/15 text-text"
+                    : " border-edge bg-bg-soft text-muted hover:border-edge-strong hover:text-text")
+                }
+                title={
+                  beat.tracks.length === 0
+                    ? "Empty beat — add lanes in the Beats tab"
+                    : beat.tracks.map((t) => t.name).join(" + ")
+                }
+                onClick={() => onArmedChange(isArmed ? null : { kind: "BEAT", beatId: beat.id })}
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: beatColor(beat.position) }}
+                />
+                <span className="truncate font-semibold">{beat.name}</span>
+                {/* one dot per lane, instrument-colored — the beat's
+                    "ingredients" at a glance */}
+                <span className="ml-auto inline-flex shrink-0 gap-0.5">
+                  {beat.tracks.slice(0, 6).map((lane) => (
+                    <i
+                      key={lane.id}
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ background: colorFor(lane.instrument) }}
+                    />
+                  ))}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </SidebarSection>
+
+      <SidebarSection
+        title="Audio"
+        action={
+          <IconButton
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload a wav/mp3"
+          >
+            {uploading ? "…" : "+"}
+          </IconButton>
+        }
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={(e) => void onUpload(e)}
+        />
+        <div className="flex flex-col gap-1">
+          {audioFiles.length === 0 && (
+            <p className="text-xs text-muted">Upload a wav/mp3 to place it on the timeline.</p>
+          )}
+          {audioFiles.map((file) => {
+            const isArmed = armed?.kind === "AUDIO" && armed.audioId === file.id;
+            return (
+              <div
+                key={file.id}
+                className={
+                  paletteItem +
+                  (isArmed
+                    ? " border-accent-2 bg-accent-2/15 text-text"
+                    : " border-edge bg-bg-soft text-muted hover:border-edge-strong hover:text-text")
+                }
+                onClick={() => onArmedChange(isArmed ? null : { kind: "AUDIO", audioId: file.id })}
+              >
+                <span aria-hidden>🎧</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{file.filename}</span>
+                  <span className="block">{file.durationSeconds.toFixed(1)}s</span>
+                </span>
+                <button
+                  className="rounded px-1 text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                  title="Download"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void downloadAudio(file);
+                  }}
+                >
+                  ⬇
+                </button>
+                <button
+                  className="rounded px-1 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                  title="Delete (removes its clips)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void deleteAudio(file);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </SidebarSection>
+
+      {/* The instructions that used to be a paragraph across the top of the
+          timeline. They belong HERE — a quiet reference at the bottom of the
+          browser — not stapled to the canvas the user is trying to look at. */}
+      <SidebarSection title="How to arrange">
+        <ul className="flex list-none flex-col gap-1 p-0 text-xs leading-relaxed text-muted">
+          <li>Click material above to arm it</li>
+          <li>Click a lane to place a clip</li>
+          <li>Drag to move · right edge to resize</li>
+          <li>Right-click a clip to delete</li>
+          <li>Double-click a beat clip to edit it</li>
+        </ul>
+      </SidebarSection>
+    </>
+  );
 }
 
-export function ArrangementPanel({
+/* ==========================================================================
+   TIMELINE — the placements (canvas)
+   ========================================================================== */
+
+export function ArrangementTimeline({
   songId,
   bpm,
   beats,
   audioFiles,
   clips,
   onClipsChange,
-  onAudioFilesChange,
+  armed,
+  onArmedChange,
   playheadStep,
   onError,
   onOpenBeat,
-}: ArrangementPanelProps) {
-  const [armed, setArmed] = useState<Armed>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+}: {
+  songId: string;
+  bpm: number;
+  beats: Beat[];
+  audioFiles: AudioFile[];
+  clips: Clip[];
+  onClipsChange: (updater: (prev: Clip[]) => Clip[]) => void;
+  armed: Armed;
+  onArmedChange: (armed: Armed) => void;
+  /** Absolute playhead step during arrangement playback; -1 when stopped. */
+  playheadStep: number;
+  onError: (message: string | null) => void;
+  onOpenBeat: (beatId: string) => void;
+}) {
   const lanesRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const clipsRef = useRef(clips);
   clipsRef.current = clips;
+  const armedRef = useRef(armed);
+  armedRef.current = armed;
+
+  // The canvas measures itself and the lanes split the result. A ref
+  // mirrors the state because the once-attached drag listeners must clamp
+  // against the CURRENT lane height, not the one at first render — the
+  // same stale-closure discipline the rest of the editor uses.
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [laneH, setLaneH] = useState(MIN_LANE_H);
+  const laneHRef = useRef(laneH);
+  laneHRef.current = laneH;
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    // ResizeObserver, not a window resize listener: the canvas also changes
+    // height when the error banner appears or the sidebar reflows, and
+    // those fire no window event at all.
+    const observer = new ResizeObserver(([entry]) => {
+      const available = entry.contentRect.height - RULER_H;
+      setLaneH(Math.max(MIN_LANE_H, Math.floor(available / LANES)));
+    });
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, []);
 
   // Timeline width grows with content: last clip + breathing room.
   const lastStep = clips.reduce((max, c) => Math.max(max, c.startStep + c.lengthSteps), 0);
@@ -102,7 +339,7 @@ export function ArrangementPanel({
   }
 
   function laneFromY(clientY: number, rect: DOMRect): number {
-    return Math.max(0, Math.min(LANES - 1, Math.floor((clientY - rect.top) / LANE_H)));
+    return Math.max(0, Math.min(LANES - 1, Math.floor((clientY - rect.top) / laneHRef.current)));
   }
 
   // ---- clip mutations -----------------------------------------------------
@@ -239,194 +476,45 @@ export function ArrangementPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Esc disarms — the hint text promises it.
+  // Esc disarms — the sidebar hint promises it.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.code === "Escape") setArmed(null);
+      if (e.code === "Escape" && armedRef.current) onArmedChange(null);
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- audio material -----------------------------------------------------
-
-  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // same file re-selectable
-    if (!file) return;
-    setUploading(true);
-    onError(null);
-    try {
-      const dto = await uploadAudioFile(songId, file);
-      onAudioFilesChange((prev) => [...prev, dto]);
-      setArmed({ kind: "AUDIO", audioId: dto.id }); // ready to place
-    } catch (err) {
-      onError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function downloadAudio(file: AudioFile) {
-    onError(null);
-    try {
-      const bytes = await fetchBinary(`/api/audio/${file.id}`);
-      downloadBlob(new Blob([bytes], { type: file.contentType }), file.filename);
-    } catch {
-      onError("Failed to download audio file");
-    }
-  }
-
-  async function deleteAudio(file: AudioFile) {
-    onError(null);
-    try {
-      await rest<void>(`/api/audio/${file.id}`, { method: "DELETE" });
-      evictAudioBuffer(file.id);
-      onAudioFilesChange((prev) => prev.filter((f) => f.id !== file.id));
-      // Server cascades clip deletion; mirror it locally.
-      onClipsChange((prev) => prev.filter((c) => c.audioId !== file.id));
-      setArmed((prev) => (prev?.kind === "AUDIO" && prev.audioId === file.id ? null : prev));
-    } catch (err) {
-      onError(err instanceof ApiError ? err.message : "Failed to delete audio file");
-    }
-  }
-
-  // ---- render ---------------------------------------------------------------
-
-  const paletteItem =
-    "flex w-full items-center gap-2 rounded-lg border px-2 py-1 text-left text-xs cursor-pointer " +
-    "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Timeline</h2>
-        <p className="text-xs text-muted">
-          {armed
-            ? "Click a lane to place the armed clip · Esc or click it again to disarm"
-            : "Click a beat or audio file on the left to arm it, then click a lane to place it"}
-          {" · drag = move · right edge = resize (beat clips loop per bar) · right-click = delete · double-click beat = edit"}
-        </p>
-      </div>
-
-      <div className="flex gap-4">
-        {/* -- palette -------------------------------------------------- */}
-        <div className="flex w-52 shrink-0 flex-col gap-4">
-          <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted">Beats</h3>
-            <div className="flex flex-col gap-1">
-              {beats.length === 0 && (
-                <p className="text-xs text-muted">No beats yet — create Beat 1 in the Beats tab.</p>
-              )}
-              {beats.map((beat) => {
-                const isArmed = armed?.kind === "BEAT" && armed.beatId === beat.id;
-                return (
-                  <button
-                    key={beat.id}
-                    className={
-                      paletteItem +
-                      (isArmed
-                        ? " border-accent bg-accent/10 text-text"
-                        : " border-edge bg-bg-soft text-muted hover:border-edge-strong")
-                    }
-                    title={
-                      beat.tracks.length === 0
-                        ? "Empty beat — add lanes in the Beats tab"
-                        : beat.tracks.map((t) => t.name).join(" + ")
-                    }
-                    onClick={() => setArmed(isArmed ? null : { kind: "BEAT", beatId: beat.id })}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ background: beatColor(beat.position) }}
-                    />
-                    <span className="truncate font-semibold">{beat.name}</span>
-                    {/* one dot per lane, instrument-colored — the beat's
-                        "ingredients" at a glance */}
-                    <span className="ml-auto inline-flex shrink-0 gap-0.5">
-                      {beat.tracks.slice(0, 6).map((lane) => (
-                        <i
-                          key={lane.id}
-                          className="h-1.5 w-1.5 rounded-full"
-                          style={{ background: colorFor(lane.instrument) }}
-                        />
-                      ))}
-                    </span>
-                  </button>
-                );
-              })}
+    // h-full + the ResizeObserver above: this is what makes the grid fill
+    // the screen. min-w-max lets it scroll horizontally without squashing.
+    <div ref={wrapRef} className="flex h-full min-w-max">
+      <div className="flex">
+        {/* Lane numbers: the timeline had NO row labels before, so a clip's
+            lane was only knowable by counting rows with your finger. */}
+        <div className="sticky left-0 z-2 w-9 shrink-0 bg-bg">
+          <div style={{ height: RULER_H }} /> {/* ruler spacer */}
+          {Array.from({ length: LANES }, (_, lane) => (
+            <div
+              key={lane}
+              style={{ height: laneH }}
+              className="flex items-center justify-center border-b border-edge/30 text-[0.6rem] font-bold tabular-nums text-muted"
+            >
+              {lane + 1}
             </div>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Audio</h3>
-              <Button variant="ghost" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-                {uploading ? "Uploading…" : "+ Upload"}
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="audio/*"
-                className="hidden"
-                onChange={(e) => void onUpload(e)}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              {audioFiles.length === 0 && (
-                <p className="text-xs text-muted">Upload a wav/mp3 to place it on the timeline.</p>
-              )}
-              {audioFiles.map((file) => {
-                const isArmed = armed?.kind === "AUDIO" && armed.audioId === file.id;
-                return (
-                  <div
-                    key={file.id}
-                    className={
-                      paletteItem +
-                      (isArmed
-                        ? " border-accent-2 bg-accent-2/10 text-text"
-                        : " border-edge bg-bg-soft text-muted hover:border-edge-strong")
-                    }
-                    onClick={() => setArmed(isArmed ? null : { kind: "AUDIO", audioId: file.id })}
-                  >
-                    <span aria-hidden>🎧</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold">{file.filename}</span>
-                      <span className="block">{file.durationSeconds.toFixed(1)}s</span>
-                    </span>
-                    <button
-                      className="rounded px-1 text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                      title="Download"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void downloadAudio(file);
-                      }}
-                    >
-                      ⬇
-                    </button>
-                    <button
-                      className="rounded px-1 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                      title="Delete (removes its clips)"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void deleteAudio(file);
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          ))}
         </div>
 
-        {/* -- timeline -------------------------------------------------- */}
-        <div className="min-w-0 flex-1 overflow-x-auto rounded-lg border border-edge">
+        <div className="border-r border-edge">
           {/* ruler */}
           <div className="tl-ruler" style={{ width: bars * BAR_W }}>
             {Array.from({ length: bars }, (_, bar) => (
-              <span key={bar} className="tl-ruler-bar" style={{ width: BAR_W }}>
+              <span
+                key={bar}
+                className={"tl-ruler-bar" + (bar % 4 === 0 ? " major" : "")}
+                style={{ width: BAR_W }}
+              >
                 {bar + 1}
               </span>
             ))}
@@ -437,8 +525,8 @@ export function ArrangementPanel({
             className={"tl-lanes" + (armed ? " arming" : "")}
             style={{
               width: bars * BAR_W,
-              height: LANES * LANE_H,
-              backgroundSize: `${BAR_W}px ${LANE_H}px`,
+              height: LANES * laneH,
+              backgroundSize: `${BAR_W}px ${laneH}px`,
             }}
             onMouseDown={(e) => void placeArmed(e)}
           >
@@ -447,8 +535,15 @@ export function ArrangementPanel({
                 <EmptyState
                   icon="🎬"
                   title="Empty timeline"
-                  hint="Arm a beat on the left, then click a lane — same beat, as many placements as you like."
+                  hint="Arm a beat in the left panel, then click a lane — same beat, as many placements as you like."
                 />
+              </div>
+            )}
+            {armed && clips.length === 0 && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <p className="rounded-lg border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent">
+                  Click any lane to place it · Esc to disarm
+                </p>
               </div>
             )}
             {clips.map((clip) => {
@@ -465,9 +560,9 @@ export function ArrangementPanel({
                   className={"tl-clip" + (clip.type === "AUDIO" ? " audio" : "")}
                   style={{
                     left: clip.startStep * STEP_W,
-                    top: clip.lane * LANE_H + 3,
+                    top: clip.lane * laneH + 4,
                     width: clip.lengthSteps * STEP_W - 2,
-                    height: LANE_H - 6,
+                    height: laneH - 8,
                     "--tc": beat ? beatColor(beat.position) : undefined,
                   } as React.CSSProperties}
                   title={label}

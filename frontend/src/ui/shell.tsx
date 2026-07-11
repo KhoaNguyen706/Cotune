@@ -1,0 +1,204 @@
+import type { ButtonHTMLAttributes, ReactNode } from "react";
+
+/**
+ * The APP SHELL: the layout vocabulary of a workstation, not a document.
+ *
+ * The whole app is one viewport-sized grid — a fixed TopBar, then a row of
+ * panes that split the remaining height. Every pane that can overflow
+ * scrolls INTERNALLY (min-h-0 + overflow-auto). That combination is the
+ * entire trick: the page itself never scrolls, so the transport bar stays
+ * put and the canvas always fills the screen no matter how empty or full
+ * the song is.
+ *
+ * The `min-h-0` on flex children is not decoration — a flex item's default
+ * min-height is auto, meaning it refuses to shrink below its content, so
+ * an overflowing child would push the layout taller than the viewport
+ * instead of scrolling. Forgetting it is THE classic full-height-app bug.
+ */
+
+function cx(...parts: Array<string | false | null | undefined>): string {
+  return parts.filter(Boolean).join(" ");
+}
+
+/* ---------- structure ---------- */
+
+/** Fills the viewport; hosts a TopBar plus a Workspace. */
+export function AppShell({ children }: { children: ReactNode }) {
+  return <div className="flex h-full min-h-0 flex-col">{children}</div>;
+}
+
+/** The fixed command bar. Never scrolls, never grows: h-14, three slots. */
+export function TopBar({
+  left,
+  center,
+  right,
+}: {
+  left: ReactNode;
+  center?: ReactNode;
+  right?: ReactNode;
+}) {
+  return (
+    <header
+      className="flex h-14 shrink-0 items-center gap-4 border-b border-edge bg-surface/80 px-4 backdrop-blur-md"
+      // A translucent bar over a scrolling canvas needs the blur, or the
+      // clips sliding underneath turn the text into soup.
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3">{left}</div>
+      {center && <div className="flex shrink-0 items-center gap-2">{center}</div>}
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2">{right}</div>
+    </header>
+  );
+}
+
+/** The row under the TopBar: sidebar(s) + canvas, splitting all leftover height. */
+export function Workspace({ children }: { children: ReactNode }) {
+  return <div className="flex min-h-0 flex-1">{children}</div>;
+}
+
+/** The browser column: fixed width, scrolls on its own. */
+export function Sidebar({ children }: { children: ReactNode }) {
+  return (
+    <aside className="flex w-64 shrink-0 flex-col gap-6 overflow-y-auto border-r border-edge bg-surface/40 p-4">
+      {children}
+    </aside>
+  );
+}
+
+/** A labeled block inside the sidebar, with an optional action on the right. */
+export function SidebarSection({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex h-6 items-center justify-between">
+        <h2 className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** The main work area. Scrolls in both axes; the grid lives in here. */
+export function Canvas({ children, className }: { children: ReactNode; className?: string }) {
+  return <main className={cx("min-w-0 flex-1 overflow-auto", className)}>{children}</main>;
+}
+
+/** A thin strip above the canvas content for contextual controls (octave,
+ *  bar count, velocity) — the "inspector" row every DAW has. */
+export function CanvasBar({ children }: { children: ReactNode }) {
+  return (
+    <div className="sticky top-0 z-3 flex h-11 shrink-0 items-center gap-3 border-b border-edge bg-bg/90 px-4 backdrop-blur-md">
+      {children}
+    </div>
+  );
+}
+
+/* ---------- controls ---------- */
+
+/**
+ * A segmented cluster of controls that belong together (transport, export).
+ * Grouping is what turns "a row of loose buttons" into a toolbar: related
+ * actions share one bordered container, unrelated ones are separated by a
+ * gap. The old header had neither, which is why it read as clutter.
+ */
+export function ToolGroup({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cx(
+        "flex items-center gap-0.5 rounded-lg border border-edge bg-bg-soft/70 p-0.5",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  /** Visual weight: `solid` is the one primary action (play). */
+  tone?: "default" | "solid" | "danger";
+  /** Pressed/latched state — mute, solo, an armed clip, the active tab. */
+  active?: boolean;
+};
+
+/**
+ * Square, 32px, icon-sized. Every toolbar button is this — uniform hit
+ * targets and one focus treatment, so a toolbar can't drift into the
+ * mismatched sizes the old header had.
+ */
+export function IconButton({ tone = "default", active, className, ...props }: IconButtonProps) {
+  return (
+    <button
+      className={cx(
+        "inline-flex h-8 min-w-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 " +
+          "text-sm font-semibold transition-colors duration-150 " +
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 " +
+          "disabled:cursor-default disabled:opacity-40",
+        tone === "solid" &&
+          "bg-gradient-to-br from-accent to-accent-2 text-bg hover:not-disabled:brightness-110",
+        tone === "danger" && "text-muted hover:not-disabled:bg-danger/15 hover:not-disabled:text-danger",
+        tone === "default" &&
+          !active &&
+          "text-muted hover:not-disabled:bg-surface-2 hover:not-disabled:text-text",
+        tone === "default" && active && "bg-surface-2 text-text",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+/** Read-only numeric readout (BPM, time signature, bar) — tabular so the
+ *  digits don't jitter as values change during playback. */
+export function Readout({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col justify-center px-2 leading-tight">
+      <span className="text-[0.6rem] font-bold uppercase tracking-[0.1em] text-muted">{label}</span>
+      <span className="font-mono text-sm font-semibold tabular-nums text-text">{children}</span>
+    </div>
+  );
+}
+
+/* ---------- overlay ---------- */
+
+/** A centered modal. Used for "New song" so the create form stops
+ *  occupying permanent real estate on a page it isn't the point of. */
+export function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6 backdrop-blur-sm"
+      onMouseDown={onClose} // click-outside closes
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="w-full max-w-md rounded-2xl border border-edge bg-gradient-to-b from-surface-2 to-surface p-6 shadow-card"
+        onMouseDown={(e) => e.stopPropagation()} // ...but clicks inside don't
+      >
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-lg font-bold tracking-tight">{title}</h2>
+          <IconButton onClick={onClose} aria-label="Close">
+            ✕
+          </IconButton>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}

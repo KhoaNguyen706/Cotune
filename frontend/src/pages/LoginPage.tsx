@@ -32,7 +32,10 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-[82vh] w-full max-w-sm flex-col justify-center">
+    // page-center: the auth screens are the one place a centered column is
+    // right — there's no workspace to fill. Everything else is full-bleed.
+    <main className="page-center flex-col">
+      <div className="w-full max-w-sm">
       <div className="mb-6 flex items-center justify-center gap-2 text-3xl font-extrabold tracking-tight">
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-xl text-bg shadow-glow">
           ♪
@@ -82,6 +85,7 @@ export function LoginPage() {
           Create one
         </Link>
       </p>
+      </div>
     </main>
   );
 }
