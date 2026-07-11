@@ -24,12 +24,14 @@ const STEP_W = 4.5; // px per 16th step → 72px per bar (was 56: too cramped
 // to read a clip label once the canvas got wide)
 const BAR_W = STEP_W * STEPS_PER_BAR;
 const LANES = 8;
-// Lane height is MEASURED, not constant: the 8 lanes divide whatever height
-// the canvas actually has, so the timeline FILLS the window instead of
-// stopping halfway down and leaving a void — the single most MVP-looking
-// thing about the old editor. A floor keeps lanes usable on short screens
-// (below that the canvas scrolls, which is correct).
-const MIN_LANE_H = 48;
+// Lane height is MEASURED (the 8 lanes divide the canvas) but CLAMPED at
+// both ends. Only a floor existed at first, so on a tall window the lanes
+// stretched to ~100px each and the timeline looked cartoonishly oversized.
+// A grid is a reading surface: its cells have a right size, and "fill the
+// window" must never override that. Past the ceiling the grid simply stops
+// growing and sits at the top of the canvas.
+const MIN_LANE_H = 40;
+const MAX_LANE_H = 64;
 const RULER_H = 26; // must match .tl-ruler in styles.css
 const MAX_STEPS = 16 * 128; // mirrors Clip.MAX_TIMELINE_STEPS server-side
 
@@ -58,8 +60,15 @@ interface DragState {
   clipId: string;
   mode: "move" | "resize";
   grabOffsetSteps: number; // move: steps between clip.startStep and grab point
-  rect: DOMRect; // lanes-content geometry at drag start
+  rect: DOMRect; // lanes-content geometry, re-measured after the fold (below)
   moved: boolean;
+  /** False until the geometry has been re-measured after the sidebar folds
+   *  away. Starting a drag COLLAPSES the sidebar, which slides the lanes
+   *  ~240px left — so the rect captured at mousedown is stale one frame
+   *  later, and every cursor→step conversion built on it would be off by
+   *  exactly the sidebar's width. We therefore re-measure on the first
+   *  mousemove and rebase the grab offset against it. */
+  calibrated: boolean;
 }
 
 const paletteItem =
@@ -247,18 +256,6 @@ export function ArrangementPalette({
         </div>
       </SidebarSection>
 
-      {/* The instructions that used to be a paragraph across the top of the
-          timeline. They belong HERE — a quiet reference at the bottom of the
-          browser — not stapled to the canvas the user is trying to look at. */}
-      <SidebarSection title="How to arrange">
-        <ul className="flex list-none flex-col gap-1 p-0 text-xs leading-relaxed text-muted">
-          <li>Click material above to arm it</li>
-          <li>Click a lane to place a clip</li>
-          <li>Drag to move · right edge to resize</li>
-          <li>Right-click a clip to delete</li>
-          <li>Double-click a beat clip to edit it</li>
-        </ul>
-      </SidebarSection>
     </>
   );
 }
@@ -279,6 +276,7 @@ export function ArrangementTimeline({
   playheadStep,
   onError,
   onOpenBeat,
+  onDraggingChange,
 }: {
   songId: string;
   bpm: number;
@@ -292,6 +290,10 @@ export function ArrangementTimeline({
   playheadStep: number;
   onError: (message: string | null) => void;
   onOpenBeat: (beatId: string) => void;
+  /** True while a clip is being dragged. The page uses it to fold the
+   *  sidebar away, so the timeline gets the full width exactly when you're
+   *  manipulating it — and gets it back the moment you let go. */
+  onDraggingChange: (dragging: boolean) => void;
 }) {
   const lanesRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -317,7 +319,8 @@ export function ArrangementTimeline({
     // those fire no window event at all.
     const observer = new ResizeObserver(([entry]) => {
       const available = entry.contentRect.height - RULER_H;
-      setLaneH(Math.max(MIN_LANE_H, Math.floor(available / LANES)));
+      const fitted = Math.floor(available / LANES);
+      setLaneH(Math.min(MAX_LANE_H, Math.max(MIN_LANE_H, fitted)));
     });
     observer.observe(wrap);
     return () => observer.disconnect();
@@ -393,7 +396,9 @@ export function ArrangementTimeline({
       grabOffsetSteps: stepFromX(e.clientX, rect) - clip.startStep,
       rect,
       moved: false,
+      calibrated: false, // re-measured on the first move — see DragState
     };
+    onDraggingChange(true); // folds the sidebar; the lanes shift left
   }
 
   async function onClipContextMenu(e: React.MouseEvent, clip: Clip) {
@@ -417,6 +422,16 @@ export function ArrangementTimeline({
       if (!drag) return;
       const clip = clipsRef.current.find((c) => c.id === drag.clipId);
       if (!clip) return;
+
+      // The sidebar has folded by now, so the lanes moved. Re-measure once
+      // and rebase the grab offset onto the new geometry; without this the
+      // clip snaps sideways by the sidebar's width on the first move.
+      if (!drag.calibrated && lanesRef.current) {
+        drag.rect = lanesRef.current.getBoundingClientRect();
+        drag.grabOffsetSteps = stepFromX(e.clientX, drag.rect) - clip.startStep;
+        drag.calibrated = true;
+      }
+
       const cursorStep = stepFromX(e.clientX, drag.rect);
 
       if (drag.mode === "move") {
@@ -455,6 +470,7 @@ export function ArrangementTimeline({
     function onUp() {
       const drag = dragRef.current;
       dragRef.current = null;
+      if (drag) onDraggingChange(false); // sidebar comes back
       if (!drag || !drag.moved) return;
       const clip = clipsRef.current.find((c) => c.id === drag.clipId);
       if (!clip) return;

@@ -5,9 +5,14 @@ import { BeatMakerPage } from "./pages/BeatMakerPage";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SongsPage } from "./pages/SongsPage";
+import { SettingsProvider } from "./ui/settings";
 
 export function App() {
   return (
+    // SettingsProvider wraps everything: it stamps data-theme on <html>, so
+    // it must be mounted before any screen paints — including /login, which
+    // lives outside AuthProvider's protected routes.
+    <SettingsProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -35,5 +40,6 @@ export function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </SettingsProvider>
   );
 }

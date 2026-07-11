@@ -39,6 +39,39 @@
   --shadow-glow: 0 6px 18px rgb(139 124 248 / 0.35);
 }
 
+/* ==========================================================================
+   LIGHT THEME — the entire theme is a token remap, nothing more.
+   That is the payoff of the "semantic tokens only, never a raw hex in a
+   component" rule at the top of this file: every surface, border and text
+   color in the app resolves through the variables below, so a second theme
+   costs one block of CSS instead of a rewrite. Any component that had
+   hard-coded #111 would be the one thing that breaks here — which is why
+   the rule exists.
+
+   Selector, not @media: the user's explicit choice must be able to BEAT
+   their OS preference. main.tsx stamps data-theme on <html>; "system" mode
+   stamps whichever the OS currently reports.
+   ========================================================================== */
+:root[data-theme="light"] {
+  --color-bg: #f6f7fb; /* app canvas */
+  --color-bg-soft: #ffffff; /* inputs, wells, roll cells */
+  --color-surface: #ffffff; /* cards */
+  --color-surface-2: #eef0f6; /* raised/hover fills, skeletons */
+  --color-edge: #dcdfea; /* default borders */
+  --color-edge-strong: #b9bed0; /* emphasized borders */
+
+  --color-text: #14161f; /* 16.1:1 on bg */
+  --color-muted: #5c6377; /* 5.9:1 on surface — passes AA for body text */
+
+  --color-accent: #6544e8; /* darkened: the dark-mode violet fails AA on white */
+  --color-accent-2: #0a84c4; /* darkened sky, same reason */
+  --color-danger: #c2264b;
+  --color-solo: #a97a00;
+
+  --shadow-card: 0 6px 20px rgb(20 22 31 / 0.08);
+  --shadow-glow: 0 6px 18px rgb(101 68 232 / 0.28);
+}
+
 /* ---------- base ----------
 
    THE LAYOUT RULE: this is a DAW, not a document. The app owns the whole
@@ -70,6 +103,11 @@ body {
   background-image: radial-gradient(1200px 600px at 88% -12%, rgb(139 124 248 / 0.1), transparent 62%);
   background-attachment: fixed;
   overflow: hidden;
+}
+
+/* The glow is a DARK-room effect; on white it just looks like a smudge. */
+:root[data-theme="light"] body {
+  background-image: none;
 }
 
 /** The one place a centered column is right: auth screens have no
@@ -120,13 +158,26 @@ input[type="range"] {
   border-color: var(--color-edge-strong);
 }
 
+/* Every 16th step starts a new BAR. Without a stronger rule here, a
+   128-step (8-bar) grid is an undifferentiated field of squares and you
+   cannot tell bar 3 from bar 6 — the thing that made long beats unusable. */
+.cell.bar {
+  border-color: var(--color-accent);
+}
+
+.roll-cell.bar {
+  border-left: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
 .cell.on {
   background: var(--tc, var(--color-accent));
   border-color: transparent;
 }
 
+/* Playheads and selection rings were white — which is invisible on a light
+   canvas. Token-derived so they stay high-contrast in BOTH themes. */
 .cell.playhead {
-  outline: 2px solid rgb(255 255 255 / 0.85);
+  outline: 2px solid color-mix(in srgb, var(--color-text) 85%, transparent);
   outline-offset: -2px;
 }
 
@@ -154,8 +205,11 @@ input[type="range"] {
   background: var(--color-bg-soft);
 }
 
+/* The "black key" lane and the playhead column were the only raw hexes in
+   this file — and they are exactly what a second theme breaks. Derived
+   from tokens instead, so they follow whichever theme is active. */
 .roll-cell.dark {
-  background: #0e1016; /* "black key" lane — the one non-token value, mixed from bg */
+  background: color-mix(in srgb, var(--color-bg) 65%, var(--color-edge));
 }
 
 .roll-cell.beat {
@@ -163,11 +217,11 @@ input[type="range"] {
 }
 
 .roll-cell.playcol {
-  background: #222741;
+  background: color-mix(in srgb, var(--color-accent) 22%, var(--color-bg-soft));
 }
 
 .roll-cell.dark.playcol {
-  background: #1b2036;
+  background: color-mix(in srgb, var(--color-accent) 30%, var(--color-bg));
 }
 
 .note {
@@ -183,7 +237,7 @@ input[type="range"] {
 }
 
 .note.selected {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--color-text);
   outline-offset: 1px;
 }
 
@@ -293,6 +347,6 @@ input[type="range"] {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: rgb(255 255 255 / 0.85);
+  background: color-mix(in srgb, var(--color-text) 85%, transparent);
   pointer-events: none;
 }

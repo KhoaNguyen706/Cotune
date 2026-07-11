@@ -41,30 +41,72 @@ export interface Cover {
   bars: number[];
   /** The song's hue, used for the bars and the card's ambient tint. */
   accent: string;
-  /** A dark, tinted backdrop for the art area — the bars sit ON this. */
+  /** A tinted backdrop for the art area — the bars sit ON this. */
   backdrop: string;
+  /** True when the shape reflects real notes rather than a placeholder. */
+  fromNotes: boolean;
 }
 
 const BAR_COUNT = 32;
 
-export function coverFor(id: string): Cover {
+/** Note counts per slice of the song, if it has any notes at all. */
+export interface CoverSource {
+  /** Every note's absolute step, across every lane of every beat. */
+  steps: number[];
+  /** The song's total length in steps (so slices are proportional). */
+  totalSteps: number;
+}
+
+/**
+ * @param id     the song id — the only input for color, and for the shape
+ *               when the song has no notes yet.
+ * @param source the song's actual notes. When present the waveform is a
+ *               real HISTOGRAM of note density over the song's length, so
+ *               the card genuinely visualizes the music: a busy chorus is a
+ *               tall band, an empty stretch is a flat one. A purely
+ *               decorative shape that ignores the data would be a lie the
+ *               user can spot the moment they add a lane.
+ */
+export function coverFor(id: string, source?: CoverSource): Cover {
   const h = hash(id);
   const rand = seeded(h);
   const hue = h % 360;
 
-  const bars = Array.from({ length: BAR_COUNT }, (_, i) => {
-    // A slow sine sets the overall arc so the waveform reads as a musical
-    // phrase (a shape with a build and a fall) rather than white noise,
-    // and the random term keeps neighbors from looking identical.
-    const arc = Math.sin((i / BAR_COUNT) * Math.PI * 2 + (h % 10)) * 0.25 + 0.6;
-    return Math.round(Math.max(18, Math.min(100, (arc + rand() * 0.45 - 0.15) * 100)));
-  });
-
-  return {
-    bars,
+  const palette = {
     accent: `hsl(${hue} 70% 62%)`,
-    // Deep and desaturated: the art must sit ON the near-black canvas, not
-    // glow off it. The tint is just enough to identify the song.
     backdrop: `linear-gradient(160deg, hsl(${hue} 40% 14%), hsl(${(hue + 40) % 360} 45% 8%))`,
+  };
+
+  const hasNotes = source != null && source.steps.length > 0 && source.totalSteps > 0;
+  if (hasNotes) {
+    const counts = new Array<number>(BAR_COUNT).fill(0);
+    for (const step of source.steps) {
+      // Clamp: a note at the very last step must land in the last bucket,
+      // not one past the end.
+      const bucket = Math.min(
+        BAR_COUNT - 1,
+        Math.floor((step / source.totalSteps) * BAR_COUNT),
+      );
+      counts[bucket]++;
+    }
+    const peak = Math.max(...counts);
+    return {
+      ...palette,
+      fromNotes: true,
+      // Normalized against the song's own peak (relative dynamics), with a
+      // floor so empty slices still read as a quiet bar rather than a gap.
+      bars: counts.map((n) => Math.round(12 + (n / peak) * 88)),
+    };
+  }
+
+  // No notes yet: a seeded placeholder. Still deterministic — the same empty
+  // song looks the same on every device — but honestly decorative.
+  return {
+    ...palette,
+    fromNotes: false,
+    bars: Array.from({ length: BAR_COUNT }, (_, i) => {
+      const arc = Math.sin((i / BAR_COUNT) * Math.PI * 2 + (h % 10)) * 0.25 + 0.6;
+      return Math.round(Math.max(18, Math.min(100, (arc + rand() * 0.45 - 0.15) * 100)));
+    }),
   };
 }

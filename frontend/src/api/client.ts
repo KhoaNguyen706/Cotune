@@ -21,31 +21,64 @@ export class ApiError extends Error {
 
 const STORAGE_KEY = "cotune.auth";
 
-// localStorage is the pragmatic choice for a learning project, made with
+// Web Storage is the pragmatic choice for a learning project, made with
 // eyes open: any XSS can read it and steal the token. The hardened
 // alternative is an httpOnly cookie (JS can't read it) — but that
 // reintroduces CSRF, which we explicitly disabled server-side. Trade-off
 // to revisit before anything public.
+//
+// WHICH storage is a privacy setting the user owns (Settings → Privacy):
+//   localStorage   — survives closing the browser ("remember this device")
+//   sessionStorage — dies with the tab (shared or public machine)
+// Same API, different lifetime, so one helper picks the target and
+// everything else below is unchanged.
+function store(): Storage {
+  try {
+    return localStorage.getItem("cotune.rememberDevice") === "false"
+      ? sessionStorage
+      : localStorage;
+  } catch {
+    return sessionStorage; // storage disabled entirely (private mode)
+  }
+}
+
+export function setRememberDevice(remember: boolean): void {
+  // The FLAG itself must outlive the tab even when the SESSION doesn't —
+  // otherwise "don't remember me" would be forgotten on reload, which is
+  // exactly backwards. It holds no secret, only a preference.
+  localStorage.setItem("cotune.rememberDevice", String(remember));
+  // Move any live session to the newly chosen storage, so flipping the
+  // switch takes effect immediately instead of at next login.
+  const raw = localStorage.getItem(STORAGE_KEY) ?? sessionStorage.getItem(STORAGE_KEY);
+  localStorage.removeItem(STORAGE_KEY);
+  sessionStorage.removeItem(STORAGE_KEY);
+  if (raw) store().setItem(STORAGE_KEY, raw);
+}
+
 export function loadSession(): AuthPayload | null {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = store().getItem(STORAGE_KEY);
   if (!raw) return null;
   const session: AuthPayload = JSON.parse(raw);
   // Token expiry is enforced by the server on every request anyway; this
   // client-side check just avoids greeting the user as logged-in and then
   // failing their first click.
   if (new Date(session.expiresAt).getTime() <= Date.now()) {
-    localStorage.removeItem(STORAGE_KEY);
+    store().removeItem(STORAGE_KEY);
     return null;
   }
   return session;
 }
 
 export function saveSession(session: AuthPayload): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  store().setItem(STORAGE_KEY, JSON.stringify(session));
 }
 
 export function clearSession(): void {
+  // Clear BOTH: the setting may have changed since the token was written,
+  // and a "signed out" user with a token stranded in the other storage is
+  // the worst possible bug in this file.
   localStorage.removeItem(STORAGE_KEY);
+  sessionStorage.removeItem(STORAGE_KEY);
 }
 
 function authHeader(): Record<string, string> {

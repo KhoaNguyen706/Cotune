@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import * as Tone from "tone";
+import { useAuth } from "../auth/AuthContext";
+import { useSettings } from "../ui/settings";
 import { ApiError, gql, rest } from "../api/client";
 import {
   arrangementEndSeconds,
@@ -15,6 +17,7 @@ import {
 import { encodeMp3 } from "../audio/mp3";
 import { createInstrument, type TrackInstrument } from "../audio/instruments";
 import { ArrangementPalette, ArrangementTimeline, type Armed } from "../components/ArrangementPanel";
+import { SettingsModal } from "../ui/SettingsModal";
 import { beatColor, colorFor } from "../ui/trackColors";
 import { Button, EditableName, EmptyState, ErrorBanner, Select, Skeleton, TextInput } from "../ui/kit";
 import {
@@ -44,7 +47,7 @@ const CELL_H = 26;
 const SONG_QUERY = `
   query Song($id: ID!) {
     song(id: $id) {
-      id title bpm timeSignature
+      id title bpm timeSignature ownerId
       beats {
         id name position bars
         tracks { id name instrument position version pattern { step pitch velocity length } }
@@ -115,6 +118,8 @@ function rowOf(pitch: string, octave: number): number | null {
 
 export function BeatMakerPage() {
   const { songId } = useParams<{ songId: string }>();
+  const { user } = useAuth();
+  const { autoSave } = useSettings();
   const [song, setSong] = useState<Song | null>(null);
   // Two editors, one page: "arrange" is the song timeline (clips place
   // whole beats), "beats" is where you build each beat — pick Beat 1/2/3,
@@ -128,6 +133,11 @@ export function BeatMakerPage() {
   // palette (sidebar) and the timeline (canvas) — two siblings, so the
   // state lives in their closest common ancestor: here.
   const [armed, setArmed] = useState<Armed>(null);
+  // Folded while you drag a clip (the timeline asks for the width), and
+  // togglable by hand.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null); // lane id
   const [selectedNote, setSelectedNote] = useState<number | null>(null);
@@ -645,7 +655,34 @@ export function BeatMakerPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  /**
+   * Can this account edit this song? Mirrors the server's rule exactly
+   * (SongAccess: owner only; ownerless legacy songs are admin-managed).
+   *
+   * This is why the console was full of 403s: the UI offered rename, bar
+   * changes and pattern saves on songs the server would always refuse —
+   * including "Cloud Beat", whose ownerId is null because it predates
+   * ownership, so NOBODY can edit it. The server was right every time; the
+   * UI was lying. Affordances must match permissions.
+   */
+  const canEdit = song != null && song.ownerId != null && song.ownerId === user?.id;
+  const readOnly = song != null && !canEdit;
+
+  // ---- auto-save ---------------------------------------------------------
+  // Debounced: fires a second after you STOP editing, not on every note.
+  // The timer is keyed on `dirty` — each new edit replaces the pending
+  // save, so a fast run of edits produces exactly one request at the end.
+  const saveRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    if (!autoSave || readOnly || dirty.size === 0 || saving) return;
+    const timer = setTimeout(() => void saveRef.current(), 1000);
+    return () => clearTimeout(timer);
+  }, [autoSave, readOnly, dirty, saving]);
+
   async function save() {
+    // Belt and braces: even with the UI gated, never fire a write the
+    // server is guaranteed to reject.
+    if (readOnly) return;
     setSaving(true);
     setError(null);
     try {
@@ -677,6 +714,10 @@ export function BeatMakerPage() {
       setSaving(false);
     }
   }
+
+  // The auto-save effect above is attached once, so it must reach the
+  // CURRENT save() — which closes over fresh state on every render.
+  saveRef.current = save;
 
   // No name field any more: "+" in the beat browser creates "Beat N"
   // immediately, and the name is editable in place (double-click) like
@@ -870,19 +911,37 @@ export function BeatMakerPage() {
             >
               ←
             </Link>
+            <IconButton
+              onClick={() => setSidebarCollapsed((c) => !c)}
+              active={!sidebarCollapsed}
+              title={sidebarCollapsed ? "Show panel" : "Hide panel"}
+            >
+              ☰
+            </IconButton>
             <span className="min-w-0">
               <h1 className="truncate text-base font-bold leading-tight tracking-tight">
-                <EditableName
-                  value={song.title}
-                  maxLength={120}
-                  onRename={(title) => patchSong({ title })}
-                />
+                {canEdit ? (
+                  <EditableName
+                    value={song.title}
+                    maxLength={120}
+                    onRename={(title) => patchSong({ title })}
+                  />
+                ) : (
+                  song.title
+                )}
               </h1>
               {/* Save state lives WITH the title — it's a property of this
-                  document, not a button you press. It only becomes a button
-                  when there's something to save. */}
+                  document, not a button you press. */}
               <span className="text-[0.68rem] text-muted">
-                {saving ? "Saving…" : dirty.size > 0 ? `${dirty.size} unsaved` : "All changes saved"}
+                {readOnly
+                  ? "Read-only — you don't own this song"
+                  : saving
+                    ? "Saving…"
+                    : dirty.size > 0
+                      ? autoSave
+                        ? `${dirty.size} unsaved · saving shortly`
+                        : `${dirty.size} unsaved`
+                      : "All changes saved"}
               </span>
             </span>
           </>
@@ -925,14 +984,22 @@ export function BeatMakerPage() {
                   readout), not as two more buttons. Still editable —
                   double-click, same as everywhere else in the app. */}
               <Readout label="BPM">
-                <EditableName value={String(song.bpm)} maxLength={3} onRename={changeBpm} />
+                {canEdit ? (
+                  <EditableName value={String(song.bpm)} maxLength={3} onRename={changeBpm} />
+                ) : (
+                  song.bpm
+                )}
               </Readout>
               <Readout label="Sig">
-                <EditableName
-                  value={song.timeSignature}
-                  maxLength={5}
-                  onRename={(timeSignature) => void patchSong({ timeSignature })}
-                />
+                {canEdit ? (
+                  <EditableName
+                    value={song.timeSignature}
+                    maxLength={5}
+                    onRename={(timeSignature) => void patchSong({ timeSignature })}
+                  />
+                ) : (
+                  song.timeSignature
+                )}
               </Readout>
             </ToolGroup>
           </>
@@ -961,14 +1028,19 @@ export function BeatMakerPage() {
               </IconButton>
             </ToolGroup>
 
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void save()}
-              disabled={saving || dirty.size === 0}
-            >
-              {saving ? "Saving…" : dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
-            </Button>
+            {/* With auto-save on, an explicit Save button is redundant
+                chrome — it only appears when you've opted out of auto-save
+                (or while a save is in flight). */}
+            {!readOnly && !autoSave && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void save()}
+                disabled={saving || dirty.size === 0}
+              >
+                {saving ? "Saving…" : dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
+              </Button>
+            )}
 
             {mode === "arrange" && (
               <ToolGroup>
@@ -988,12 +1060,20 @@ export function BeatMakerPage() {
                 </IconButton>
               </ToolGroup>
             )}
+
+            <IconButton onClick={() => setSettingsOpen(true)} title="Settings">
+              ⚙
+            </IconButton>
           </>
         }
       />
 
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
       <Workspace>
-        <Sidebar>
+        {/* Folds while dragging a clip (the timeline needs the width) or
+            when the user hides it by hand. */}
+        <Sidebar collapsed={sidebarCollapsed || dragging}>
           {mode === "arrange" ? (
             <ArrangementPalette
               songId={song.id}
@@ -1011,9 +1091,11 @@ export function BeatMakerPage() {
               <SidebarSection
                 title="Beats"
                 action={
-                  <IconButton onClick={() => void addBeat()} title="New beat">
-                    +
-                  </IconButton>
+                  canEdit ? (
+                    <IconButton onClick={() => void addBeat()} title="New beat">
+                      +
+                    </IconButton>
+                  ) : undefined
                 }
               >
                 <div className="flex flex-col gap-1">
@@ -1043,24 +1125,30 @@ export function BeatMakerPage() {
                         style={{ background: beatColor(beat.position) }}
                       />
                       <strong className="min-w-0 flex-1 truncate font-semibold">
-                        <EditableName
-                          value={beat.name}
-                          onRename={(name) => patchBeat(beat.id, { name })}
-                        />
+                        {canEdit ? (
+                          <EditableName
+                            value={beat.name}
+                            onRename={(name) => patchBeat(beat.id, { name })}
+                          />
+                        ) : (
+                          beat.name
+                        )}
                       </strong>
                       <span className="shrink-0 text-[0.6rem] tabular-nums">
                         {beat.bars} bar{beat.bars > 1 ? "s" : ""}
                       </span>
-                      <button
-                        className="shrink-0 rounded text-muted opacity-0 transition-opacity hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover:opacity-100"
-                        title="Delete beat (removes its lanes and timeline clips)"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void removeBeat(beat.id);
-                        }}
-                      >
-                        ×
-                      </button>
+                      {canEdit && (
+                        <button
+                          className="shrink-0 rounded text-muted opacity-0 transition-opacity hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover:opacity-100"
+                          title="Delete beat (removes its lanes and timeline clips)"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void removeBeat(beat.id);
+                          }}
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1094,10 +1182,14 @@ export function BeatMakerPage() {
                             style={{ background: colorFor(track.instrument) }}
                           />
                           <strong className="min-w-0 flex-1 truncate font-semibold">
-                            <EditableName
-                              value={track.name}
-                              onRename={(name) => renameTrack(track.id, name)}
-                            />
+                            {canEdit ? (
+                              <EditableName
+                                value={track.name}
+                                onRename={(name) => renameTrack(track.id, name)}
+                              />
+                            ) : (
+                              track.name
+                            )}
                           </strong>
                           <button
                             className={
@@ -1129,21 +1221,24 @@ export function BeatMakerPage() {
                           >
                             S
                           </button>
-                          <button
-                            className="shrink-0 rounded px-0.5 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                            title="Delete lane"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void removeTrack(track.id);
-                            }}
-                          >
-                            ×
-                          </button>
+                          {canEdit && (
+                            <button
+                              className="shrink-0 rounded px-0.5 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                              title="Delete lane"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void removeTrack(track.id);
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
                         </div>
                       );
                     })}
                   </div>
 
+                  {canEdit && (
                   <form onSubmit={(e) => void addTrack(e)} className="mt-2 flex flex-col gap-2">
                     <TextInput
                       className="!py-1 text-xs"
@@ -1170,6 +1265,7 @@ export function BeatMakerPage() {
                       </Button>
                     </div>
                   </form>
+                  )}
                 </SidebarSection>
               )}
             </>
@@ -1195,6 +1291,7 @@ export function BeatMakerPage() {
               onArmedChange={setArmed}
               playheadStep={arrangeStep}
               onError={setError}
+              onDraggingChange={setDragging}
               onOpenBeat={(beatId) => {
                 setSelectedBeatId(beatId);
                 const beat = sortedBeats.find((b) => b.id === beatId);
@@ -1221,6 +1318,7 @@ export function BeatMakerPage() {
                   <Select
                     className="!w-auto !py-0.5 text-xs"
                     value={selectedBeat.bars}
+                    disabled={!canEdit}
                     onChange={(e) => void patchBeat(selectedBeat.id, { bars: Number(e.target.value) })}
                   >
                     {[1, 2, 4, 8].map((b) => (
@@ -1305,131 +1403,149 @@ export function BeatMakerPage() {
                 />
               </div>
             ) : (
-              <div className="p-4">
-                {/* -- piano roll --------------------------------------- */}
-                <div className="inline-flex select-none rounded-lg border border-edge bg-bg-soft p-2">
-                  <div className="w-11 shrink-0 text-[0.68rem] text-muted">
-                    {PITCH_ROWS.map((p) => (
-                      <div
-                        key={p}
-                        style={{ height: CELL_H }}
-                        className={
-                          "flex items-center justify-end pr-2" +
-                          (p.includes("#") ? " text-muted/50" : "")
-                        }
-                      >
-                        {p}
-                        {octave}
+              // ONE horizontal scroll box holds the roll AND the channel
+              // rack, so they scroll together and stay column-aligned. At 8
+              // bars the grid is 128 steps (~4300px) wide: it must scroll
+              // INSIDE this box, not blow the page open — which is what made
+              // the 8-bar view "scale" into something unusable.
+              // `max-w-full min-w-0` is what actually constrains it to the
+              // canvas; without them a flex/grid child sizes to its content
+              // and the box would just grow instead of scrolling.
+              <div className="flex min-w-0 flex-col p-4">
+                <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-edge bg-bg-soft p-2">
+                  <div className="w-max select-none">
+                    {/* -- piano roll ------------------------------------ */}
+                    <div className="flex">
+                      {/* The pitch gutter is sticky: scroll to bar 7 and you
+                          can still tell a C from an F#. */}
+                      <div className="sticky left-0 z-2 w-11 shrink-0 bg-bg-soft text-[0.68rem] text-muted">
+                        {PITCH_ROWS.map((p) => (
+                          <div
+                            key={p}
+                            style={{ height: CELL_H }}
+                            className={
+                              "flex items-center justify-end pr-2" +
+                              (p.includes("#") ? " text-muted/50" : "")
+                            }
+                          >
+                            {p}
+                            {octave}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  <div
-                    className="roll"
-                    ref={rollRef}
-                    onMouseDown={onRollMouseDown}
-                    style={{ width: beatSteps * CELL_W, height: PITCH_ROWS.length * CELL_H }}
-                  >
-                    {PITCH_ROWS.map((p, row) =>
-                      Array.from({ length: beatSteps }, (_, col) => (
-                        <div
-                          key={`${row}-${col}`}
-                          className={[
-                            "roll-cell",
-                            p.includes("#") ? "dark" : "",
-                            col % 4 === 0 ? "beat" : "",
-                            col === currentStep ? "playcol" : "",
-                          ].join(" ")}
-                          style={{
-                            left: col * CELL_W,
-                            top: row * CELL_H,
-                            width: CELL_W,
-                            height: CELL_H,
-                          }}
-                        />
-                      )),
-                    )}
-                    {selectedNotes.map((note, index) => {
-                      const row = rowOf(note.pitch, octave);
-                      if (row === null) return null;
-                      return (
-                        <div
-                          key={index}
-                          className={`note ${index === selectedNote ? "selected" : ""}`}
-                          style={
-                            {
-                              left: note.step * CELL_W + 1,
-                              top: row * CELL_H + 2,
-                              width: note.length * CELL_W - 3,
-                              height: CELL_H - 4,
-                              // Velocity is VISIBLE: quiet notes are translucent.
-                              opacity: 0.35 + 0.65 * note.velocity,
-                              "--tc": colorFor(selected.instrument),
-                            } as React.CSSProperties
-                          }
-                          onMouseDown={(e) => onNoteMouseDown(e, index, note, false)}
-                          onContextMenu={(e) => onNoteContextMenu(e, index)}
-                        >
-                          <span
-                            className="note-handle"
-                            onMouseDown={(e) => onNoteMouseDown(e, index, note, true)}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* -- the channel rack: every lane of this beat at a glance,
-                       so you can see the groove without switching lanes. --- */}
-                <div className="mt-4 flex flex-col gap-1">
-                  {sortedLanes.map((track) => {
-                    const notes = notesByTrack[track.id] ?? [];
-                    return (
                       <div
-                        key={track.id}
-                        className={
-                          "flex cursor-pointer items-center gap-3 rounded-lg border px-2 py-1 transition-colors duration-150 " +
-                          (track.id === selectedId
-                            ? "border-edge-strong bg-surface-2"
-                            : "border-transparent hover:bg-surface-2/60")
-                        }
-                        onClick={() => setSelectedId(track.id)}
+                        className="roll"
+                        ref={rollRef}
+                        onMouseDown={canEdit ? onRollMouseDown : undefined}
+                        style={{ width: beatSteps * CELL_W, height: PITCH_ROWS.length * CELL_H }}
                       >
-                        <span className="flex w-28 shrink-0 items-center gap-2">
-                          <i
-                            className="h-2 w-2 shrink-0 rounded-full"
-                            style={{ background: colorFor(track.instrument) }}
-                          />
-                          <span className="truncate text-xs font-semibold">{track.name}</span>
-                        </span>
-                        <div
-                          className="seq-cells mini"
-                          style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
-                        >
-                          {Array.from({ length: beatSteps }, (_, s) => (
-                            <span
-                              key={s}
+                        {PITCH_ROWS.map((p, row) =>
+                          Array.from({ length: beatSteps }, (_, col) => (
+                            <div
+                              key={`${row}-${col}`}
                               className={[
-                                "cell",
-                                notes.some((n) => s >= n.step && s < n.step + n.length) ? "on" : "",
-                                s === currentStep ? "playhead" : "",
-                                s % 4 === 0 ? "beat" : "",
+                                "roll-cell",
+                                p.includes("#") ? "dark" : "",
+                                col % 16 === 0 ? "bar" : col % 4 === 0 ? "beat" : "",
+                                col === currentStep ? "playcol" : "",
                               ].join(" ")}
+                              style={{
+                                left: col * CELL_W,
+                                top: row * CELL_H,
+                                width: CELL_W,
+                                height: CELL_H,
+                              }}
                             />
-                          ))}
-                        </div>
+                          )),
+                        )}
+                        {selectedNotes.map((note, index) => {
+                          const row = rowOf(note.pitch, octave);
+                          if (row === null) return null;
+                          return (
+                            <div
+                              key={index}
+                              className={`note ${index === selectedNote ? "selected" : ""}`}
+                              style={
+                                {
+                                  left: note.step * CELL_W + 1,
+                                  top: row * CELL_H + 2,
+                                  width: note.length * CELL_W - 3,
+                                  height: CELL_H - 4,
+                                  // Velocity is VISIBLE: quiet notes are translucent.
+                                  opacity: 0.35 + 0.65 * note.velocity,
+                                  "--tc": colorFor(selected.instrument),
+                                } as React.CSSProperties
+                              }
+                              onMouseDown={
+                                canEdit ? (e) => onNoteMouseDown(e, index, note, false) : undefined
+                              }
+                              onContextMenu={
+                                canEdit ? (e) => onNoteContextMenu(e, index) : undefined
+                              }
+                            >
+                              {canEdit && (
+                                <span
+                                  className="note-handle"
+                                  onMouseDown={(e) => onNoteMouseDown(e, index, note, true)}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
 
-                {/* The roll's interaction vocabulary — one quiet line under
-                    the grid instead of a paragraph above it. */}
-                <p className="mt-4 text-xs text-muted">
-                  Click empty cell = add note (drag to stretch) · drag note = move · right edge =
-                  resize · click = select, then slide velocity or press Delete · right-click = delete
-                  · Space = play/stop
-                </p>
+                    {/* -- channel rack: every lane of this beat at a glance.
+                           Cells are sized from CELL_W so its columns line up
+                           with the roll above — a rack that drifts out of
+                           alignment is worse than no rack. --------------- */}
+                    <div className="mt-3 flex flex-col gap-1 border-t border-edge pt-3">
+                      {sortedLanes.map((track) => {
+                        const notes = notesByTrack[track.id] ?? [];
+                        return (
+                          <div
+                            key={track.id}
+                            className={
+                              "flex cursor-pointer items-center rounded transition-colors duration-150 " +
+                              (track.id === selectedId ? "bg-surface-2" : "hover:bg-surface-2/60")
+                            }
+                            onClick={() => setSelectedId(track.id)}
+                          >
+                            <span className="sticky left-0 z-2 flex w-11 shrink-0 items-center gap-1 bg-bg-soft pr-1">
+                              <i
+                                className="h-2 w-2 shrink-0 rounded-full"
+                                style={{ background: colorFor(track.instrument) }}
+                                title={track.name}
+                              />
+                              <span className="truncate text-[0.6rem] font-semibold text-muted">
+                                {track.name}
+                              </span>
+                            </span>
+                            <div
+                              className="flex"
+                              style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
+                            >
+                              {Array.from({ length: beatSteps }, (_, s) => (
+                                <span
+                                  key={s}
+                                  className={[
+                                    "cell",
+                                    notes.some((n) => s >= n.step && s < n.step + n.length)
+                                      ? "on"
+                                      : "",
+                                    s === currentStep ? "playhead" : "",
+                                    s % 16 === 0 ? "bar" : s % 4 === 0 ? "beat" : "",
+                                  ].join(" ")}
+                                  style={{ width: CELL_W - 3, height: 16, marginRight: 3 }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </Canvas>

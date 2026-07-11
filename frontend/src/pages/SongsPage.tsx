@@ -6,16 +6,24 @@ import { beatColor } from "../ui/trackColors";
 import { coverFor } from "../ui/cover";
 import { Button, EditableName, ErrorBanner, Field, Skeleton, TextInput } from "../ui/kit";
 import { AppShell, Canvas, Modal, NavItem, NavRail, Workspace } from "../ui/shell";
+import { SettingsModal } from "../ui/SettingsModal";
 import type { Song } from "../types";
 
 // Queries live next to the component that owns them; each asks for exactly
 // the fields this screen renders — that per-view field selection is the
 // actual point of GraphQL (no over-fetching, no v2-endpoint-per-screen).
+// `bars` and each lane's `pattern` are here for the card's WAVEFORM: it is
+// a real histogram of note density, not decoration (see ui/cover.ts). This
+// is exactly the field-selection GraphQL exists for — the editor's query
+// asks for the same graph with more of it.
 const SONGS_QUERY = `
   query Songs {
     songs {
       id title bpm timeSignature ownerId version createdAt
-      beats { id name position tracks { id instrument position } }
+      beats {
+        id name position bars
+        tracks { id name instrument position version pattern { step pitch velocity length } }
+      }
     }
   }
 `;
@@ -40,6 +48,7 @@ export function SongsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false); // modal open?
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [bpm, setBpm] = useState(120);
   const [timeSignature, setTimeSignature] = useState("4/4");
@@ -152,6 +161,7 @@ export function SongsPage() {
               blank page would not be. */}
           <NavItem icon="◎" label="Shared with me" soon />
           <NavItem icon="☰" label="Library" soon />
+          <NavItem icon="⚙" label="Settings" onClick={() => setSettingsOpen(true)} />
         </NavRail>
 
         <Canvas className="p-8">
@@ -190,7 +200,19 @@ export function SongsPage() {
             ) : (
               <ul className="grid list-none grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6 p-0">
                 {songs.map((song) => {
-                  const cover = coverFor(song.id);
+                  // Lay the song's beats end to end and collect every note's
+                  // absolute step — that histogram IS the card's waveform.
+                  const steps: number[] = [];
+                  let offset = 0;
+                  for (const beat of [...song.beats].sort((a, b) => a.position - b.position)) {
+                    for (const lane of beat.tracks) {
+                      for (const note of lane.pattern ?? []) {
+                        steps.push(offset + note.step);
+                      }
+                    }
+                    offset += (beat.bars ?? 1) * 16;
+                  }
+                  const cover = coverFor(song.id, { steps, totalSteps: offset });
                   const mine = song.ownerId === user?.id;
                   const trackCount = song.beats.reduce((n, b) => n + b.tracks.length, 0);
                   return (
@@ -334,6 +356,8 @@ export function SongsPage() {
           </div>
         </Canvas>
       </Workspace>
+
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
 
       {creating && (
         <Modal title="New song" onClose={() => setCreating(false)}>

@@ -115,10 +115,23 @@ export function NavItem({
   );
 }
 
-/** The browser column: fixed width, scrolls on its own. */
-export function Sidebar({ children }: { children: ReactNode }) {
+/**
+ * The browser column: fixed width, scrolls on its own, and can fold away.
+ *
+ * Collapsing animates the WIDTH (not display:none) so the canvas reclaims
+ * the space smoothly — and so a drag in progress sees a continuous layout
+ * change rather than a teleport. `overflow-hidden` while folding keeps the
+ * contents from spilling across the canvas mid-animation.
+ */
+export function Sidebar({ children, collapsed }: { children: ReactNode; collapsed?: boolean }) {
   return (
-    <aside className="flex w-64 shrink-0 flex-col gap-6 overflow-y-auto border-r border-edge bg-surface/40 p-4">
+    <aside
+      aria-hidden={collapsed}
+      className={cx(
+        "flex shrink-0 flex-col gap-6 border-r border-edge bg-surface/40 transition-[width,padding] duration-200",
+        collapsed ? "w-0 overflow-hidden border-r-0 p-0" : "w-64 overflow-y-auto p-4",
+      )}
+    >
       {children}
     </aside>
   );
