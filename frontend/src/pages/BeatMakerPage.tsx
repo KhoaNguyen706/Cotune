@@ -124,6 +124,41 @@ interface HistoryEntry {
   dirty: Set<string>;
 }
 
+/**
+ * "Alice is over there."
+ *
+ * A cursor can only be drawn in the piano roll when you are BOTH looking at the
+ * same lane of the same beat — anywhere else there is no cell to point at. The
+ * first version stopped there, so stepping onto another lane made your
+ * collaborator vanish with no explanation, which is the exact opposite of what
+ * presence is for: the moment you most need to know where someone is, is when
+ * they are somewhere you are not.
+ *
+ * So when we cannot show their cursor, we show their FACE on the thing they are
+ * working on — the beat in the beat list, the lane in the lane list. Same
+ * colour as their cursor, so "the green dot on Bass" and "the green cursor in
+ * the grid" are obviously the same person.
+ */
+function PeerDots({ list, where }: { list: Peer[]; where: string }) {
+  if (list.length === 0) return null;
+  return (
+    // -space-x-1: overlap them like a stacked avatar group, so a busy lane
+    // doesn't push the mute/solo buttons off the row.
+    <span className="flex shrink-0 -space-x-1">
+      {list.map((peer) => (
+        <span
+          key={peer.userId}
+          title={`${peer.displayName} is on ${where}`}
+          className="flex h-4 w-4 items-center justify-center rounded-full text-[0.5rem] font-bold text-bg ring-1 ring-bg"
+          style={{ background: peerColor(peer.userId) }}
+        >
+          {peer.displayName[0]?.toUpperCase() ?? "?"}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function pitchOf(row: number, octave: number): string {
   return PITCH_ROWS[row] + octave;
 }
@@ -1171,6 +1206,16 @@ export function BeatMakerPage() {
   const sortedLanes = selectedBeat
     ? [...selectedBeat.tracks].sort((a, b) => a.position - b.position)
     : [];
+
+  /** Where a collaborator is, in words. A peer with no beat is on the Arrange
+   *  timeline (or hasn't touched a grid yet) — say so rather than guess. */
+  function locationOf(peer: Peer): string {
+    const beat = sortedBeats.find((b) => b.id === peer.beatId);
+    const lane = beat?.tracks.find((t) => t.id === peer.trackId);
+    if (beat && lane) return `${beat.name} · ${lane.name}`;
+    if (beat) return beat.name;
+    return "elsewhere in this song";
+  }
   const selected = sortedLanes.find((t) => t.id === selectedId) ?? null;
   const octave = selected ? octaves[selected.id] ?? 4 : 4;
   const selectedNotes = selected ? notesByTrack[selected.id] ?? [] : [];
@@ -1257,7 +1302,9 @@ export function BeatMakerPage() {
                 {Object.values(peers).map((peer) => (
                   <span
                     key={peer.userId}
-                    title={`${peer.displayName} is here`}
+                    // Says WHERE, not just "is here" — the useful half of the
+                    // sentence, and the only one you can act on.
+                    title={`${peer.displayName} — ${locationOf(peer)}`}
                     className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.6rem] font-bold text-bg ring-2 ring-bg"
                     style={{ background: peerColor(peer.userId) }}
                   >
@@ -1472,6 +1519,12 @@ export function BeatMakerPage() {
                           beat.name
                         )}
                       </strong>
+                      {/* Who's working in this beat — visible even when it is
+                          not the beat you have open. */}
+                      <PeerDots
+                        list={Object.values(peers).filter((peer) => peer.beatId === beat.id)}
+                        where={beat.name}
+                      />
                       <span className="shrink-0 text-[0.6rem] tabular-nums">
                         {beat.bars} bar{beat.bars > 1 ? "s" : ""}
                       </span>
@@ -1529,6 +1582,14 @@ export function BeatMakerPage() {
                               track.name
                             )}
                           </strong>
+                          {/* THE ANSWER TO "where is their cursor?" — they are
+                              on this lane, and you are not looking at it. */}
+                          <PeerDots
+                            list={Object.values(peers).filter(
+                              (peer) => peer.trackId === track.id,
+                            )}
+                            where={track.name}
+                          />
                           <button
                             className={
                               msButton +
