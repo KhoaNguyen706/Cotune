@@ -29,5 +29,24 @@ build:
 # (The Dockerfile's CMD keeps its ${PORT:-8080} default for local `docker run`,
 # where PORT genuinely is unset. This line replaces that CMD, it does not fight
 # with it — which is exactly why the Dockerfile uses CMD and not ENTRYPOINT.)
+#
+# THE HEAP FLAGS ARE NOT OPTIONAL, and their absence does not look like a memory
+# problem. A Basic dyno has 512MB. Nothing here constrains the JVM, and the JVM
+# sizes its heap from the memory it BELIEVES it has — which on a dyno is far more
+# than 512MB — so it happily grows past the quota. Heroku then reports
+#
+#     Error R14 (Memory quota exceeded)
+#
+# and starts swapping rather than killing the process, so the app stays "up" and
+# merely becomes unable to finish requests: an audio upload died mid-connection
+# with no HTTP status and no stack trace at all. R14 is a WARNING in the log, not
+# a crash, which is exactly why it is easy to stare past.
+#
+# (The Java buildpack sets these for you. Moving to the container stack means
+# inheriting that job — a hidden cost of the switch, paid exactly once, here.)
+#
+# 300m heap + 128m metaspace + 64m code cache + threads lands comfortably under
+# 512MB. SerialGC because G1's per-region bookkeeping is poor value on a heap
+# this small, and it is one fewer thing competing for a single dyno's CPU.
 run:
-  web: java -Dserver.port=$PORT -jar /app/app.jar
+  web: java -Xmx300m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -Xss512k -XX:+UseSerialGC -Dserver.port=$PORT -jar /app/app.jar

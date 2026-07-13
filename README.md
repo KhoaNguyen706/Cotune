@@ -335,8 +335,34 @@ heroku ps:type basic -a cotune            # NOT eco — see below
 git push heroku main
 ```
 
-Four things that are specific to this combination and will each cost you an
-afternoon if you skip them:
+Deploy with **`git push heroku main`**, not the dashboard's GitHub button: the
+GitHub integration builds with a *buildpack*, which is the one thing this app
+must not be built with (see below).
+
+Six things that are specific to this combination, every one of which was hit for
+real on the first deploy:
+
+**The buildpack cannot build this app — twice over.** It compiles with its own
+JDK, on which Lombok's annotation processor silently does not run, so you get
+~100 errors like `cannot find symbol: method getId()` on code that is perfectly
+correct (fixed for good by naming Lombok in `annotationProcessorPaths`). And
+even once it compiles, it never runs the Node stage, so you ship an API with no
+UI. `stack:set container` is what makes Heroku build the actual Dockerfile.
+
+**`ENTRYPOINT` gets mangled; use `CMD` + `heroku.yml`'s `run:`.** Heroku re-wraps
+an image's entrypoint in its own shell and escapes every character, so a
+shell-form `ENTRYPOINT` that reads `$PORT` arrives as
+`sh -c exec\ java\ -Dserver.port\=\$\{PORT:-8080\}...` — `$PORT` is no longer a
+variable and the line is one dead token. The dyno exits with **status 0**,
+prints nothing, and crash-loops. Declaring the command in `heroku.yml` skips the
+mangling.
+
+**Cap the JVM heap** (done in `heroku.yml`). A Basic dyno is 512MB; an
+unconstrained JVM sizes its heap from the host's much larger memory and blows
+the quota. Heroku logs `Error R14 (Memory quota exceeded)` and then *swaps*
+instead of crashing — so the app stays "up" while requests die mid-connection
+with no status code and no stack trace. The buildpack used to set these flags
+for you; on the container stack that job is yours.
 
 **`stack:set container`.** Without it Heroku ignores `heroku.yml`, autodetects a
 Java app and builds the jar with a *buildpack* — which never runs the Node stage,
