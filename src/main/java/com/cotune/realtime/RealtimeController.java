@@ -4,6 +4,7 @@ import com.cotune.realtime.dto.NoteEvent;
 import com.cotune.realtime.dto.PresenceEvent;
 import com.cotune.realtime.dto.PresenceInput;
 import com.cotune.realtime.dto.RealtimeError;
+import com.cotune.realtime.relay.RealtimeBroadcaster;
 import com.cotune.track.TrackService;
 import com.cotune.track.dto.NoteApplied;
 import com.cotune.track.dto.NoteOp;
@@ -17,7 +18,6 @@ import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -44,7 +44,13 @@ public class RealtimeController {
     private static final Logger log = LoggerFactory.getLogger(RealtimeController.class);
 
     private final TrackService trackService;
-    private final SimpMessagingTemplate broker;
+    /**
+     * Not a SimpMessagingTemplate any more (session 19). "Give this to the local
+     * broker" and "make sure everyone on this song hears it, wherever they are
+     * connected" were the same sentence while there was one instance. They are
+     * not the same sentence any more, and this controller wants the second one.
+     */
+    private final RealtimeBroadcaster broadcaster;
     private final UserRepository userRepository;
 
     /** Display names for tokens minted before they carried one. Bounded by the
@@ -79,7 +85,10 @@ public class RealtimeController {
         // the sender is deliberate: it is their acknowledgement that the op
         // landed and it carries the authoritative new version. They recognise
         // it by actorId and apply only the version, not the note (see NoteEvent).
-        broker.convertAndSend("/topic/songs/" + songId, new NoteEvent(
+        //
+        // "Everyone" now genuinely means everyone, not just everyone who happens
+        // to have been load-balanced onto this JVM.
+        broadcaster.broadcast("/topic/songs/" + songId, new NoteEvent(
                 songId,
                 applied.trackId(),
                 op.type(),
@@ -110,7 +119,7 @@ public class RealtimeController {
                          @Payload @Valid PresenceInput input,
                          Authentication authentication) {
 
-        broker.convertAndSend("/topic/songs/" + songId + "/presence", new PresenceEvent(
+        broadcaster.broadcast("/topic/songs/" + songId + "/presence", new PresenceEvent(
                 input.kind(),
                 // Identity from the TOKEN, never from the payload. Accept a
                 // client-supplied name here and anyone can paint a cursor

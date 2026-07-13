@@ -30,5 +30,5 @@ public record NoteEvent(
          *  optimistic-concurrency check honest if the socket later drops. */
         long version,
         UUID actorId
-) {
+) implements RealtimeEvent {
 }

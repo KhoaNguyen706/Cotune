@@ -48,7 +48,7 @@ class AudioServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        storage = new AudioStorage(tempDir.toString());
+        storage = new LocalAudioStorage(tempDir.toString());
         service = new AudioServiceImpl(audioFileRepository, songRepository, storage, new AudioMapper());
     }
 

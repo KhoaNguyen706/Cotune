@@ -45,4 +45,15 @@ USER cotune
 WORKDIR /app
 COPY --from=build /build/target/*.jar app.jar
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Shell-form entrypoint, for exactly one reason: Heroku assigns each dyno a
+# RANDOM port at runtime and routes traffic to it, delivered as $PORT. The
+# exec-form ["java", ...] can't expand env vars — there is no shell in it —
+# so the app would sit on 8080 while the router knocks on $PORT, and the
+# dyno gets killed for failing to bind (R10 boot timeout).
+#
+# The ${PORT:-8080} fallback keeps every non-Heroku run (docker-compose,
+# plain docker run) on 8080, unchanged. The explicit `exec` makes java
+# REPLACE the shell as PID 1 rather than run as its child — otherwise
+# SIGTERM on shutdown hits sh, java never hears it, and every stop is a
+# 10-second wait followed by SIGKILL mid-request.
+ENTRYPOINT ["sh", "-c", "exec java -Dserver.port=${PORT:-8080} -jar app.jar"]

@@ -1,75 +1,41 @@
 package com.cotune.audio;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.UUID;
-
 /**
- * File-system home for uploaded audio bytes. Deliberately dumb: store,
- * load, delete — no knowledge of songs or entities. Swapping this for an
- * S3/GCS client later touches exactly this class (same seam object
- * storage would use).
+ * Where uploaded audio bytes live. Deliberately dumb: store, load, delete — no
+ * knowledge of songs or entities.
  *
- * Files are named by a fresh UUID, never by user input — the uploaded
- * filename is display metadata in the DB, not a path. That kills path
- * traversal by construction.
+ * SESSION 20 MADE THIS AN INTERFACE, and the reason is the same shape as the
+ * Redis relay: something that is correct on one machine is silently wrong on
+ * two. LocalAudioStorage writes to the container's filesystem, which works
+ * beautifully in docker-compose because both app containers mount the SAME
+ * named volume. On a real platform they do not:
+ *
+ *   - Heroku's dyno filesystem is EPHEMERAL and dynos are cycled at least
+ *     once every 24h (plus on every deploy and every config change). Uploaded
+ *     samples are gone by tomorrow — on ONE dyno. This is not a scaling
+ *     problem there, it is a "the feature does not work" problem.
+ *   - And with two dynos, a file uploaded to A simply 404s from B.
+ *
+ * So production points at object storage instead (SupabaseAudioStorage), and
+ * the choice is `cotune.storage.backend` — config, not a code path. The old
+ * class comment said "swapping this for an S3/GCS client later touches exactly
+ * this class". It was right; this is that swap.
+ *
+ * Files are named by a fresh UUID, never by user input — the uploaded filename
+ * is display metadata in the DB, not a path. That kills path traversal by
+ * construction, in both implementations.
  */
-@Component
-public class AudioStorage {
+public interface AudioStorage {
 
-    private final Path root;
+    /** Writes the bytes; returns the storage key to persist on the row. */
+    String store(byte[] bytes);
 
-    public AudioStorage(@Value("${cotune.storage.audio-dir}") String audioDir) {
-        this.root = Path.of(audioDir).toAbsolutePath().normalize();
-        try {
-            Files.createDirectories(root);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Cannot create audio storage dir: " + root, e);
-        }
-    }
+    byte[] load(String storagePath);
 
-    /** Writes the bytes; returns the RELATIVE path to persist on the row. */
-    public String store(byte[] bytes) {
-        String name = UUID.randomUUID() + ".bin";
-        try {
-            Files.write(root.resolve(name), bytes);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to store audio file " + name, e);
-        }
-        return name;
-    }
-
-    public byte[] load(String relativePath) {
-        try {
-            return Files.readAllBytes(resolve(relativePath));
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to read audio file " + relativePath, e);
-        }
-    }
-
-    /** Best-effort: a leftover orphan file is annoying; a failed delete
-     *  request because the file already vanished would be worse. */
-    public void delete(String relativePath) {
-        try {
-            Files.deleteIfExists(resolve(relativePath));
-        } catch (IOException e) {
-            // Swallowed by design — the DB row is already gone; log-worthy
-            // at most. (No logger in this class yet; orphans are re-sweepable.)
-        }
-    }
-
-    /** Belt-and-suspenders: even though paths are server-generated, refuse
-     *  anything that escapes the root. */
-    private Path resolve(String relativePath) {
-        Path resolved = root.resolve(relativePath).normalize();
-        if (!resolved.startsWith(root)) {
-            throw new IllegalArgumentException("Illegal storage path: " + relativePath);
-        }
-        return resolved;
-    }
+    /**
+     * Best-effort. A leftover orphan object is annoying; a failed delete because
+     * the object already vanished would be worse — the DB row is already gone by
+     * the time we get here, so there is nothing useful to do with the error.
+     */
+    void delete(String storagePath);
 }

@@ -7,6 +7,34 @@ spring:
     username: cotune
     password: cotune # dev-only; real environments inject this via env vars
 
+  data:
+    redis:
+      # Only actually connected to when cotune.realtime.relay=redis. Lettuce
+      # opens connections lazily, so these being wrong (or Redis being absent)
+      # costs nothing while the relay is off — which is why the default dev
+      # setup needs no Redis container at all.
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      #
+      # NOTE THERE IS NO `url:` KEY HERE, and that is deliberate — I tried.
+      #
+      # Every managed Redis (Heroku, Render, Upstash, ElastiCache with auth)
+      # gives you ONE URL carrying a password and usually TLS —
+      # rediss://:pw@host:6379 — not a host/port pair, and host+port alone
+      # cannot authenticate. So production needs `spring.data.redis.url`.
+      #
+      # The tempting way to write that is `url: ${REDIS_URL:}` — empty default,
+      # harmless in dev. It is NOT harmless: Boot does not treat an empty url as
+      # absent, it tries to PARSE it, and the whole app dies at startup with
+      # `RedisUrlSyntaxException: Invalid Redis URL ''` — in dev, in tests,
+      # everywhere. An unset property and a property set to "" are different
+      # things, and only the first one falls back to host/port above.
+      #
+      # So the url is supplied ONLY as an environment variable, never from YAML:
+      # Boot's relaxed binding maps SPRING_DATA_REDIS_URL → spring.data.redis.url
+      # with no config entry needed. Unset it and this key simply does not exist,
+      # which is exactly the behaviour we want. See the README's Heroku section.
+
   jpa:
     hibernate:
       # validate = Hibernate checks entity mappings against the real schema
@@ -33,11 +61,58 @@ spring:
       enabled: true
 
 cotune:
+  realtime:
+    # local | redis — how a broadcast reaches collaborators.
+    #
+    #   local  (default): hand it to this JVM's in-memory STOMP broker. Correct
+    #                     and free for a single instance, which is what you run
+    #                     in dev — nobody should need a Redis to work on the
+    #                     beat grid.
+    #   redis           : PUBLISH it, and let every instance deliver its own
+    #                     copy to its own clients. Required the moment more than
+    #                     one instance serves the same song, and harmless (just
+    #                     slower by a round trip) if you enable it on one.
+    #
+    # The DEFAULT IS THE SAFE-IN-DEV one, not the safe-in-prod one, which is a
+    # deliberate inversion of the usual rule: getting this wrong in dev costs a
+    # confusing afternoon, and getting it wrong in prod is a support ticket that
+    # says "my collaborator's edits only show up sometimes" — the "sometimes"
+    # being whether the load balancer put you on the same instance. Deployments
+    # that run more than one instance MUST set REALTIME_RELAY=redis.
+    relay: ${REALTIME_RELAY:local}
+    # One channel for the whole system. Every instance sees every song's traffic
+    # and drops what it has no local subscribers for — see RelaySubscriber for
+    # why that is the right trade today and where it stops being one.
+    channel: cotune:realtime
+
   storage:
-    # Where uploaded audio bytes live (V9 moved them out of Postgres).
-    # Relative resolves against the working directory in dev; containers
-    # point this at a mounted volume (docker-compose.yml).
+    # local | supabase — where uploaded audio bytes live (V9 moved them out of
+    # Postgres).
+    #
+    #   local (default): the filesystem. Durable on your laptop, and durable in
+    #                    docker-compose because BOTH app containers mount the
+    #                    same named volume. Needs no credentials, which is why
+    #                    it is the default — see LocalAudioStorage.
+    #   supabase       : Supabase Storage (S3-backed object storage).
+    #
+    # PLATFORM DEPLOYMENTS MUST USE supabase. A container filesystem on Heroku
+    # is ephemeral AND the dyno is recycled at least daily, so `local` there
+    # does not mean "audio is at risk when you scale" — it means every sample
+    # anyone uploads is gone by tomorrow morning, on a single dyno. Same class
+    # of bug as the pre-session-19 broker: fine on one box, quietly wrong on a
+    # real one. See AudioStorage.
+    backend: ${STORAGE_BACKEND:local}
+    # Only read by the `local` backend.
     audio-dir: ${AUDIO_STORAGE_DIR:./data/audio}
+    supabase:
+      # Only read by the `supabase` backend, hence the empty defaults: they let
+      # dev and compose boot with no Supabase account at all. The prod profile
+      # drops the defaults so a deploy that forgets them fails loudly at boot
+      # rather than at the first upload.
+      url: ${SUPABASE_URL:}
+      # service_role, NOT anon — see SupabaseAudioStorage. Root credential.
+      service-key: ${SUPABASE_SERVICE_KEY:}
+      bucket: ${SUPABASE_BUCKET:cotune-audio}
   security:
     jwt:
       # HMAC-SHA256 signing key, Base64-encoded, >= 256 bits. The ${VAR:default}

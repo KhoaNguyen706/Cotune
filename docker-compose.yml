@@ -25,6 +25,16 @@ services:
       # JWT_SECRET intentionally not set here: the dev fallback in
       # application.yml applies. Real deployments inject it (secret
       # manager / CI variable), never a file committed to git.
+      #
+      # Relay ON here, though application.yml defaults it to "local".
+      # That is the 12-factor point made concrete: the same image behaves
+      # differently because the ENVIRONMENT is different, not because
+      # someone edited a file. Running it on a single instance costs one
+      # Redis round trip and nothing else, and it means the code path that
+      # runs in production is also the one running in compose — rather
+      # than the relay being a thing that only ever executes in CI.
+      REALTIME_RELAY: redis
+      REDIS_HOST: redis
     volumes:
       # Audio uploads are DATA, same as the DB: a named volume, not
       # container-layer storage that `docker compose up --build` discards.
@@ -35,6 +45,43 @@ services:
       # moment before it accepts logins; without the condition the app
       # boots, Flyway can't connect, startup fails.
       postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # THE SECOND INSTANCE — the entire reason session 19 exists.
+  #
+  # Opt-in, because two JVMs is a lot of laptop to spend on everyday work:
+  #   docker compose --profile cluster up
+  #
+  # Then open the SAME song on :8080 and :8082 as two different users and
+  # draw a note. Before the relay, nothing crossed. Every byte of that
+  # crossing is Redis.
+  #
+  # Note it is the SAME image with the SAME config, differing only in the
+  # host port. Nothing about an instance knows it is "the second one" —
+  # there is no leader, no instance id, no registry. That is what makes it
+  # safe for a load balancer to put a user on any of them, and it is the
+  # property a session registry would have quietly destroyed.
+  app-2:
+    profiles: ["cluster"]
+    build: .
+    container_name: cotune-app-2
+    ports:
+      - "${COTUNE_PORT_2:-8082}:8080"
+    environment:
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/cotune}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-cotune}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-cotune}
+      AUDIO_STORAGE_DIR: /app/data/audio
+      REALTIME_RELAY: redis
+      REDIS_HOST: redis
+    volumes:
+      - cotune-audio:/app/data/audio
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   postgres:
@@ -55,7 +102,31 @@ services:
       timeout: 3s
       retries: 5
 
-  # Redis comes in a later session (pub/sub relay for real-time collab).
+  redis:
+    image: redis:7-alpine
+    container_name: cotune-redis
+    ports:
+      - "6379:6379"
+    # NO VOLUME, deliberately — the one service here that gets none.
+    #
+    # Postgres has a named volume because losing it loses people's songs.
+    # Redis holds messages that are in flight for a few milliseconds and
+    # then irrelevant forever; the source of truth is tracks.pattern, which
+    # was already committed to Postgres before anything was ever published.
+    # Persisting the relay would buy nothing and imply the opposite — that
+    # something in here is worth recovering.
+    #
+    # The honest consequence: if Redis dies mid-edit, the in-flight ops are
+    # GONE (pub/sub is at-most-once, with no replay). Collaborators miss
+    # those notes until they reload — at which point they read them from
+    # Postgres, where they have been the whole time. Lost frames, never
+    # lost work. That is the trade, and it is only acceptable BECAUSE the
+    # ops were persisted before broadcast.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
   cotune-pgdata:

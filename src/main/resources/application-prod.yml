@@ -1,0 +1,64 @@
+# Production hardening. Active when SPRING_PROFILES_ACTIVE contains `prod`.
+#
+# On Heroku you run it alongside the datasource profile:
+#   SPRING_PROFILES_ACTIVE=supabase,prod
+# Later profiles overlay earlier ones, so `supabase` supplies the database and
+# this file supplies the "you are not on a laptop any more" rules.
+#
+# EVERY VALUE HERE THAT COMES FROM AN ENV VAR HAS NO DEFAULT, on purpose. The
+# base application.yml is full of ${VAR:sensible-dev-fallback}, which is exactly
+# right for getting a new contributor running in one command — and exactly wrong
+# in production, where a fallback means a forgotten config var doesn't fail, it
+# just quietly does something insecure. A missing placeholder here refuses to
+# boot. A deploy that crashes at 2pm is a good afternoon; a deploy that comes up
+# green while signing tokens with a key published on GitHub is a bad quarter.
+spring:
+  graphql:
+    graphiql:
+      # OFF. GraphiQL is an unauthenticated, fully-introspectable API explorer.
+      # Leaving it on in production hands every visitor a map of the entire
+      # schema and a console to fire mutations from. It is a dev tool.
+      enabled: false
+
+  datasource:
+    hikari:
+      # EXPLICIT, because the default (10) is per-INSTANCE and Supabase's pooler
+      # has a hard ceiling. The arithmetic that bites you is dynos × pool-size:
+      # at Boot's default, four dynos silently want 40 connections and the fifth
+      # one to ask gets refused — presenting as random 500s under load, not as a
+      # config error. Five per dyno leaves room to scale the web process several
+      # times over before that conversation happens.
+      maximum-pool-size: 5
+      # Fail a request that can't get a connection in 10s rather than piling up
+      # threads behind an exhausted pool.
+      connection-timeout: 10000
+
+cotune:
+  storage:
+    # The whole reason this profile exists for a Heroku deploy. See AudioStorage:
+    # the dyno filesystem is ephemeral and recycled daily, so `local` here loses
+    # every uploaded sample overnight.
+    backend: supabase
+    supabase:
+      url: ${SUPABASE_URL}
+      service-key: ${SUPABASE_SERVICE_KEY}
+      bucket: ${SUPABASE_BUCKET:cotune-audio}
+
+  security:
+    jwt:
+      # NO FALLBACK — the single most important line in this file. In
+      # application.yml this key has a dev default that is committed to a public
+      # git repository. Anyone who can read the repo can forge a token for any
+      # user, with any role, including ADMIN. If JWT_SECRET is unset, Spring
+      # cannot resolve this placeholder and the application REFUSES TO START.
+      #
+      # Generate one with: openssl rand -base64 32
+      secret: ${JWT_SECRET}
+
+logging:
+  level:
+    # application.yml sets this to `debug` to teach you what Hibernate emits.
+    # In production it is a line per statement — Heroku both charges for and
+    # rate-limits log throughput, and drowning the log makes the one stack
+    # trace you actually need unfindable.
+    org.hibernate.SQL: warn

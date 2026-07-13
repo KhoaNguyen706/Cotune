@@ -20,5 +20,5 @@ public record PresenceEvent(
         UUID trackId,
         int step,
         int row
-) {
+) implements RealtimeEvent {
 }

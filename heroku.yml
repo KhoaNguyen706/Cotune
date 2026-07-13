@@ -1,0 +1,11 @@
+# Heroku container deploy: `git push heroku main` builds the Dockerfile and
+# releases the image as the `web` process. This file only takes effect on the
+# `container` stack (heroku stack:set container) — on the default buildpack
+# stack Heroku would ignore it and try to detect a Java app instead, building
+# the jar WITHOUT the frontend stage, and you'd deploy an API with no UI.
+#
+# `web` is not an arbitrary name: it is the one process type Heroku routes
+# HTTP (and WebSocket) traffic to, on the $PORT the entrypoint reads.
+build:
+  docker:
+    web: Dockerfile

@@ -56,6 +56,17 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
+        <!-- Redis, used ONLY as a pub/sub relay between app instances (session
+             19) — not as a cache and not as a datastore. The in-memory STOMP
+             broker fans a message out to the browsers connected to ITS OWN JVM,
+             which is all of them until the day you run two. This carries the
+             message between JVMs so the broker's local fan-out adds up to a
+             global one. Postgres remains the only source of truth; nothing in
+             Redis is durable and nothing needs to be. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
         <!-- NOT pulled in by starter-security. It carries
              SecurityContextChannelInterceptor, which copies the STOMP session's
              authenticated user into the SecurityContextHolder of the thread

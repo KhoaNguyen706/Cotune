@@ -1,6 +1,6 @@
 # Cotune
 
-Real-time collaborative music editor. Backend: Spring Boot (Java 21), PostgreSQL (local Docker or Supabase), GraphQL + REST auth. Frontend: React + Vite + TypeScript + Tone.js (`frontend/`) — sign in, open a song, and build a 16-step beat in the browser. Songs can be **shared** with other accounts as editors or viewers (V10), and co-editors **build the same beat in real time** over a WebSocket (session 16). Redis pub/sub — which is what makes that survive more than one backend instance — arrives in a later session.
+Real-time collaborative music editor. Backend: Spring Boot (Java 21), PostgreSQL (local Docker or Supabase), GraphQL + REST auth. Frontend: React + Vite + TypeScript + Tone.js (`frontend/`) — sign in, open a song, and build a 16-step beat in the browser. Songs can be **shared** with other accounts as editors or viewers (V10), and co-editors **build the same beat in real time** over a WebSocket (session 16), and a Redis pub/sub relay carries those edits **across backend instances** (session 19), so the real-time layer survives horizontal scaling.
 
 **Beats are data, not audio**: a pattern is a JSONB array of `{step, pitch, velocity}` events on the track row (see `V4__add_track_pattern.sql` for the modeling rationale); the browser synthesizes all sound with Tone.js. Object storage (e.g. Supabase Storage) only becomes necessary for uploaded samples and exported audio — not for the sequencer.
 
@@ -162,10 +162,38 @@ half of the room. Identity is always taken from the signed token, never from the
 payload; otherwise anyone could paint a cursor labelled "Alice" onto her
 collaborators' screens.
 
-**Not built yet:** the broker is Spring's *simple* in-memory one — correct for a
-single instance, and precisely what breaks with two, since a note sent to instance
-A never reaches a subscriber on instance B. That is what Redis pub/sub is for, and
-the seam is `WebSocketConfig.configureMessageBroker`.
+## Scaling past one instance (session 19)
+
+The broker is Spring's *simple* in-memory one — correct for a single instance,
+and precisely what breaks with two, since a note sent to instance A never
+reaches a subscriber on instance B. Session 19 closes that gap with a Redis
+pub/sub relay, and **not** where session 16 predicted: the seam is *not*
+`WebSocketConfig.configureMessageBroker` (`enableStompBrokerRelay()` needs a
+broker that speaks STOMP — RabbitMQ, ActiveMQ — and Redis doesn't), but one
+level up, in front of the broker. `RealtimeBroadcaster` is the abstraction;
+`cotune.realtime.relay` picks the implementation:
+
+- `local` (default) — hand events to this JVM's broker. One instance, no Redis
+  needed; dev stays zero-dependency.
+- `redis` — PUBLISH every event, and let every instance (including the sender's
+  own) deliver its copy off the channel. **One delivery path**, so nothing can
+  arrive twice: the naive "send locally *and* publish" echoes the sender's own
+  message back through the subscription and delivers duplicates — invisible on
+  an idempotent beat grid, catastrophic for the first op that isn't.
+
+Deployments running more than one instance **must** set `REALTIME_RELAY=redis`.
+If Redis dies mid-edit, in-flight frames are lost but work never is: every op
+was persisted to Postgres *before* it was published, so a reload reads the
+truth. To watch a note cross two real JVMs locally:
+
+```bash
+docker compose --profile cluster up -d --build
+# same song, two browsers: one on :8080, one on :8082 — draw a note
+```
+
+`RedisRelayIntegrationTest` boots that same topology (two Spring contexts, one
+Redis, one Postgres, via Testcontainers) and asserts the crossing, the
+exactly-once echo, and that rooms don't leak into each other.
 
 ## App-level roles
 
@@ -276,5 +304,72 @@ same way):
 3. (Optional, full CD) copy the service's **deploy hook URL** into the repo
    secret `DEPLOY_HOOK_URL` → every green build on `main` goes live.
 
-Before real users: disable GraphiQL in prod (`spring.graphql.graphiql.enabled`),
-and put the app in the same region as the database.
+### Heroku + Supabase (session 20)
+
+App on Heroku, database on Supabase. `heroku.yml` builds the Dockerfile as the
+`web` process, and the entrypoint binds Heroku's runtime `$PORT` (falling back
+to 8080 everywhere else).
+
+**The `prod` profile is not optional.** Every env var in `application.yml` has a
+friendly dev fallback — that's what makes `docker compose up` a one-liner, and
+it's exactly what you don't want on a public host, where a forgotten variable
+would silently mean *"signs tokens with a key that's committed to this repo."*
+`application-prod.yml` removes the fallbacks so a missing var **fails the boot**,
+switches audio to object storage, turns GraphiQL off, and caps the connection
+pool. Run it as `SPRING_PROFILES_ACTIVE=supabase,prod` — `supabase` supplies the
+database, `prod` supplies the "you are not on a laptop" rules.
+
+```bash
+heroku login
+heroku git:remote -a cotune
+heroku stack:set container -a cotune      # REQUIRED — see below
+
+heroku config:set -a cotune \
+  SPRING_PROFILES_ACTIVE=supabase,prod \
+  SUPABASE_DB_PASSWORD='<dashboard > Settings > Database>' \
+  SUPABASE_URL='https://<project-ref>.supabase.co' \
+  SUPABASE_SERVICE_KEY='<dashboard > Settings > API > service_role>' \
+  JWT_SECRET="$(openssl rand -base64 32)"
+
+heroku ps:type basic -a cotune            # NOT eco — see below
+git push heroku main
+```
+
+Four things that are specific to this combination and will each cost you an
+afternoon if you skip them:
+
+**`stack:set container`.** Without it Heroku ignores `heroku.yml`, autodetects a
+Java app and builds the jar with a *buildpack* — which never runs the Node stage,
+so you deploy a working API with no UI and a confusing 404 on `/`.
+
+**Basic dynos, not Eco.** Eco dynos sleep after 30 minutes idle. Sleeping tears
+down every WebSocket, so collaboration dies for anyone connected and reconnects
+with a ~10s cold start. There is no free dyno tier any more; Basic is the floor
+for a real-time app.
+
+**Audio is on Supabase Storage, not the disk.** The `prod` profile sets
+`STORAGE_BACKEND=supabase` because a dyno's filesystem is ephemeral *and* the
+dyno is recycled at least daily — with `local`, every sample anyone uploads is
+gone by morning, on a **single** dyno. That's not a scaling caveat, it's a broken
+feature. The bucket is created on first boot; the browser never talks to Supabase
+directly (it fetches `GET /api/audio/{id}` from us, authorized by `AudioAccess`),
+so the bucket stays private and there's no second permission model to drift.
+Use the **`service_role`** key: the `anon` key is RLS-limited and can't write.
+
+**Region.** Put the dyno in `us` — your Supabase project is in `ca-central-1`,
+which is ~15–20ms from us-east and ~90ms from Europe, on *every* query.
+
+**Scaling past one dyno** additionally needs the relay (see above):
+
+```bash
+heroku addons:create heroku-redis:mini -a cotune
+heroku config:set -a cotune REALTIME_RELAY=redis \
+  SPRING_DATA_REDIS_URL="$(heroku config:get REDIS_URL -a cotune)"
+heroku ps:scale web=2 -a cotune
+```
+
+Note `SPRING_DATA_REDIS_URL`, not `REDIS_HOST`/`REDIS_PORT`: a managed Redis
+authenticates with a password carried in the URL, which host/port cannot express.
+Boot binds that env var to `spring.data.redis.url` natively — and it must be
+*unset* (not empty) when you aren't using it, which is why there's no `url:` key
+in `application.yml`.
