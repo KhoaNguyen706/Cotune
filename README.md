@@ -102,6 +102,30 @@ UPDATE songs SET owner_id = (SELECT id FROM users WHERE email = 'you@example.com
 WHERE owner_id IS NULL;
 ```
 
+## The arrangement timeline
+
+Clips are placed by arming material in the sidebar and clicking a lane. Once
+placed, they behave like clips in a video editor:
+
+| gesture | what it does |
+|---|---|
+| drag | move (across lanes and along time; snaps to the bar) |
+| drag the right edge | resize — a **beat** clip loops its pattern to fill the new length, which is what "repeat count" means here |
+| **alt+drag** | **duplicate** |
+| right-click | delete |
+| double-click | open that beat in the beat editor |
+
+**Duplicate is a drag of a copy, not a "duplicate" command** — a command has to
+guess where the copy goes (the next bar? the first gap? on top?) and would be
+wrong about half the time. Dragging says *here*, and needs no rule. The copy is
+local until you drop it, so dragging one out and changing your mind leaves
+nothing behind, and an alt-click that never moves creates nothing rather than
+stacking an invisible clip on the original.
+
+A duplicated beat clip points at the **same beat**, not a copy of it: edit the
+beat and every placement of it changes. That is the whole reason beats are
+reusable, and it is why the arrangement stores clips rather than note data.
+
 ## Real-time editing (session 16)
 
 Two people with edit access can build the same beat at the same time. Open a

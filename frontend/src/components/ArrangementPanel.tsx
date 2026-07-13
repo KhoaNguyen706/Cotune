@@ -59,6 +59,15 @@ export type Armed =
 interface DragState {
   clipId: string;
   mode: "move" | "resize";
+  /**
+   * True when clipId names a COPY that does not exist on the server yet
+   * (alt-drag). The clip is real enough to render and to drag — it is in local
+   * state — but nothing is persisted until you drop it, which is exactly how a
+   * video editor behaves: drag a copy out, change your mind, drag it back, and
+   * nothing ever happened. On release the copy is created with ADD_CLIP rather
+   * than committed with UPDATE_CLIP, because there is nothing to update.
+   */
+  creating: boolean;
   grabOffsetSteps: number; // move: steps between clip.startStep and grab point
   rect: DOMRect; // lanes-content geometry, re-measured after the fold (below)
   moved: boolean;
@@ -390,9 +399,36 @@ export function ArrangementTimeline({
     e.preventDefault();
     e.stopPropagation(); // don't fall through to placeArmed
     const rect = lanesRef.current.getBoundingClientRect();
+
+    /**
+     * ALT+DRAG DUPLICATES — the last of the four clip gestures the brief asked
+     * for (reorder, move, duplicate, delete), and the DAW convention: it is how
+     * FL Studio, Ableton and Premiere all copy a clip.
+     *
+     * It is a drag of a COPY, not a "duplicate" command, and that distinction is
+     * the whole design. A command would have to decide where the copy goes (next
+     * bar? the gap after it? on top of the original?) and would be wrong roughly
+     * half the time. Dragging says "here" and needs no rule at all — the same
+     * reason the original placement is a drag.
+     *
+     * The copy is optimistic and LOCAL until you release it (see DragState), so
+     * every pixel of the drag reuses the move machinery below unchanged: onMove
+     * finds it in clipsRef like any other clip and moves it. Nothing about the
+     * drag code knows this clip is special.
+     */
+    const duplicating = e.altKey && !resize;
+    let dragged = clip;
+    if (duplicating) {
+      // A local-only id. It never reaches the server: the release swaps it for
+      // the real one that ADD_CLIP returns.
+      dragged = { ...clip, id: `pending-${crypto.randomUUID()}` };
+      onClipsChange((prev) => [...prev, dragged]);
+    }
+
     dragRef.current = {
-      clipId: clip.id,
+      clipId: dragged.id,
       mode: resize ? "resize" : "move",
+      creating: duplicating,
       grabOffsetSteps: stepFromX(e.clientX, rect) - clip.startStep,
       rect,
       moved: false,
@@ -471,9 +507,56 @@ export function ArrangementTimeline({
       const drag = dragRef.current;
       dragRef.current = null;
       if (drag) onDraggingChange(false); // sidebar comes back
-      if (!drag || !drag.moved) return;
+
+      if (!drag) return;
+
+      // An alt-press that never moved is not a duplicate — it is a misclick, or
+      // someone who changed their mind. Drop the pending copy rather than
+      // silently stacking an identical clip exactly on top of the original,
+      // where it would be invisible and would double the audio.
+      if (drag.creating && !drag.moved) {
+        onClipsChange((prev) => prev.filter((c) => c.id !== drag.clipId));
+        return;
+      }
+      if (!drag.moved) return;
+
       const clip = clipsRef.current.find((c) => c.id === drag.clipId);
       if (!clip) return;
+
+      // A DUPLICATE IS A CREATE, NOT AN UPDATE. Its id is a local placeholder,
+      // so UPDATE_CLIP would 404 — the row does not exist yet. This is where it
+      // starts to.
+      if (drag.creating) {
+        gql<{ addClip: Clip }>(ADD_CLIP, {
+          input: {
+            songId,
+            lane: clip.lane,
+            startStep: clip.startStep,
+            lengthSteps: clip.lengthSteps,
+            // Point at the SAME material. A duplicated beat clip is another
+            // placement of that beat, not a copy of it: edit the beat and both
+            // clips change, which is the entire reason beats are reusable.
+            beatId: clip.type === "BEAT" ? clip.beatId : null,
+            audioId: clip.type === "AUDIO" ? clip.audioId : null,
+          },
+        })
+          .then((data) =>
+            // Swap the placeholder for the row the server made. Do it by id
+            // rather than by appending: the user may have dragged, and the local
+            // copy already sits where they want it.
+            onClipsChange((prev) =>
+              prev.map((c) => (c.id === drag.clipId ? data.addClip : c)),
+            ),
+          )
+          .catch((err) => {
+            // The copy never made it. Take it off the timeline rather than
+            // leave a clip that looks real, plays, and vanishes on reload.
+            onClipsChange((prev) => prev.filter((c) => c.id !== drag.clipId));
+            onError(err instanceof ApiError ? err.message : "Failed to duplicate clip");
+          });
+        return;
+      }
+
       // The drag mutated local state live; the release commits it.
       gql(UPDATE_CLIP, {
         id: clip.id,
@@ -581,7 +664,13 @@ export function ArrangementTimeline({
                     height: laneH - 8,
                     "--tc": beat ? beatColor(beat.position) : undefined,
                   } as React.CSSProperties}
-                  title={label}
+                  // The clip is the ONLY place these gestures are discoverable —
+                  // there is no toolbar and no context menu to find them in — so
+                  // the tooltip has to carry them. Alt+drag in particular is a
+                  // convention you either know from a DAW or never find.
+                  title={`${label}\nDrag to move · Alt+drag to duplicate · Right-click to delete${
+                    clip.type === "BEAT" ? " · Double-click to edit the beat" : ""
+                  }`}
                   onMouseDown={(e) => onClipMouseDown(e, clip, false)}
                   onContextMenu={(e) => void onClipContextMenu(e, clip)}
                   onDoubleClick={() => clip.beatId && onOpenBeat(clip.beatId)}
