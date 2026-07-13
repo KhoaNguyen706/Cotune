@@ -1,11 +1,33 @@
 # Heroku container deploy: `git push heroku main` builds the Dockerfile and
 # releases the image as the `web` process. This file only takes effect on the
 # `container` stack (heroku stack:set container) — on the default buildpack
-# stack Heroku would ignore it and try to detect a Java app instead, building
-# the jar WITHOUT the frontend stage, and you'd deploy an API with no UI.
+# stack Heroku ignores it and tries to detect a Java app instead, building the
+# jar WITHOUT the frontend stage, so you deploy an API with no UI. (It also
+# compiles with its own JDK, which is how Lombok silently stopped running and
+# produced a hundred "cannot find symbol: getId()" errors on correct code.)
 #
 # `web` is not an arbitrary name: it is the one process type Heroku routes
-# HTTP (and WebSocket) traffic to, on the $PORT the entrypoint reads.
+# HTTP (and WebSocket) traffic to.
 build:
   docker:
     web: Dockerfile
+
+# THE RUN COMMAND IS DECLARED HERE, not left to the image's CMD, and that is
+# load-bearing rather than tidy.
+#
+# Left to itself, Heroku's container runtime takes the image's own start command
+# and re-wraps it in a shell, escaping every character as it goes — so a command
+# that needs `$PORT` expanded arrives with the dollar sign, the braces and even
+# the spaces backslash-escaped, and executes as one meaningless token. The dyno
+# then exits with status 0, prints nothing, and crash-loops. Naming the command
+# here skips that mangling entirely: Heroku runs THIS string, in a real shell,
+# with $PORT already in the environment.
+#
+# $PORT with no fallback is deliberate. On Heroku it is always set, and if it
+# somehow were not, binding to an empty port and failing loudly beats binding to
+# 8080 and getting quietly killed by a router that is knocking somewhere else.
+# (The Dockerfile's CMD keeps its ${PORT:-8080} default for local `docker run`,
+# where PORT genuinely is unset. This line replaces that CMD, it does not fight
+# with it — which is exactly why the Dockerfile uses CMD and not ENTRYPOINT.)
+run:
+  web: java -Dserver.port=$PORT -jar /app/app.jar

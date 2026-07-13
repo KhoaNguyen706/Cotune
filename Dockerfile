@@ -45,15 +45,39 @@ USER cotune
 WORKDIR /app
 COPY --from=build /build/target/*.jar app.jar
 EXPOSE 8080
-# Shell-form entrypoint, for exactly one reason: Heroku assigns each dyno a
-# RANDOM port at runtime and routes traffic to it, delivered as $PORT. The
-# exec-form ["java", ...] can't expand env vars — there is no shell in it —
-# so the app would sit on 8080 while the router knocks on $PORT, and the
-# dyno gets killed for failing to bind (R10 boot timeout).
+# CMD, NOT ENTRYPOINT — and this distinction cost a failed Heroku release.
 #
-# The ${PORT:-8080} fallback keeps every non-Heroku run (docker-compose,
-# plain docker run) on 8080, unchanged. The explicit `exec` makes java
-# REPLACE the shell as PID 1 rather than run as its child — otherwise
-# SIGTERM on shutdown hits sh, java never hears it, and every stop is a
-# 10-second wait followed by SIGKILL mid-request.
-ENTRYPOINT ["sh", "-c", "exec java -Dserver.port=${PORT:-8080} -jar app.jar"]
+# The port has to come from the environment: Heroku assigns each dyno a RANDOM
+# port at runtime and routes to it via $PORT, so a hardcoded 8080 means the
+# router knocks and nobody answers (R10 boot timeout). Hence the shell form,
+# which can expand a variable where the exec form ["java", ...] cannot.
+#
+# The trap is WHICH instruction carries it. As an ENTRYPOINT, Heroku's container
+# runtime does not run this as-is: it re-wraps the image's entrypoint in its own
+# `sh -c` and ESCAPES every character on the way, so the dyno actually executed
+#
+#     sh -c exec\ java\ -Dserver.port\=\$\{PORT:-8080\}\ -jar\ app.jar
+#
+# — in which $PORT is no longer a variable, the spaces are no longer separators,
+# and the whole line is one meaningless token. The process exited instantly with
+# status 0 and the dyno crash-looped, having printed nothing at all. An empty
+# crash with a zero exit status is about the least informative failure there is.
+#
+# CMD is overridable, so heroku.yml's `run:` block cleanly REPLACES it (an
+# ENTRYPOINT would instead have had the run command appended to it as arguments,
+# which is its own flavour of broken). Locally nothing changes: `docker run` and
+# compose still execute this CMD, PORT is unset, and ${PORT:-8080} falls back to
+# 8080 exactly as before.
+#
+# `exec` makes java REPLACE the shell as PID 1 rather than run as its child —
+# otherwise SIGTERM on shutdown hits sh, java never hears it, and every stop is
+# a 10-second wait ending in SIGKILL mid-request.
+#
+# ENTRYPOINT [] clears the one eclipse-temurin sets (/__cacert_entrypoint.sh).
+# Our old ENTRYPOINT used to mask it; CMD does not, so without this the image
+# would start as `/__cacert_entrypoint.sh <our command>` and Heroku would have a
+# SECOND thing to wrap and escape. The script only does anything when
+# USE_SYSTEM_CA_CERTS is set, which we don't set, so it costs nothing to drop —
+# and it leaves exactly one start command, visible right here, on every platform.
+ENTRYPOINT []
+CMD exec java -Dserver.port=${PORT:-8080} -jar app.jar
