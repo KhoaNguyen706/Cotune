@@ -185,6 +185,41 @@
 
     <build>
         <plugins>
+            <!-- Lombok, declared as a NAMED annotation processor rather than left to
+                 be discovered on the classpath.
+
+                 Without this the build still works — javac scans the classpath, finds
+                 Lombok, and runs it — but ONLY because of a default that is being
+                 removed. javac already warns: "Annotation processing is enabled
+                 because one or more processors were found on the class path. A future
+                 release of javac may disable annotation processing unless at least one
+                 processor is specified by name." On a JDK where that default has
+                 flipped, Lombok silently does not run, and every @Getter and
+                 @RequiredArgsConstructor it would have generated simply is not there.
+
+                 The failure is spectacular and deeply misleading: a hundred errors
+                 reading "cannot find symbol: method getId()" on classes that are
+                 perfectly correct, pointing at every entity in the project. It looks
+                 like the source tree is broken. It is not — the code generator never
+                 ran. (This is exactly how the first Heroku deploy failed, on a
+                 buildpack JDK that differed from the one in our Dockerfile.)
+
+                 Naming the processor here makes the build independent of which JDK
+                 compiles it. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <!-- Version managed by spring-boot-starter-parent. -->
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
