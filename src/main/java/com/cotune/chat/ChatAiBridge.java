@@ -5,11 +5,13 @@ import com.cotune.ai.SongDescriber;
 import com.cotune.chat.dto.ChatMessageDto;
 import com.cotune.realtime.dto.ChatEvent;
 import com.cotune.realtime.relay.RealtimeBroadcaster;
+import com.cotune.song.SongAccess;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -53,6 +55,7 @@ public class ChatAiBridge {
     private final SongDescriber songDescriber;
     private final ChatService chatService;
     private final RealtimeBroadcaster broadcaster;
+    private final SongAccess songAccess;
 
     // Single thread on purpose: it serializes AI calls (a natural global
     // concurrency cap of 1) and one slow answer queueing behind another is
@@ -66,11 +69,13 @@ public class ChatAiBridge {
     private final Map<UUID, Long> lastAskedAt = new ConcurrentHashMap<>();
 
     public ChatAiBridge(AiAdvisor advisor, SongDescriber songDescriber,
-                        ChatService chatService, RealtimeBroadcaster broadcaster) {
+                        ChatService chatService, RealtimeBroadcaster broadcaster,
+                        SongAccess songAccess) {
         this.advisor = advisor;
         this.songDescriber = songDescriber;
         this.chatService = chatService;
         this.broadcaster = broadcaster;
+        this.songAccess = songAccess;
     }
 
     /**
@@ -86,6 +91,19 @@ public class ChatAiBridge {
         String question = body.substring(TRIGGER.length()).strip();
         if (question.isEmpty()) {
             question = "How can this beat be improved?"; // a bare @ai is that question
+        }
+
+        // AI is for people ON the song — the owner or someone they invited.
+        // Today chat's canView gate already implies that, so this check is
+        // deliberate redundancy: "who may spend AI tokens" is an
+        // authorization decision that must hold on its own, not as a side
+        // effect of who may chat — the day chat loosens (public listeners?),
+        // this line is what keeps @ai members-only. rolesFor answers with
+        // ABSENCE for a stranger, so empty = not a member.
+        UUID asker = message.authorId();
+        if (asker == null || songAccess.rolesFor(asker, List.of(songId)).isEmpty()) {
+            reply(songId, "Only people invited to this song can ask the AI.");
+            return;
         }
 
         long now = System.currentTimeMillis();

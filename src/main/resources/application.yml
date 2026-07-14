@@ -121,10 +121,13 @@ cotune:
     # ANTHROPIC_API_KEY config var in prod to switch it on — no code change,
     # no profile change.
     api-key: ${ANTHROPIC_API_KEY:}
-    # Anthropic's most capable generally-available Opus-tier model. A piece
-    # of musical advice costs ~1K tokens in / a few hundred out — a fraction
-    # of a cent per question, so quality is the right default over cost.
-    model: claude-opus-4-8
+    # Anthropic's CHEAPEST current model (chosen deliberately, July 14):
+    # musical advice over a 16-step text grid is squarely inside Haiku's
+    # range, and at $1/$5 per MTok a question costs well under a tenth of a
+    # cent. Overridable per deploy — set ANTHROPIC_MODEL=claude-opus-4-8 to
+    # trade pennies for the strongest answers; AiAdvisor's request shape is
+    # valid on every current model, so the swap is config-only.
+    model: ${ANTHROPIC_MODEL:claude-haiku-4-5}
 
   security:
     jwt:

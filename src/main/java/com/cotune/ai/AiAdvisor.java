@@ -6,8 +6,6 @@ import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.errors.RateLimitException;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
-import com.anthropic.models.messages.OutputConfig;
-import com.anthropic.models.messages.ThinkingConfigAdaptive;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -81,18 +79,15 @@ public class AiAdvisor {
                     "The AI advisor isn't configured on this server (ANTHROPIC_API_KEY is not set).");
         }
         try {
+            // Deliberately NO thinking and NO effort parameter: the model id
+            // is configuration (ANTHROPIC_MODEL), and this plain shape is the
+            // one every current Anthropic model accepts — Haiku 4.5 rejects
+            // adaptive thinking and effort outright (400), while on Opus-tier
+            // models omitting them just means "answer directly", which is
+            // exactly right for latency-sensitive chat advice.
             Message response = client.messages().create(MessageCreateParams.builder()
                     .model(properties.model())
-                    // Generous headroom: adaptive thinking spends from the
-                    // same budget as the visible answer.
                     .maxTokens(4096L)
-                    .thinking(ThinkingConfigAdaptive.builder().build())
-                    // LOW on purpose: chat advice is latency-sensitive and
-                    // the task is well within the model's easy range — low
-                    // effort answers in seconds instead of a coffee break.
-                    .outputConfig(OutputConfig.builder()
-                            .effort(OutputConfig.Effort.LOW)
-                            .build())
                     .system(SYSTEM_PROMPT)
                     .addUserMessage(songContext + "\nQuestion from the room: " + question)
                     .build());
