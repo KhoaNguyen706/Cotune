@@ -15,6 +15,9 @@ export interface User {
   email: string;
   displayName: string;
   role: Role;
+  /** Admin-granted invitation to the AI features (admins always true).
+   *  Affordance only — the server enforces on every @ai regardless. */
+  aiAccess: boolean;
   createdAt: string;
 }
 

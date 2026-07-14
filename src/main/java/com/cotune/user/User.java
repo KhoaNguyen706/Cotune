@@ -62,6 +62,13 @@ public class User {
     @Column(nullable = false, length = 20)
     private Role role;
 
+    // May this account use the AI features (V13)? FALSE until an ADMIN
+    // grants it — a per-person invitation, deliberately not derivable from
+    // role or song membership. Primitive boolean: the column is NOT NULL,
+    // so a nullable Boolean would only add a third state that can't exist.
+    @Column(name = "ai_access", nullable = false)
+    private boolean aiAccess;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -97,6 +104,24 @@ public class User {
             throw new IllegalArgumentException("Display name must not be blank");
         }
         this.displayName = newDisplayName.strip();
+    }
+
+    /**
+     * The deliberate act the constructor's comment promised: promotion is
+     * never client input, it happens through AdminBootstrap (configured
+     * emails) or ops SQL. Idempotent — promoting an admin is a no-op.
+     */
+    public void promoteToAdmin() {
+        this.role = Role.ADMIN;
+    }
+
+    /** Admin-granted permission to use AI features. See ChatAiBridge. */
+    public void grantAiAccess() {
+        this.aiAccess = true;
+    }
+
+    public void revokeAiAccess() {
+        this.aiAccess = false;
     }
 
     /**

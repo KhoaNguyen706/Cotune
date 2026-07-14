@@ -6,6 +6,8 @@ import com.cotune.chat.dto.ChatMessageDto;
 import com.cotune.realtime.dto.ChatEvent;
 import com.cotune.realtime.relay.RealtimeBroadcaster;
 import com.cotune.song.SongAccess;
+import com.cotune.user.Role;
+import com.cotune.user.UserRepository;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +58,7 @@ public class ChatAiBridge {
     private final ChatService chatService;
     private final RealtimeBroadcaster broadcaster;
     private final SongAccess songAccess;
+    private final UserRepository userRepository;
 
     // Single thread on purpose: it serializes AI calls (a natural global
     // concurrency cap of 1) and one slow answer queueing behind another is
@@ -70,12 +73,13 @@ public class ChatAiBridge {
 
     public ChatAiBridge(AiAdvisor advisor, SongDescriber songDescriber,
                         ChatService chatService, RealtimeBroadcaster broadcaster,
-                        SongAccess songAccess) {
+                        SongAccess songAccess, UserRepository userRepository) {
         this.advisor = advisor;
         this.songDescriber = songDescriber;
         this.chatService = chatService;
         this.broadcaster = broadcaster;
         this.songAccess = songAccess;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -93,16 +97,28 @@ public class ChatAiBridge {
             question = "How can this beat be improved?"; // a bare @ai is that question
         }
 
-        // AI is for people ON the song — the owner or someone they invited.
-        // Today chat's canView gate already implies that, so this check is
-        // deliberate redundancy: "who may spend AI tokens" is an
-        // authorization decision that must hold on its own, not as a side
-        // effect of who may chat — the day chat loosens (public listeners?),
-        // this line is what keeps @ai members-only. rolesFor answers with
-        // ABSENCE for a stranger, so empty = not a member.
+        // Gate 1 — on the song at all: owner or invited collaborator.
+        // Chat's canView already implies this; the check is deliberate
+        // redundancy so "who may spend AI tokens" holds on its own the day
+        // chat's own rules loosen. rolesFor answers with ABSENCE for a
+        // stranger, so empty = not a member.
         UUID asker = message.authorId();
         if (asker == null || songAccess.rolesFor(asker, List.of(songId)).isEmpty()) {
             reply(songId, "Only people invited to this song can ask the AI.");
+            return;
+        }
+
+        // Gate 2 — invited to the AI itself, BY AN ADMIN (V13): being in a
+        // song's chat and being allowed to spend the app's Anthropic tokens
+        // are different powers, and the second is a per-account grant
+        // (grantAiAccess), not a side effect of the first. Admins are
+        // always in — the people who hold the invitation list don't need
+        // an entry on it.
+        boolean invited = userRepository.findById(asker)
+                .map(user -> user.getRole() == Role.ADMIN || user.isAiAccess())
+                .orElse(false);
+        if (!invited) {
+            reply(songId, "The AI is invite-only — ask an admin to enable it for your account.");
             return;
         }
 

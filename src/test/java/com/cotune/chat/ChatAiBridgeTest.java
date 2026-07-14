@@ -6,6 +6,8 @@ import com.cotune.chat.dto.ChatMessageDto;
 import com.cotune.realtime.relay.RealtimeBroadcaster;
 import com.cotune.song.SongAccess;
 import com.cotune.song.SongRole;
+import com.cotune.user.User;
+import com.cotune.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -14,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -49,6 +52,8 @@ class ChatAiBridgeTest {
     private RealtimeBroadcaster broadcaster;
     @Mock
     private SongAccess songAccess;
+    @Mock
+    private UserRepository userRepository;
     @InjectMocks
     private ChatAiBridge bridge;
 
@@ -60,6 +65,10 @@ class ChatAiBridgeTest {
                 OffsetDateTime.now());
     }
 
+    private static User plainUser() {
+        return new User("member@example.com", "not-a-real-hash", "Member");
+    }
+
     private void stubReplyPersistence() {
         when(chatService.post(eq(songId), isNull(), eq(ChatAiBridge.AI_NAME), anyString()))
                 .thenAnswer(invocation -> message(null, invocation.getArgument(3)));
@@ -69,7 +78,7 @@ class ChatAiBridgeTest {
     void aMessageWithoutTheTriggerNeverTouchesTheAiMachinery() {
         bridge.maybeHandle(songId, message(memberId, "sounds great, ship it"));
 
-        verifyNoInteractions(advisor, songDescriber, chatService, broadcaster, songAccess);
+        verifyNoInteractions(advisor, songDescriber, chatService, broadcaster, songAccess, userRepository);
     }
 
     @Test
@@ -99,9 +108,28 @@ class ChatAiBridgeTest {
     }
 
     @Test
-    void aMemberInAnyRoleGetsThroughToTheAdvisor() {
+    void aMemberWithoutTheAdminsInvitationIsRefused() {
+        when(songAccess.rolesFor(eq(memberId), anyCollection()))
+                .thenReturn(Map.of(songId, SongRole.EDITOR)); // fully on the song...
+        when(userRepository.findById(memberId)).thenReturn(Optional.of(plainUser()));
+        stubReplyPersistence();
+
+        bridge.maybeHandle(songId, message(memberId, "@ai make it slap"));
+
+        // ...but not on the AI invitation list: being in the chat and being
+        // allowed to spend Anthropic tokens are different powers.
+        verify(chatService).post(eq(songId), isNull(), eq(ChatAiBridge.AI_NAME),
+                contains("invite-only"));
+        verifyNoInteractions(advisor, songDescriber);
+    }
+
+    @Test
+    void anAdminGrantedMemberGetsThroughToTheAdvisor() {
         when(songAccess.rolesFor(eq(memberId), anyCollection()))
                 .thenReturn(Map.of(songId, SongRole.VIEWER)); // the WEAKEST role suffices
+        User invited = plainUser();
+        invited.grantAiAccess();
+        when(userRepository.findById(memberId)).thenReturn(Optional.of(invited));
         when(songDescriber.describe(songId)).thenReturn("Song \"X\" — 120 BPM");
         when(advisor.advise(anyString(), anyString())).thenReturn("Try ghost notes.");
         stubReplyPersistence();
@@ -113,5 +141,21 @@ class ChatAiBridgeTest {
         verify(advisor, timeout(2000)).advise(anyString(), eq("how do I add groove?"));
         verify(chatService, timeout(2000)).post(eq(songId), isNull(), eq(ChatAiBridge.AI_NAME),
                 eq("Try ghost notes."));
+    }
+
+    @Test
+    void anAdminIsAlwaysInWithoutAnExplicitGrant() {
+        when(songAccess.rolesFor(eq(memberId), anyCollection()))
+                .thenReturn(Map.of(songId, SongRole.OWNER));
+        User admin = plainUser();
+        admin.promoteToAdmin(); // no grantAiAccess() — the role suffices
+        when(userRepository.findById(memberId)).thenReturn(Optional.of(admin));
+        when(songDescriber.describe(songId)).thenReturn("Song \"X\" — 120 BPM");
+        when(advisor.advise(anyString(), anyString())).thenReturn("Sidechain the pads.");
+        stubReplyPersistence();
+
+        bridge.maybeHandle(songId, message(memberId, "@ai thoughts?"));
+
+        verify(advisor, timeout(2000)).advise(anyString(), eq("thoughts?"));
     }
 }

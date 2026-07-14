@@ -47,7 +47,7 @@ import java.util.Base64;
 // dangerous default in Spring Security, because everything keeps working,
 // just unprotected.
 @EnableMethodSecurity
-@EnableConfigurationProperties({JwtProperties.class, RateLimitProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, RateLimitProperties.class, AdminProperties.class})
 public class SecurityConfig {
 
     @Bean

@@ -50,6 +50,8 @@ class ChatStompIntegrationTest extends AbstractIntegrationTest {
             query Chat($songId: ID!) {
                 chatMessages(songId: $songId) { id authorId authorName body createdAt }
             }""";
+    private static final String GRANT_AI = """
+            mutation Grant($email: String!) { grantAiAccess(email: $email) }""";
 
     private record Client(StompSession session,
                           BlockingQueue<ChatEvent> messages,
@@ -191,6 +193,14 @@ class ChatStompIntegrationTest extends AbstractIntegrationTest {
     void anAiMentionGetsAReplyFromCotuneAiThroughTheOrdinaryChatPipeline() throws Exception {
         AuthPayload alice = registerFreshUser();
         UUID songId = createSong(alice, "Advice Needed");
+        // The AI is invite-only (V13): an ADMIN puts Alice on the list
+        // first — through the real mutation, the same way ops would.
+        AuthPayload admin = registerAdmin();
+        graphQl(admin.token()).document(GRANT_AI)
+                .variable("email", alice.user().email())
+                .execute()
+                .path("grantAiAccess").entity(Boolean.class).isEqualTo(true);
+
         Client owner = join(alice.token(), songId);
 
         say(owner, songId, "@ai how do I make this groove harder?");
@@ -216,6 +226,22 @@ class ChatStompIntegrationTest extends AbstractIntegrationTest {
                 .variable("songId", songId).execute()
                 .path("chatMessages[*].authorName").entityList(String.class).get();
         assertThat(authors).containsExactly("Integration Tester", "Cotune AI");
+    }
+
+    @Test
+    void withoutTheAdminsInvitationAnAiMentionIsPolitelyRefused() throws Exception {
+        // Bob owns his song and is fully in its chat — but nobody put him
+        // on the AI list, and song rights must not imply AI rights.
+        AuthPayload bob = registerFreshUser();
+        UUID songId = createSong(bob, "No Tokens For Bob");
+        Client owner = join(bob.token(), songId);
+
+        say(owner, songId, "@ai make this slap");
+
+        assertThat(owner.nextMessage().body()).startsWith("@ai");
+        ChatEvent refusal = owner.nextMessage();
+        assertThat(refusal.authorName()).isEqualTo("Cotune AI");
+        assertThat(refusal.body()).contains("invite-only");
     }
 
     // ---- authorization ------------------------------------------------------

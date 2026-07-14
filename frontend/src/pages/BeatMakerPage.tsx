@@ -1328,6 +1328,7 @@ export function BeatMakerPage() {
             messages={chat.messages}
             meId={user?.id}
             live={live}
+            aiEnabled={user?.aiAccess ?? false}
             onSend={realtime.sendChat}
             onClose={() => chat.setOpen(false)}
           />

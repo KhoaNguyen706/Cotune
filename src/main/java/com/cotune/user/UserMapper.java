@@ -19,6 +19,7 @@ public class UserMapper {
                 user.getEmail(),
                 user.getDisplayName(),
                 user.getRole(),
+                user.getRole() == Role.ADMIN || user.isAiAccess(),
                 Timestamps.utc(user.getCreatedAt())
         );
     }

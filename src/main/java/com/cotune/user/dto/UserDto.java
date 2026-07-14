@@ -16,6 +16,10 @@ public record UserDto(
         String email,
         String displayName,
         Role role,
+        // Whether an admin has invited this account to the AI features —
+        // the client uses it to only ADVERTISE @ai to people it will
+        // answer (the server enforces regardless; see ChatAiBridge).
+        boolean aiAccess,
         OffsetDateTime createdAt
 ) {
 }

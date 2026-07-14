@@ -76,6 +76,14 @@ type Mutation {
     shareSong(input: ShareSongInput!): Collaborator!
     unshareSong(songId: ID!, userId: ID!): Boolean!
 
+    # ---- app administration (ADMIN role only) ----
+    #
+    # The AI invitation list: @ai answers only accounts an admin has let in
+    # (admins themselves are always in). By email — admins know addresses,
+    # not UUIDs. Idempotent both ways.
+    grantAiAccess(email: String!): Boolean!
+    revokeAiAccess(email: String!): Boolean!
+
     # ---- public listen link (owner only) ----
     #
     # Enabling returns the token (idempotent — an existing link is returned,

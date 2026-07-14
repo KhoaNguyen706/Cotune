@@ -130,6 +130,12 @@ cotune:
     model: ${ANTHROPIC_MODEL:claude-haiku-4-5}
 
   security:
+    # Accounts that are ALWAYS admins — applied at startup (AdminBootstrap)
+    # and at registration, so the grant survives database resets and fresh
+    # environments instead of living only in one database's rows. Comma-
+    # separated. The default is the app owner's account (their request,
+    # July 14); override per deploy with ADMIN_EMAILS.
+    admin-emails: ${ADMIN_EMAILS:khoa.nguyen02@sjsu.edu}
     jwt:
       # HMAC-SHA256 signing key, Base64-encoded, >= 256 bits. The ${VAR:default}
       # syntax means: use the JWT_SECRET env var if set, else this dev-only

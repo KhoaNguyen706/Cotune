@@ -6,6 +6,7 @@ import com.cotune.auth.dto.RegisterInput;
 import com.cotune.common.exception.EmailAlreadyRegisteredException;
 import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.common.mapping.Timestamps;
+import com.cotune.common.security.AdminProperties;
 import com.cotune.user.User;
 import com.cotune.user.UserMapper;
 import com.cotune.user.UserRepository;
@@ -30,6 +31,7 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final UserMapper userMapper;
+    private final AdminProperties adminProperties;
 
     @Override
     public AuthPayload register(RegisterInput input) {
@@ -48,6 +50,14 @@ public class AuthServiceImpl implements AuthService {
         // the same password get different hashes — and why we could never
         // "look up the hash" instead of calling matches() at login.
         User user = new User(email, passwordEncoder.encode(input.password()), input.displayName());
+        // The other half of the admin-emails rule (AdminBootstrap covers
+        // accounts that already exist at startup): a configured admin who
+        // registers AFTER boot is an admin from their first request. Safe
+        // against mass-assignment because the list is server config, not
+        // anything the payload can influence.
+        if (adminProperties.isAdminEmail(email)) {
+            user.promoteToAdmin();
+        }
         // saveAndFlush, not save: @CreationTimestamp is populated when the
         // INSERT actually runs, which plain save() defers to transaction
         // commit — AFTER the DTO below is built, so the response would

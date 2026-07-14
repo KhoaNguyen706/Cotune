@@ -1,6 +1,7 @@
 package com.cotune.testsupport;
 
 import com.cotune.auth.dto.AuthPayload;
+import com.cotune.auth.dto.LoginInput;
 import com.cotune.auth.dto.RegisterInput;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -56,6 +57,21 @@ public abstract class AbstractIntegrationTest {
         registry.add("cotune.storage.audio-dir", AUDIO_DIR::toString);
     }
 
+    /**
+     * One FIXED admin account for the whole suite (a constant value, so all
+     * subclasses keep sharing one cached context — see class comment). Fixed
+     * rather than random because the admin-emails list is startup config:
+     * it can't learn a fresh random email per test. registerAdmin() below
+     * handles the consequence (the account may already exist).
+     */
+    protected static final String ADMIN_EMAIL = "admin-it@example.com";
+    private static final String ADMIN_PASSWORD = "correct-horse-battery";
+
+    @DynamicPropertySource
+    static void configuredAdmin(DynamicPropertyRegistry registry) {
+        registry.add("cotune.security.admin-emails", () -> ADMIN_EMAIL);
+    }
+
     @DynamicPropertySource
     static void relaxRateLimits(DynamicPropertyRegistry registry) {
         // The whole suite is one IP (127.0.0.1) registering a fresh user per
@@ -94,6 +110,26 @@ public abstract class AbstractIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         return response.getBody();
+    }
+
+    /**
+     * The suite's ADMIN account (promoted via the admin-emails property
+     * above — the same path production uses, no role backdoor). The email
+     * is fixed, so whichever test asks first CREATES it and everyone after
+     * that LOGS IN — including runs against a reused container.
+     */
+    protected AuthPayload registerAdmin() {
+        ResponseEntity<AuthPayload> created = rest.postForEntity(
+                "/api/auth/register",
+                new RegisterInput(ADMIN_EMAIL, ADMIN_PASSWORD, "IT Admin"), AuthPayload.class);
+        if (created.getStatusCode() == HttpStatus.CREATED && created.getBody() != null) {
+            return created.getBody();
+        }
+        ResponseEntity<AuthPayload> login = rest.postForEntity(
+                "/api/auth/login", new LoginInput(ADMIN_EMAIL, ADMIN_PASSWORD), AuthPayload.class);
+        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(login.getBody()).isNotNull();
+        return login.getBody();
     }
 
     /**

@@ -4,6 +4,7 @@ import com.cotune.auth.dto.AuthPayload;
 import com.cotune.auth.dto.LoginInput;
 import com.cotune.auth.dto.RegisterInput;
 import com.cotune.common.exception.EmailAlreadyRegisteredException;
+import com.cotune.common.security.AdminProperties;
 import com.cotune.common.security.JwtProperties;
 import com.cotune.user.Role;
 import com.cotune.user.User;
@@ -28,6 +29,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import javax.crypto.spec.SecretKeySpec;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,7 +73,8 @@ class AuthServiceImplTest {
                         new SecretKeySpec(Base64.getDecoder().decode(TEST_SECRET), "HmacSHA256"))),
                 properties);
         service = new AuthServiceImpl(
-                userRepository, passwordEncoder, authenticationManager, jwtService, new UserMapper());
+                userRepository, passwordEncoder, authenticationManager, jwtService, new UserMapper(),
+                new AdminProperties(List.of("root@example.com")));
     }
 
     @Test
@@ -94,6 +97,20 @@ class AuthServiceImplTest {
         assertThat(payload.user().role()).isEqualTo(Role.USER);
         // Structural JWT check: header.claims.signature.
         assertThat(payload.token()).contains(".").matches("[^.]+\\.[^.]+\\.[^.]+");
+    }
+
+    @Test
+    void registeringAConfiguredAdminEmailIsAnAdminFromTheFirstRequest() {
+        when(userRepository.existsByEmail("root@example.com")).thenReturn(false);
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> saveWithGeneratedId(inv.getArgument(0)));
+
+        // Case-insensitive on purpose: the config says root@example.com and
+        // registration normalizes — the two must meet in the same canonical
+        // form or the promotion silently never happens.
+        AuthPayload payload = service.register(
+                new RegisterInput("Root@Example.com", "correct-horse-battery", "Root"));
+
+        assertThat(payload.user().role()).isEqualTo(Role.ADMIN);
     }
 
     @Test
