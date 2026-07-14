@@ -121,9 +121,17 @@ cotune:
       # shared environment — anyone who knows the signing key can mint a
       # token for any user with any role.
       secret: ${JWT_SECRET:o4v2MifYO/cSXQkB9fWtvtrZu5+VKHg8xC/B872+sf4=}
-      # Short on purpose: JWTs can't be revoked, so TTL bounds the damage
-      # window of a leaked token AND how long a stale role claim survives.
-      ttl: 1h
+      # 12h IS A DECISION, NOT DRIFT (was 1h). The trade: JWTs can't be
+      # revoked, so TTL is both the damage window of a leaked token and how
+      # long a stale role claim survives — and it is ALSO the session length,
+      # because there is no refresh mechanism. At 1h a musician mid-session
+      # was silently logged out and their next save failed; a music session
+      # is an afternoon, not an hour. 12h covers the longest plausible one
+      # while still expiring every token daily. Revocation story if a token
+      # leaks: rotate JWT_SECRET — logs everyone out, kills every token at
+      # once. Revisit (proper refresh tokens) if accounts ever hold anything
+      # more sensitive than songs.
+      ttl: 12h
     rate-limit:
       # Per-IP token buckets (see RateLimitFilter). auth-per-minute guards the
       # two open BCrypt endpoints (login/register) — sized for a human who
