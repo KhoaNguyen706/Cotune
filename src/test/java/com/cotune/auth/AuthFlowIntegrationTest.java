@@ -53,6 +53,23 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void rateLimiterSitsInFrontOfTheAuthEndpoints() {
+        AuthPayload payload = registerFreshUser();
+        ResponseEntity<AuthPayload> login = rest.postForEntity(
+                "/api/auth/login",
+                new LoginInput(payload.user().email(), "correct-horse-battery"),
+                AuthPayload.class);
+
+        // Not testing the 429 here — the suite runs with raised budgets (see
+        // AbstractIntegrationTest) and RateLimitFilterTest owns the math.
+        // This asserts the part a unit test CANNOT: the filter is actually
+        // registered and ordered into the real chain, proven by its header
+        // on a response that crossed real HTTP.
+        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(login.getHeaders().getFirst("X-RateLimit-Remaining")).isNotNull();
+    }
+
+    @Test
     void meWithoutATokenIs401() {
         ResponseEntity<Void> response = rest.getForEntity("/api/auth/me", Void.class);
 

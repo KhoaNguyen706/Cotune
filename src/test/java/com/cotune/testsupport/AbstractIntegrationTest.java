@@ -56,6 +56,18 @@ public abstract class AbstractIntegrationTest {
         registry.add("cotune.storage.audio-dir", AUDIO_DIR::toString);
     }
 
+    @DynamicPropertySource
+    static void relaxRateLimits(DynamicPropertyRegistry registry) {
+        // The whole suite is one IP (127.0.0.1) registering a fresh user per
+        // test — to the limiter that's indistinguishable from the attack it
+        // exists to stop. Raise (don't disable) the budgets: the filter stays
+        // in the chain, so every test still crosses it and wiring bugs still
+        // surface; RateLimitFilterTest covers the 429 math with real buckets.
+        // Values are constants so all subclasses share one cached context.
+        registry.add("cotune.security.rate-limit.auth-per-minute", () -> 1_000_000);
+        registry.add("cotune.security.rate-limit.general-per-minute", () -> 1_000_000);
+    }
+
     @LocalServerPort
     protected int port;
 

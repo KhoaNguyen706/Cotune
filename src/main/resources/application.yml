@@ -124,6 +124,18 @@ cotune:
       # Short on purpose: JWTs can't be revoked, so TTL bounds the damage
       # window of a leaked token AND how long a stale role claim survives.
       ttl: 1h
+    rate-limit:
+      # Per-IP token buckets (see RateLimitFilter). auth-per-minute guards the
+      # two open BCrypt endpoints (login/register) — sized for a human who
+      # mistypes a password, hostile to a curl loop. general-per-minute is a
+      # runaway-client backstop, not a WAF. Same values in dev and prod: a
+      # limit you never ran with locally is a limit you'll first meet in an
+      # incident. (Integration tests raise these — one JVM replaying the whole
+      # suite from 127.0.0.1 is exactly the traffic shape the limiter exists
+      # to stop.)
+      enabled: true
+      auth-per-minute: 10
+      general-per-minute: 300
 
 logging:
   level:
