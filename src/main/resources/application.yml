@@ -113,6 +113,19 @@ cotune:
       # service_role, NOT anon — see SupabaseAudioStorage. Root credential.
       service-key: ${SUPABASE_SERVICE_KEY:}
       bucket: ${SUPABASE_BUCKET:cotune-audio}
+  ai:
+    # The @ai chat advisor (server-side Claude call — see AiAdvisor). An EMPTY
+    # key means DISABLED, and that is the correct dev default: the app must
+    # boot, test and demo with no Anthropic account, and an @ai mention then
+    # gets a polite "not configured" chat reply instead of an error. Set the
+    # ANTHROPIC_API_KEY config var in prod to switch it on — no code change,
+    # no profile change.
+    api-key: ${ANTHROPIC_API_KEY:}
+    # Anthropic's most capable generally-available Opus-tier model. A piece
+    # of musical advice costs ~1K tokens in / a few hundred out — a fraction
+    # of a cent per question, so quality is the right default over cost.
+    model: claude-opus-4-8
+
   security:
     jwt:
       # HMAC-SHA256 signing key, Base64-encoded, >= 256 bits. The ${VAR:default}

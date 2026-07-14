@@ -40,6 +40,7 @@ public class ChatRealtimeController {
     private final ChatService chatService;
     private final RealtimeBroadcaster broadcaster;
     private final DisplayNames displayNames;
+    private final ChatAiBridge aiBridge;
 
     @MessageMapping("/songs/{songId}/chat")
     @PreAuthorize("@songAccess.canView(#songId, authentication)")
@@ -59,5 +60,9 @@ public class ChatRealtimeController {
         // Echoed to the sender too: the echo carries the server-assigned id
         // and timestamp, and its arrival is the proof the line was stored.
         broadcaster.broadcast("/topic/songs/" + songId + "/chat", ChatEvent.of(saved));
+
+        // AFTER the human message is safely out: an @ai mention also asks
+        // the advisor, whose answer arrives later as its own chat message.
+        aiBridge.maybeHandle(songId, saved);
     }
 }

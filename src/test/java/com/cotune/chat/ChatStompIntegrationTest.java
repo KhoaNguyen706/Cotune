@@ -187,6 +187,37 @@ class ChatStompIntegrationTest extends AbstractIntegrationTest {
         owner.expectNoMessage();
     }
 
+    @Test
+    void anAiMentionGetsAReplyFromCotuneAiThroughTheOrdinaryChatPipeline() throws Exception {
+        AuthPayload alice = registerFreshUser();
+        UUID songId = createSong(alice, "Advice Needed");
+        Client owner = join(alice.token(), songId);
+
+        say(owner, songId, "@ai how do I make this groove harder?");
+
+        // The human line broadcasts first, untouched — the conversation
+        // never waits on the AI machinery.
+        assertThat(owner.nextMessage().body()).startsWith("@ai");
+
+        // Tests run with no ANTHROPIC_API_KEY, so the advisor's reply is its
+        // "not configured" line — which is exactly what this test wants to
+        // pin down: the @ai trigger, the async answer path, the null-author
+        // AI identity and the broadcast all work WITHOUT the external
+        // dependency, and a keyless deploy degrades to a polite message
+        // instead of silence or a stack trace.
+        ChatEvent aiReply = owner.nextMessage();
+        assertThat(aiReply.authorName()).isEqualTo("Cotune AI");
+        assertThat(aiReply.authorId()).as("the AI is not a user account").isNull();
+        assertThat(aiReply.body()).contains("isn't configured");
+
+        // And it is HISTORY like anything said in the room: a collaborator
+        // who opens the song tomorrow sees the answer.
+        List<String> authors = graphQl(alice.token()).document(CHAT_HISTORY)
+                .variable("songId", songId).execute()
+                .path("chatMessages[*].authorName").entityList(String.class).get();
+        assertThat(authors).containsExactly("Integration Tester", "Cotune AI");
+    }
+
     // ---- authorization ------------------------------------------------------
 
     @Test

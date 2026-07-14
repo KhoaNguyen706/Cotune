@@ -75,6 +75,10 @@ export function ChatPanel({
         {messages.length === 0 && (
           <p className="mt-4 text-center text-xs text-muted">
             Talk about the beat right next to it — everyone in this song can read along.
+            <br />
+            <br />
+            Start a message with <strong className="text-text">@ai</strong> to ask the AI
+            mentor how to improve what you&apos;ve built.
           </p>
         )}
         {messages.map((message, index) => {
