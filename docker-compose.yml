@@ -35,6 +35,11 @@ services:
       # than the relay being a thing that only ever executes in CI.
       REALTIME_RELAY: redis
       REDIS_HOST: redis
+      # The @ai advisor. Empty = feature off (polite "not configured"
+      # reply) — put ANTHROPIC_API_KEY in .env to test the real thing
+      # locally. Model overridable the same way (defaults to Haiku).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5}
     volumes:
       # Audio uploads are DATA, same as the DB: a named volume, not
       # container-layer storage that `docker compose up --build` discards.
@@ -76,6 +81,8 @@ services:
       AUDIO_STORAGE_DIR: /app/data/audio
       REALTIME_RELAY: redis
       REDIS_HOST: redis
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5}
     volumes:
       - cotune-audio:/app/data/audio
     depends_on:
