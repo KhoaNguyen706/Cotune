@@ -39,11 +39,13 @@ export function TopBar({
 }) {
   return (
     <header
-      className="flex h-14 shrink-0 items-center gap-4 border-b border-edge bg-surface/80 px-4 backdrop-blur-md"
+      className="flex h-14 shrink-0 items-center gap-4 border-b border-edge bg-surface/80 px-4 backdrop-blur-md max-md:gap-2 max-md:overflow-x-auto max-md:px-2"
       // A translucent bar over a scrolling canvas needs the blur, or the
-      // clips sliding underneath turn the text into soup.
+      // clips sliding underneath turn the text into soup. On phones the bar
+      // scrolls horizontally: a command bar that WRAPS steals canvas height,
+      // and one that truncates hides commands — sideways scroll loses nothing.
     >
-      <div className="flex min-w-0 flex-1 items-center gap-3">{left}</div>
+      <div className="flex min-w-0 flex-1 items-center gap-3 max-md:gap-2">{left}</div>
       {center && <div className="flex shrink-0 items-center gap-2">{center}</div>}
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2">{right}</div>
     </header>
@@ -52,7 +54,9 @@ export function TopBar({
 
 /** The row under the TopBar: sidebar(s) + canvas, splitting all leftover height. */
 export function Workspace({ children }: { children: ReactNode }) {
-  return <div className="flex min-h-0 flex-1">{children}</div>;
+  // relative: on phones the Sidebar positions itself as an overlay drawer
+  // against this box (see Sidebar below).
+  return <div className="relative flex min-h-0 flex-1">{children}</div>;
 }
 
 /**
@@ -65,7 +69,10 @@ export function Workspace({ children }: { children: ReactNode }) {
  */
 export function NavRail({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
   return (
-    <nav className="flex w-60 shrink-0 flex-col border-r border-edge bg-surface/40 p-3">
+    // On phones the rail narrows to icons (labels hidden by NavItem below):
+    // 240px of navigation on a 375px screen would leave the actual app a
+    // third of the glass. Same rail, same buttons — just their icon column.
+    <nav className="flex w-60 shrink-0 flex-col border-r border-edge bg-surface/40 p-3 max-md:w-auto max-md:p-2">
       <div className="flex flex-1 flex-col gap-1">{children}</div>
       {footer && <div className="mt-4 flex flex-col gap-2">{footer}</div>}
     </nav>
@@ -91,7 +98,8 @@ export function NavItem({
     <button
       disabled={soon}
       onClick={onClick}
-      title={soon ? "Coming soon" : undefined}
+      aria-label={label}
+      title={soon ? "Coming soon" : label}
       className={cx(
         "flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors duration-150 " +
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
@@ -105,9 +113,10 @@ export function NavItem({
       <span aria-hidden className="w-4 text-center">
         {icon}
       </span>
-      {label}
+      {/* Icon-only on phones — the aria-label above keeps it accessible. */}
+      <span className="max-md:hidden">{label}</span>
       {soon && (
-        <span className="ml-auto rounded-full border border-edge px-1.5 py-0.5 text-[0.55rem] font-bold uppercase tracking-wider">
+        <span className="ml-auto rounded-full border border-edge px-1.5 py-0.5 text-[0.55rem] font-bold uppercase tracking-wider max-md:hidden">
           soon
         </span>
       )}
@@ -129,6 +138,10 @@ export function Sidebar({ children, collapsed }: { children: ReactNode; collapse
       aria-hidden={collapsed}
       className={cx(
         "flex shrink-0 flex-col gap-6 border-r border-edge bg-surface/40 transition-[width,padding] duration-200",
+        // On phones an open sidebar OVERLAYS the canvas instead of
+        // squeezing it: 256px out of 375 would leave a grid too narrow to
+        // mean anything. Solid background because there's content under it.
+        "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:bg-surface max-md:shadow-2xl",
         collapsed ? "w-0 overflow-hidden border-r-0 p-0" : "w-64 overflow-y-auto p-4",
       )}
     >
