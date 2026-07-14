@@ -4,6 +4,7 @@ import {
   connectToSong,
   HEARTBEAT_MS,
   PEER_TIMEOUT_MS,
+  type ChatMessage,
   type NoteEvent,
   type NoteOp,
   type Peer,
@@ -38,6 +39,9 @@ export interface Realtime {
   /** True when ops can go out as deltas rather than a whole-pattern save. */
   connected: () => boolean;
   sendOps: (ops: NoteOp[]) => void;
+  /** Say something to the room. No-op while the socket is down — the chat
+   *  input disables itself on !live, so this is belt-and-braces. */
+  sendChat: (body: string) => void;
 }
 
 /**
@@ -55,8 +59,12 @@ export function useRealtime(params: {
   serverNotesRef: React.MutableRefObject<Record<string, Step[]>>;
   trackVersionsRef: React.MutableRefObject<Map<string, number>>;
   onError: (message: string) => void;
+  /** Chat lines from the room (our own echoes included — the echo carries
+   *  the server id and IS the proof of persistence). Must be referentially
+   *  stable or the socket reconnects on every render. */
+  onChat?: (message: ChatMessage) => void;
 }): Realtime {
-  const { songId, loadedSongId, userId, setNotes, serverNotesRef, trackVersionsRef, onError } = params;
+  const { songId, loadedSongId, userId, setNotes, serverNotesRef, trackVersionsRef, onError, onChat } = params;
 
   const [live, setLive] = useState(false);
   const [peers, setPeers] = useState<Record<string, Peer>>({});
@@ -165,6 +173,7 @@ export function useRealtime(params: {
     const socket = connectToSong(songId, {
       onNote,
       onPresence,
+      onChat,
       onError,
       onStatus: (connected) => {
         setLive(connected);
@@ -213,7 +222,7 @@ export function useRealtime(params: {
     // loadedSongId, not the song object: its identity changes on every reload (a
     // rename, a new lane), and reconnecting the socket each time would drop and
     // re-establish the subscription for no reason.
-  }, [songId, loadedSongId, onNote, onPresence, onError]);
+  }, [songId, loadedSongId, onNote, onPresence, onChat, onError]);
 
   /**
    * Broadcast our cursor as it moves.
@@ -268,5 +277,6 @@ export function useRealtime(params: {
     reportCursor,
     connected: () => socketRef.current?.connected() ?? false,
     sendOps: (ops) => ops.forEach((op) => socketRef.current?.send(op)),
+    sendChat: (body) => socketRef.current?.sendChat(body),
   };
 }

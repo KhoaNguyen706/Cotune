@@ -3,31 +3,21 @@ package com.cotune.realtime;
 import com.cotune.realtime.dto.NoteEvent;
 import com.cotune.realtime.dto.PresenceEvent;
 import com.cotune.realtime.dto.PresenceInput;
-import com.cotune.realtime.dto.RealtimeError;
 import com.cotune.realtime.relay.RealtimeBroadcaster;
 import com.cotune.track.TrackService;
 import com.cotune.track.dto.NoteApplied;
 import com.cotune.track.dto.NoteOp;
-import com.cotune.user.User;
-import com.cotune.user.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
-import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.annotation.Validated;
 
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The real-time editing surface. Same shape as every other controller in this
@@ -41,8 +31,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class RealtimeController {
 
-    private static final Logger log = LoggerFactory.getLogger(RealtimeController.class);
-
     private final TrackService trackService;
     /**
      * Not a SimpMessagingTemplate any more (session 19). "Give this to the local
@@ -51,11 +39,7 @@ public class RealtimeController {
      * not the same sentence any more, and this controller wants the second one.
      */
     private final RealtimeBroadcaster broadcaster;
-    private final UserRepository userRepository;
-
-    /** Display names for tokens minted before they carried one. Bounded by the
-     *  number of accounts that hold a stale token; empties itself on restart. */
-    private final Map<UUID, String> legacyNames = new ConcurrentHashMap<>();
+    private final DisplayNames displayNames;
 
     /**
      * A client edited one note.
@@ -125,53 +109,14 @@ public class RealtimeController {
                 // client-supplied name here and anyone can paint a cursor
                 // labelled "Alice" onto her collaborators' screens.
                 UUID.fromString(authentication.getName()),
-                displayNameOf(authentication),
+                displayNames.of(authentication),
                 input.beatId(),
                 input.trackId(),
                 input.step(),
                 input.row()));
     }
 
-    /**
-     * The signed token carries the display name (session 17), so labelling a
-     * cursor costs zero queries — which matters, because cursor messages arrive
-     * many times a second and a database hit per message would make moving the
-     * mouse a load test.
-     *
-     * Tokens minted before that claim existed fall back to one lookup, memoised
-     * for the life of the process. Without the memo, every old session would put
-     * that load test back.
-     */
-    private String displayNameOf(Authentication authentication) {
-        if (authentication.getPrincipal() instanceof Jwt jwt) {
-            String name = jwt.getClaimAsString("name");
-            if (name != null && !name.isBlank()) {
-                return name;
-            }
-        }
-        UUID userId = UUID.fromString(authentication.getName());
-        return legacyNames.computeIfAbsent(userId, id -> userRepository.findById(id)
-                .map(User::getDisplayName)
-                .orElse("Collaborator"));
-    }
-
-    /**
-     * A message that blows up has nowhere to go by default — no HTTP response
-     * to put a 4xx in — so without this handler a rejected op fails SILENTLY:
-     * the client's note stays on screen, the server never stored it, and the
-     * two disagree until the next reload. That is the worst possible failure
-     * mode for an editor, so the error is routed back to the one client that
-     * caused it.
-     *
-     * @SendToUser targets THIS session's private queue; Spring rewrites
-     * /user/** per session, so one collaborator's error never lands in
-     * another's client.
-     */
-    @MessageExceptionHandler
-    @SendToUser("/queue/errors")
-    public RealtimeError onError(Exception failure) {
-        log.warn("Realtime op rejected: {}", failure.toString());
-        String message = failure.getMessage() == null ? "Edit rejected" : failure.getMessage();
-        return new RealtimeError(message);
-    }
+    // Rejected messages route back to the sender's private error queue via
+    // RealtimeExceptionAdvice — moved out of this class when chat became
+    // the second @MessageMapping controller that needed it.
 }

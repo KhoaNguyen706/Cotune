@@ -1,5 +1,6 @@
 package com.cotune.realtime.relay;
 
+import com.cotune.realtime.dto.ChatEvent;
 import com.cotune.realtime.dto.NoteEvent;
 import com.cotune.realtime.dto.PresenceEvent;
 import com.cotune.realtime.dto.RealtimeEvent;
@@ -28,16 +29,19 @@ public record RelayEnvelope(String destination, Kind kind, JsonNode payload) {
      * RealtimeEvent. The cost of the safe version is exactly one switch.
      */
     public enum Kind {
-        NOTE, PRESENCE
+        NOTE, PRESENCE, CHAT
     }
 
     public static RelayEnvelope of(String destination, RealtimeEvent event, ObjectMapper json) {
         // Exhaustive over a sealed type: no default branch, and none is possible.
         // Add a third RealtimeEvent and this line is a compile error — which is
-        // the entire reason RealtimeEvent is sealed.
+        // the entire reason RealtimeEvent is sealed. (Chat was exactly that
+        // third event, and this switch refusing to compile is what carried it
+        // across the relay on the first try.)
         Kind kind = switch (event) {
             case NoteEvent ignored -> Kind.NOTE;
             case PresenceEvent ignored -> Kind.PRESENCE;
+            case ChatEvent ignored -> Kind.CHAT;
         };
         return new RelayEnvelope(destination, kind, json.valueToTree(event));
     }
@@ -56,6 +60,7 @@ public record RelayEnvelope(String destination, Kind kind, JsonNode payload) {
         Class<? extends RealtimeEvent> type = switch (kind) {
             case NOTE -> NoteEvent.class;
             case PRESENCE -> PresenceEvent.class;
+            case CHAT -> ChatEvent.class;
         };
         return json.treeToValue(payload, type);
     }

@@ -16,6 +16,11 @@ type Query {
     # choose — it is the identity in your token. (Before V10 this returned
     # every song in the database to everyone; see SongRepository.)
     songs: [Song!]!
+    # The song's recent chat history (latest 50, oldest first). HISTORY
+    # only: live messages arrive over the socket
+    # (/topic/songs/{id}/chat), and posting is a socket send — chat has no
+    # mutation here, the same way note edits don't.
+    chatMessages(songId: ID!): [ChatMessage!]!
 }
 
 # Auth (register/login/me) is deliberately NOT in this schema — it lives on
@@ -255,6 +260,23 @@ input AddTrackInput {
 input UpdateTrackInput {
     name: String!
     instrument: Instrument!
+}
+
+# ---- chat ------------------------------------------------------------------
+
+# One line of conversation on a song. Immutable once said.
+type ChatMessage {
+    id: ID!
+    songId: ID!
+    # Nullable: outlives a deleted account (authorName keeps the transcript
+    # readable). Clients use it for the stable per-person colour — the same
+    # hash the presence cursors use.
+    authorId: ID
+    # Stamped server-side from the signed token at post time; a later
+    # rename does not rewrite history.
+    authorName: String!
+    body: String!
+    createdAt: DateTime!
 }
 
 # ---- sharing ---------------------------------------------------------------

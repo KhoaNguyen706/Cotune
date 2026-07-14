@@ -24,5 +24,5 @@ package com.cotune.realtime.dto;
  * receives, to solve a problem the frontend does not have. The type tag belongs
  * on the envelope that needs it, not on the letter inside.
  */
-public sealed interface RealtimeEvent permits NoteEvent, PresenceEvent {
+public sealed interface RealtimeEvent permits NoteEvent, PresenceEvent, ChatEvent {
 }

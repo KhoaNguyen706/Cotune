@@ -66,11 +66,33 @@ export const PEER_TIMEOUT_MS = 8000;
 /** How often to say "still here" when the mouse isn't moving. */
 export const HEARTBEAT_MS = 3000;
 
+/* ---------- chat ---------- */
+
+/** One chat line as the server broadcast it — and exactly what the GraphQL
+ *  history query returns, so loaded and live messages are one type. Note
+ *  there is no "mine" flag: whose line it is falls out of authorId, the
+ *  same way note echoes are recognised by actorId. */
+export interface ChatMessage {
+  id: string;
+  songId: string;
+  /** Null once the author's account is gone; authorName keeps the
+   *  transcript readable (same rule as the server's schema). */
+  authorId: string | null;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
 export interface SongSocket {
   send(op: NoteOp): void;
   /** Announce where my cursor is. Cheap and fire-and-forget — nothing is
    *  persisted, so a lost presence frame costs nothing but a stale dot. */
   sendPresence(presence: PresenceInput): void;
+  /** Say something to the room. NOT fire-and-forget like presence: the
+   *  server persists it and echoes it back with its id — the echo arriving
+   *  is the proof the line was stored, so the UI renders from echoes and
+   *  never optimistically. */
+  sendChat(body: string): void;
   /** Are we actually connected right now? The editor falls back to the HTTP
    *  whole-pattern save when we aren't, so this must tell the truth. */
   connected(): boolean;
@@ -92,6 +114,7 @@ export function connectToSong(
   handlers: {
     onNote: (event: NoteEvent) => void;
     onPresence?: (event: PresenceEvent) => void;
+    onChat?: (message: ChatMessage) => void;
     onError?: (message: string) => void;
     onStatus?: (connected: boolean) => void;
   },
@@ -118,6 +141,9 @@ export function connectToSong(
     });
     client.subscribe(`/topic/songs/${songId}/presence`, (frame: IMessage) => {
       handlers.onPresence?.(JSON.parse(frame.body) as PresenceEvent);
+    });
+    client.subscribe(`/topic/songs/${songId}/chat`, (frame: IMessage) => {
+      handlers.onChat?.(JSON.parse(frame.body) as ChatMessage);
     });
     // Our own private queue. Without it, a refused op fails SILENTLY: the note
     // stays on screen, the server never stored it, and the two disagree until
@@ -151,6 +177,13 @@ export function connectToSong(
       client.publish({
         destination: `/app/songs/${songId}/presence`,
         body: JSON.stringify(presence),
+      });
+    },
+    sendChat(body: string) {
+      if (!client.connected) return; // input is disabled while offline
+      client.publish({
+        destination: `/app/songs/${songId}/chat`,
+        body: JSON.stringify({ body }),
       });
     },
     connected: () => client.connected,

@@ -4,6 +4,8 @@ import { useAuth } from "../auth/AuthContext";
 import { useSettings } from "../ui/settings";
 import { peerColor, type Peer } from "../realtime/socket";
 import { ArrangementPalette, ArrangementTimeline, type Armed } from "../components/ArrangementPanel";
+import { ChatPanel } from "../chat/ChatPanel";
+import { useChat } from "../chat/useChat";
 import { SettingsModal } from "../ui/SettingsModal";
 import { beatColor, colorFor } from "../ui/trackColors";
 import { Button, EditableName, EmptyState, ErrorBanner, Select, Skeleton, TextInput } from "../ui/kit";
@@ -214,6 +216,10 @@ export function BeatMakerPage() {
     octavesRef,
   });
 
+  // Before useRealtime, which consumes chat.receive: the conversation's
+  // state lives here, the socket delivers into it.
+  const chat = useChat({ songId, loadedSongId: song?.id });
+
   const realtime = useRealtime({
     songId,
     loadedSongId: song?.id,
@@ -222,6 +228,7 @@ export function BeatMakerPage() {
     serverNotesRef: data.serverNotesRef,
     trackVersionsRef: data.trackVersionsRef,
     onError,
+    onChat: chat.receive,
   });
 
   const { save } = useAutoSave({ data, realtime, autoSave, readOnly });
@@ -645,6 +652,27 @@ export function BeatMakerPage() {
                 </IconButton>
               </ToolGroup>
             )}
+
+            {/* Chat toggle. The badge is the closed panel's only voice —
+                without it a collaborator's "wait, don't delete that" sits
+                unseen behind a button. */}
+            <span className="relative">
+              <IconButton
+                active={chat.open}
+                onClick={() => chat.setOpen(!chat.open)}
+                title={chat.open ? "Close chat" : "Chat with everyone in this song"}
+              >
+                💬
+              </IconButton>
+              {!chat.open && chat.unread > 0 && (
+                <span
+                  className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.6rem] font-bold text-bg"
+                  data-testid="chat-unread"
+                >
+                  {chat.unread > 9 ? "9+" : chat.unread}
+                </span>
+              )}
+            </span>
 
             <IconButton onClick={() => setSettingsOpen(true)} title="Settings">
               ⚙
@@ -1293,6 +1321,16 @@ export function BeatMakerPage() {
               </div>
             )}
           </Canvas>
+        )}
+
+        {chat.open && (
+          <ChatPanel
+            messages={chat.messages}
+            meId={user?.id}
+            live={live}
+            onSend={realtime.sendChat}
+            onClose={() => chat.setOpen(false)}
+          />
         )}
       </Workspace>
     </AppShell>

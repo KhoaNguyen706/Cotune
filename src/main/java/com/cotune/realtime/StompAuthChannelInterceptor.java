@@ -48,17 +48,21 @@ import java.util.regex.Pattern;
 public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
     /**
-     * The only topics clients may listen to, and both are per-song: the edits
-     * themselves, and (optionally) who is in the room.
+     * The only topics clients may listen to, all per-song: the edits
+     * themselves, who is in the room, and the conversation. All three carry
+     * the same canView rule below; the alternation exists so that a
+     * destination NOBODY wrote a rule for stays refused.
      *
      * The regex is anchored and the id group is fixed-width ON PURPOSE. A
      * loose prefix match like destination.startsWith("/topic/songs/") would
      * authorize "/topic/songs/../../everything" and any other destination that
      * merely begins with the right letters — the check must parse the id it is
-     * going to authorize, not squint at the string.
+     * going to authorize, not squint at the string. (Adding chat meant adding
+     * it HERE, explicitly — deny-by-default made the forgotten-sub-topic
+     * failure mode "collaborators can't open chat", not "strangers can".)
      */
     private static final Pattern SONG_TOPIC =
-            Pattern.compile("^/topic/songs/([0-9a-fA-F-]{36})(/presence)?$");
+            Pattern.compile("^/topic/songs/([0-9a-fA-F-]{36})(/presence|/chat)?$");
 
     private final JwtDecoder jwtDecoder;
     // The SAME converter the HTTP filter chain uses (a @Bean since session 16).
