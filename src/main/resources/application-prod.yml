@@ -55,6 +55,16 @@ cotune:
       # Generate one with: openssl rand -base64 32
       secret: ${JWT_SECRET}
 
+management:
+  endpoint:
+    health:
+      # {"status":"UP"} and not one word more. The endpoint is deliberately
+      # unauthenticated (a monitor that needs credentials is a monitor that
+      # silently stops monitoring when the token expires), so the body must
+      # be information-free: which database we run, whether disk is tight —
+      # none of that belongs on the public internet.
+      show-details: never
+
 logging:
   level:
     # application.yml sets this to `debug` to teach you what Hibernate emits.

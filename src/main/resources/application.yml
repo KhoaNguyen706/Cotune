@@ -137,6 +137,34 @@ cotune:
       auth-per-minute: 10
       general-per-minute: 300
 
+management:
+  endpoints:
+    web:
+      exposure:
+        # health and NOTHING else. Actuator ships dozens of endpoints
+        # (/env dumps config including secrets' shapes, /heapdump hands out
+        # the whole JVM). This is Boot's default, restated so nobody
+        # "temporarily" widens it without reading this. SecurityConfig
+        # additionally denies everything under /actuator except health —
+        # two independent layers have to be wrong before /env is public.
+        include: health
+  endpoint:
+    health:
+      # Component breakdown (db up? disk?) visible in dev, where it is a
+      # debugging aid. The prod profile sets `never`: an unauthenticated
+      # endpoint must not narrate the infrastructure to the internet.
+      show-details: always
+  health:
+    redis:
+      # OFF because Redis is on the classpath but deliberately not CONNECTED
+      # while the relay is `local` (one instance — see cotune.realtime.relay).
+      # Boot auto-registers a Redis health check the moment the starter is
+      # present, so without this line health reports DOWN for the crime of
+      # not using a Redis we don't need. Flip to true in the same change that
+      # sets REALTIME_RELAY=redis — from that day on, "Redis unreachable"
+      # really does mean "collaboration is broken".
+      enabled: false
+
 logging:
   level:
     # Log the SQL Hibernate actually emits — while learning, always check

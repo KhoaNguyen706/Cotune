@@ -104,6 +104,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,
                                 "/", "/index.html", "/assets/**", "/favicon.ico",
                                 "/login", "/register", "/songs/*").permitAll()
+                        // Health is public ON PURPOSE: a monitor that must
+                        // authenticate is a monitor that silently stops
+                        // working when its token expires. Safe because the
+                        // prod body is information-free (show-details:
+                        // never) — and note this matches /actuator/health
+                        // EXACTLY: every other actuator endpoint falls
+                        // through to denyAll below, so even a config slip
+                        // that widened the exposure list would not open one.
+                        .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         // Boot re-dispatches exceptions to /error internally;
                         // blocking it turns every error into a confusing 403.
                         .requestMatchers("/error").permitAll()

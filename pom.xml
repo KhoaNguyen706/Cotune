@@ -38,6 +38,16 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Operational endpoints (session 21 hardening). Without this the
+             platform can only TCP-probe the dyno: "the port is open" and "the
+             app can reach its database" are very different kinds of alive.
+             Only /actuator/health is exposed — see the management block in
+             application.yml for what stays off and why. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
