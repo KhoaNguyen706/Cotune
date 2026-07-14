@@ -97,6 +97,7 @@ export function ArrangementPalette({
   onClipsChange,
   onAudioFilesChange,
   onError,
+  canEdit,
 }: {
   songId: string;
   beats: Beat[];
@@ -106,6 +107,11 @@ export function ArrangementPalette({
   onClipsChange: (updater: (prev: Clip[]) => Clip[]) => void;
   onAudioFilesChange: (updater: (prev: AudioFile[]) => AudioFile[]) => void;
   onError: (message: string | null) => void;
+  /** False for a VIEWER. The server already 403s every mutation a viewer
+   *  attempts — this exists so they never see a control that promises one.
+   *  Same rule as the rest of the page (the session-14 lesson): disabled
+   *  controls, not error storms. */
+  canEdit: boolean;
 }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -174,7 +180,13 @@ export function ArrangementPalette({
                     ? "Empty beat — add lanes in the Beats tab"
                     : beat.tracks.map((t) => t.name).join(" + ")
                 }
-                onClick={() => onArmedChange(isArmed ? null : { kind: "BEAT", beatId: beat.id })}
+                // Arming exists only to PLACE, and placing is an edit — a
+                // viewer's click would arm a promise the timeline can't keep.
+                onClick={
+                  canEdit
+                    ? () => onArmedChange(isArmed ? null : { kind: "BEAT", beatId: beat.id })
+                    : undefined
+                }
               >
                 <span
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -201,13 +213,15 @@ export function ArrangementPalette({
       <SidebarSection
         title="Audio"
         action={
-          <IconButton
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-            title="Upload a wav/mp3"
-          >
-            {uploading ? "…" : "+"}
-          </IconButton>
+          canEdit ? (
+            <IconButton
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload a wav/mp3"
+            >
+              {uploading ? "…" : "+"}
+            </IconButton>
+          ) : undefined
         }
       >
         <input
@@ -219,7 +233,11 @@ export function ArrangementPalette({
         />
         <div className="flex flex-col gap-1">
           {audioFiles.length === 0 && (
-            <p className="text-xs text-muted">Upload a wav/mp3 to place it on the timeline.</p>
+            <p className="text-xs text-muted">
+              {canEdit
+                ? "Upload a wav/mp3 to place it on the timeline."
+                : "No audio uploaded yet."}
+            </p>
           )}
           {audioFiles.map((file) => {
             const isArmed = armed?.kind === "AUDIO" && armed.audioId === file.id;
@@ -232,7 +250,11 @@ export function ArrangementPalette({
                     ? " border-accent-2 bg-accent-2/15 text-text"
                     : " border-edge bg-bg-soft text-muted hover:border-edge-strong hover:text-text")
                 }
-                onClick={() => onArmedChange(isArmed ? null : { kind: "AUDIO", audioId: file.id })}
+                onClick={
+                  canEdit
+                    ? () => onArmedChange(isArmed ? null : { kind: "AUDIO", audioId: file.id })
+                    : undefined
+                }
               >
                 <span aria-hidden>🎧</span>
                 <span className="min-w-0 flex-1">
@@ -249,16 +271,19 @@ export function ArrangementPalette({
                 >
                   ⬇
                 </button>
-                <button
-                  className="rounded px-1 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                  title="Delete (removes its clips)"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void deleteAudio(file);
-                  }}
-                >
-                  ×
-                </button>
+                {/* Download stays: reading bytes is what a viewer is FOR. */}
+                {canEdit && (
+                  <button
+                    className="rounded px-1 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                    title="Delete (removes its clips)"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void deleteAudio(file);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             );
           })}
@@ -286,6 +311,7 @@ export function ArrangementTimeline({
   onError,
   onOpenBeat,
   onDraggingChange,
+  canEdit,
 }: {
   songId: string;
   bpm: number;
@@ -303,6 +329,13 @@ export function ArrangementTimeline({
    *  sidebar away, so the timeline gets the full width exactly when you're
    *  manipulating it — and gets it back the moment you let go. */
   onDraggingChange: (dragging: boolean) => void;
+  /** False for a VIEWER. This was the ONE editing surface that never got
+   *  the session-14 fix: a viewer could grab a clip, watch it move locally,
+   *  and then eat a 403 per drag frame's commit — an error storm where the
+   *  answer was simply "you can't drag this". Handlers are gated exactly
+   *  like the piano roll's: not attached, rather than attached-and-failing.
+   *  Double-click to open a beat stays — navigation is reading. */
+  canEdit: boolean;
 }) {
   const lanesRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -627,14 +660,18 @@ export function ArrangementTimeline({
               height: LANES * laneH,
               backgroundSize: `${BAR_W}px ${laneH}px`,
             }}
-            onMouseDown={(e) => void placeArmed(e)}
+            onMouseDown={canEdit ? (e) => void placeArmed(e) : undefined}
           >
             {clips.length === 0 && !armed && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <EmptyState
                   icon="🎬"
                   title="Empty timeline"
-                  hint="Arm a beat in the left panel, then click a lane — same beat, as many placements as you like."
+                  hint={
+                    canEdit
+                      ? "Arm a beat in the left panel, then click a lane — same beat, as many placements as you like."
+                      : "Nothing arranged yet — you're viewing this song, so the timeline fills in as its editors work."
+                  }
                 />
               </div>
             )}
@@ -667,22 +704,30 @@ export function ArrangementTimeline({
                   // The clip is the ONLY place these gestures are discoverable —
                   // there is no toolbar and no context menu to find them in — so
                   // the tooltip has to carry them. Alt+drag in particular is a
-                  // convention you either know from a DAW or never find.
-                  title={`${label}\nDrag to move · Alt+drag to duplicate · Right-click to delete${
-                    clip.type === "BEAT" ? " · Double-click to edit the beat" : ""
-                  }`}
-                  onMouseDown={(e) => onClipMouseDown(e, clip, false)}
-                  onContextMenu={(e) => void onClipContextMenu(e, clip)}
+                  // convention you either know from a DAW or never find. A viewer
+                  // gets no gesture list: advertising drags that won't work is
+                  // the tooltip version of the 403 storm.
+                  title={
+                    canEdit
+                      ? `${label}\nDrag to move · Alt+drag to duplicate · Right-click to delete${
+                          clip.type === "BEAT" ? " · Double-click to edit the beat" : ""
+                        }`
+                      : label + (clip.type === "BEAT" ? "\nDouble-click to view the beat" : "")
+                  }
+                  onMouseDown={canEdit ? (e) => onClipMouseDown(e, clip, false) : undefined}
+                  onContextMenu={canEdit ? (e) => void onClipContextMenu(e, clip) : undefined}
                   onDoubleClick={() => clip.beatId && onOpenBeat(clip.beatId)}
                 >
                   <span className="truncate px-2 text-[0.68rem] font-bold">
                     {label}
                     {clip.type === "BEAT" && barsLong > 1 ? ` ×${barsLong}` : ""}
                   </span>
-                  <span
-                    className="tl-clip-handle"
-                    onMouseDown={(e) => onClipMouseDown(e, clip, true)}
-                  />
+                  {canEdit && (
+                    <span
+                      className="tl-clip-handle"
+                      onMouseDown={(e) => onClipMouseDown(e, clip, true)}
+                    />
+                  )}
                 </div>
               );
             })}

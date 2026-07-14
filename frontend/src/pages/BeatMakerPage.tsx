@@ -725,6 +725,7 @@ export function BeatMakerPage() {
               onClipsChange={setClips}
               onAudioFilesChange={setAudioFiles}
               onError={setError}
+              canEdit={canEdit}
             />
           ) : (
             <>
@@ -947,6 +948,7 @@ export function BeatMakerPage() {
               playheadStep={arrangeStep}
               onError={setError}
               onDraggingChange={setDragging}
+              canEdit={canEdit}
               onOpenBeat={(beatId) => {
                 setSelectedBeatId(beatId);
                 const beat = sortedBeats.find((b) => b.id === beatId);
