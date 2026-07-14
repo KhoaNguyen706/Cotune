@@ -48,9 +48,83 @@ jobs:
       # tsc --noEmit + vite build: the frontend's whole compile gate.
       - run: npm run build
 
-  # Only after both gates pass, and only on main (a PR must never publish).
+  # One real browser through the one path everything depends on: register →
+  # song → socket → note, zero console errors. Exists because the hooks
+  # refactor shipped a reload loop that tsc AND the build both passed —
+  # only a browser executing the real render loop catches that class of
+  # bug. The stack here is dev-shaped (vite + spring-boot jar + postgres),
+  # not the Docker image: the point is exercising OUR code in a browser,
+  # and the image's own assembly is already proven by publish-image.
+  smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Same image as Testcontainers and compose — one Postgres story.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: cotune
+          POSTGRES_USER: cotune
+          POSTGRES_PASSWORD: cotune
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cotune"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: frontend
+      # Installs the browser binary + its system libraries. Cached by
+      # playwright itself under ~/.cache/ms-playwright across runs of the
+      # same runner image version.
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      # The real jar (skipTests: backend-tests already owns proving the
+      # code; this job only needs a server to stand up). Dev defaults match
+      # the service container above, so no configuration at all.
+      - run: ./mvnw -B -DskipTests package
+      - name: Start backend and vite
+        run: |
+          java -jar target/*.jar > backend.log 2>&1 &
+          (cd frontend && npm run dev > vite.log 2>&1 &)
+          # The health endpoint added in Phase 1 doing its first real job:
+          # "up" here means Flyway ran and the app can query Postgres.
+          curl --retry 30 --retry-delay 2 --retry-all-errors -fsS \
+            http://localhost:8080/actuator/health
+          curl --retry 15 --retry-delay 2 --retry-all-errors -fsS \
+            http://localhost:5173 > /dev/null
+
+      - run: npm run smoke
+        working-directory: frontend
+
+      # The logs are the only way to debug a CI-only failure; ship them
+      # exactly when they're needed.
+      - name: Upload server logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs
+          path: |
+            backend.log
+            frontend/vite.log
+
+  # Only after all three gates pass, and only on main (a PR must never
+  # publish).
   publish-image:
-    needs: [backend-tests, frontend-build]
+    needs: [backend-tests, frontend-build, smoke]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

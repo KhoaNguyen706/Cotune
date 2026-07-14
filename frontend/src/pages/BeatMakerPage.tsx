@@ -475,6 +475,9 @@ export function BeatMakerPage() {
                     which is a thing the user genuinely needs to know, so it is
                     not hidden behind a settings panel. */}
                 <span
+                  // The smoke test's definition of "the socket is up" — same
+                  // idea as the roll's testid: a hook that survives restyling.
+                  data-testid="socket-status"
                   title={
                     live
                       ? "Live — collaborators see your edits as you make them"
