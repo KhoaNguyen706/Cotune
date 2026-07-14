@@ -1,7 +1,7 @@
 import * as Tone from "tone";
 import { fetchBinary, upload } from "../api/client";
 import { createInstrument, type TrackInstrument } from "./instruments";
-import type { AudioFile, Beat, Clip, Step } from "../types";
+import type { AudioFile, ClipType, Step } from "../types";
 
 /**
  * The arrangement engine. One scheduling function drives BOTH live
@@ -17,14 +17,37 @@ export function secondsPerStep(bpm: number): number {
   return 60 / bpm / 4;
 }
 
+/** The structural MINIMUM scheduling reads — declared here, not imported
+ *  from types.ts, so both the editor's full Beat/Clip shapes and the
+ *  listen page's public shapes (which deliberately carry less) satisfy
+ *  them. TypeScript's structural typing makes the wider types assignable
+ *  for free. */
+export interface PlayableTrack {
+  id: string;
+  instrument: string;
+}
+export interface PlayableBeat {
+  id: string;
+  bars: number;
+  tracks: PlayableTrack[];
+}
+export interface PlayableClip {
+  lane: number;
+  startStep: number;
+  lengthSteps: number;
+  type: ClipType;
+  beatId?: string | null;
+  audioId?: string | null;
+}
+
 /** Everything scheduling needs to know, already denormalized by the page:
  *  `patterns` carries the LIVE (possibly unsaved) notes per LANE id, so
  *  what you hear always matches what the editor shows. A BEAT clip plays
  *  every lane of its beat — that's the big-beat model. */
 export interface ArrangementSources {
   bpm: number;
-  clips: Clip[];
-  beats: Beat[];
+  clips: PlayableClip[];
+  beats: PlayableBeat[];
   patterns: Record<string, Step[]>;
 }
 
@@ -46,10 +69,15 @@ export function arrangementEndSeconds(sources: ArrangementSources): number {
 
 const bufferCache = new Map<string, AudioBuffer>();
 
-export async function getAudioBuffer(audioId: string): Promise<AudioBuffer> {
+export async function getAudioBuffer(
+  audioId: string,
+  // Overridable because the LISTEN page fetches the same bytes from the
+  // public token route — same cache, same decode, different address.
+  url: string = `/api/audio/${audioId}`,
+): Promise<AudioBuffer> {
   const cached = bufferCache.get(audioId);
   if (cached) return cached;
-  const bytes = await fetchBinary(`/api/audio/${audioId}`);
+  const bytes = await fetchBinary(url);
   const decoded = await Tone.getContext().rawContext.decodeAudioData(bytes);
   bufferCache.set(audioId, decoded);
   return decoded;
@@ -164,10 +192,13 @@ export function scheduleArrangement(options: ScheduleOptions): Tone.Player[] {
 /** Fetch every buffer the arrangement needs (cache-aware, parallel).
  *  Failures are swallowed per-file: one broken download mutes that clip
  *  instead of killing playback/export. */
-export async function prefetchBuffers(clips: Clip[]): Promise<Map<string, AudioBuffer>> {
+export async function prefetchBuffers(
+  clips: PlayableClip[],
+  urlFor?: (audioId: string) => string,
+): Promise<Map<string, AudioBuffer>> {
   const ids = [...new Set(clips.filter((c) => c.type === "AUDIO" && c.audioId).map((c) => c.audioId!))];
   await Promise.all(
-    ids.map((id) => getAudioBuffer(id).catch(() => undefined)),
+    ids.map((id) => getAudioBuffer(id, urlFor?.(id)).catch(() => undefined)),
   );
   const map = new Map<string, AudioBuffer>();
   for (const id of ids) {

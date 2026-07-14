@@ -70,6 +70,12 @@ public class Song {
     @Column(name = "owner_id", updatable = false)
     private UUID ownerId;
 
+    // The public listen link's secret (V12). NULL = no link. Held on the
+    // song row rather than a separate table because a song has at most ONE
+    // link and the token's whole lifecycle is "set, look up, clear".
+    @Column(name = "listen_token", length = 43)
+    private String listenToken;
+
     // Optimistic locking: Hibernate adds "WHERE version = ?" to every UPDATE
     // and bumps the counter. If two collaborators save concurrently, the
     // second write fails with OptimisticLockException instead of silently
@@ -119,6 +125,24 @@ public class Song {
                     "Time signature must look like 4/4, got: " + newTimeSignature);
         }
         this.timeSignature = newTimeSignature;
+    }
+
+    /**
+     * The token itself is minted by the SERVICE (entities don't own a
+     * SecureRandom); the entity only guards that whatever goes in could
+     * plausibly be one. Idempotence ("enabling twice keeps the same link")
+     * is the service's rule too — this method just stores.
+     */
+    public void enableListenLink(String token) {
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("Listen token must not be blank");
+        }
+        this.listenToken = token;
+    }
+
+    /** Revoke: every copy of the old link stops working immediately. */
+    public void disableListenLink() {
+        this.listenToken = null;
     }
 
     /**

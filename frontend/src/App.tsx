@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { BeatMakerPage } from "./pages/BeatMakerPage";
+import { ListenPage } from "./pages/ListenPage";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SongsPage } from "./pages/SongsPage";
@@ -18,6 +19,10 @@ export function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          {/* Public on purpose — the token in the URL is the authorization.
+              Also registered in SpaForwardingController + SecurityConfig,
+              or a hard refresh of the link 404s/403s server-side. */}
+          <Route path="/listen/:token" element={<ListenPage />} />
           <Route
             path="/"
             element={

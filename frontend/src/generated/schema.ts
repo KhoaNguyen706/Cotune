@@ -52,6 +52,15 @@ export type Beat = {
   version: Scalars['Int']['output'];
 };
 
+export type ChatMessage = {
+  authorId?: Maybe<Scalars['ID']['output']>;
+  authorName: Scalars['String']['output'];
+  body: Scalars['String']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  songId: Scalars['ID']['output'];
+};
+
 export type Clip = {
   audioId?: Maybe<Scalars['ID']['output']>;
   beatId?: Maybe<Scalars['ID']['output']>;
@@ -96,6 +105,47 @@ export type Instrument =
   | 'STRINGS'
   | 'SYNTH';
 
+export type ListenAudio = {
+  contentType: Scalars['String']['output'];
+  durationSeconds: Scalars['Float']['output'];
+  id: Scalars['ID']['output'];
+};
+
+export type ListenBeat = {
+  bars: Scalars['Int']['output'];
+  id: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  position: Scalars['Int']['output'];
+  tracks: Array<ListenTrack>;
+};
+
+export type ListenClip = {
+  audioId?: Maybe<Scalars['ID']['output']>;
+  beatId?: Maybe<Scalars['ID']['output']>;
+  id: Scalars['ID']['output'];
+  lane: Scalars['Int']['output'];
+  lengthSteps: Scalars['Int']['output'];
+  startStep: Scalars['Int']['output'];
+  type: ClipType;
+};
+
+export type ListenSong = {
+  audioFiles: Array<ListenAudio>;
+  beats: Array<ListenBeat>;
+  bpm: Scalars['Int']['output'];
+  clips: Array<ListenClip>;
+  timeSignature: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+};
+
+export type ListenTrack = {
+  id: Scalars['ID']['output'];
+  instrument: Instrument;
+  name: Scalars['String']['output'];
+  pattern: Array<Step>;
+  position: Scalars['Int']['output'];
+};
+
 export type Mutation = {
   addBeat: Beat;
   addClip: Clip;
@@ -105,6 +155,8 @@ export type Mutation = {
   deleteClip: Scalars['Boolean']['output'];
   deleteSong: Scalars['Boolean']['output'];
   deleteTrack: Scalars['Boolean']['output'];
+  disableListenLink: Scalars['Boolean']['output'];
+  enableListenLink: Scalars['String']['output'];
   shareSong: Collaborator;
   unshareSong: Scalars['Boolean']['output'];
   updateClip: Clip;
@@ -154,6 +206,16 @@ export type MutationDeleteTrackArgs = {
 };
 
 
+export type MutationDisableListenLinkArgs = {
+  songId: Scalars['ID']['input'];
+};
+
+
+export type MutationEnableListenLinkArgs = {
+  songId: Scalars['ID']['input'];
+};
+
+
 export type MutationShareSongArgs = {
   input: ShareSongInput;
 };
@@ -190,8 +252,20 @@ export type MutationUpdateTrackPatternArgs = {
 };
 
 export type Query = {
+  chatMessages: Array<ChatMessage>;
+  listen?: Maybe<ListenSong>;
   song?: Maybe<Song>;
   songs: Array<Song>;
+};
+
+
+export type QueryChatMessagesArgs = {
+  songId: Scalars['ID']['input'];
+};
+
+
+export type QueryListenArgs = {
+  token: Scalars['String']['input'];
 };
 
 
@@ -213,6 +287,7 @@ export type Song = {
   collaborators: Array<Collaborator>;
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
+  listenToken?: Maybe<Scalars['String']['output']>;
   myRole: SongRole;
   ownerId?: Maybe<Scalars['ID']['output']>;
   timeSignature: Scalars['String']['output'];

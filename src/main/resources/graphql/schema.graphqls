@@ -21,6 +21,13 @@ type Query {
     # (/topic/songs/{id}/chat), and posting is a socket send — chat has no
     # mutation here, the same way note edits don't.
     chatMessages(songId: ID!): [ChatMessage!]!
+
+    # THE ONE PUBLIC OPERATION in this schema: no login, the token is the
+    # authorization (an unguessable capability the owner can revoke). It
+    # returns Listen* types — a deliberately separate, playback-shaped
+    # surface — never Song, whose fields assume a logged-in caller and
+    # carry things a stranger must not read (collaborator emails, roles).
+    listen(token: String!): ListenSong
 }
 
 # Auth (register/login/me) is deliberately NOT in this schema — it lives on
@@ -68,6 +75,15 @@ type Mutation {
     # idempotent — a retried invite is not a duplicate and not an error.
     shareSong(input: ShareSongInput!): Collaborator!
     unshareSong(songId: ID!, userId: ID!): Boolean!
+
+    # ---- public listen link (owner only) ----
+    #
+    # Enabling returns the token (idempotent — an existing link is returned,
+    # not replaced, so re-opening the share sheet can't kill a link already
+    # sent around). Disabling revokes every copy at once; enabling again
+    # mints a FRESH token.
+    enableListenLink(songId: ID!): String!
+    disableListenLink(songId: ID!): Boolean!
 }
 
 type Song {
@@ -91,6 +107,10 @@ type Song {
     # are not a collaborator, they are the owner). Visible to anyone who can
     # open the song; only the owner may change it.
     collaborators: [Collaborator!]!
+    # The public listen link's token — OWNER ONLY: everyone else reads null
+    # (indistinguishable from "no link"). Null for the owner means the song
+    # has no public link. Clients build the URL as /listen/<token>.
+    listenToken: String
     # Exposed so clients can later send it back for conflict detection
     # (optimistic concurrency across the wire).
     version: Int!
@@ -277,6 +297,59 @@ type ChatMessage {
     authorName: String!
     body: String!
     createdAt: DateTime!
+}
+
+# ---- public listening --------------------------------------------------------
+#
+# What a stranger holding a listen link sees. A separate type family from
+# Song/Beat/Track on purpose: those types' resolvers assume a logged-in
+# caller, and their fields include things a public page must never carry
+# (emails, roles, owner ids, filenames). These types ARE the public
+# surface — adding a field here is a publishing decision.
+
+type ListenSong {
+    title: String!
+    bpm: Int!
+    timeSignature: String!
+    beats: [ListenBeat!]!
+    clips: [ListenClip!]!
+    audioFiles: [ListenAudio!]!
+}
+
+# Ids stay: clips reference beats/audio by id and the player must resolve
+# them. They authorize nothing.
+type ListenBeat {
+    id: ID!
+    name: String!
+    position: Int!
+    bars: Int!
+    tracks: [ListenTrack!]!
+}
+
+type ListenTrack {
+    id: ID!
+    name: String!
+    instrument: Instrument!
+    position: Int!
+    pattern: [Step!]!
+}
+
+type ListenClip {
+    id: ID!
+    lane: Int!
+    startStep: Int!
+    lengthSteps: Int!
+    type: ClipType!
+    beatId: ID
+    audioId: ID
+}
+
+# No filename (uploads keep personal disk names); bytes ride on the public
+# REST route GET /api/listen/{token}/audio/{id}.
+type ListenAudio {
+    id: ID!
+    contentType: String!
+    durationSeconds: Float!
 }
 
 # ---- sharing ---------------------------------------------------------------

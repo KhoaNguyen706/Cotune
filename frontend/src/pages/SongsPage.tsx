@@ -24,7 +24,7 @@ import { canEditSong, type Song } from "../types";
 const SONGS_QUERY = `
   query Songs {
     songs {
-      id title bpm timeSignature ownerId myRole version createdAt
+      id title bpm timeSignature ownerId myRole version createdAt listenToken
       collaborators { userId email displayName role }
       beats {
         id name position bars

@@ -77,12 +77,44 @@ export type Collaborator = Pick<
 export interface Song
   extends Pick<
     gql.Song,
-    "id" | "title" | "bpm" | "timeSignature" | "ownerId" | "myRole" | "version" | "createdAt"
+    | "id" | "title" | "bpm" | "timeSignature" | "ownerId" | "myRole" | "version" | "createdAt"
+    // Owner-only by VALUE (the server sends null to everyone else); null
+    // for the owner means "no public link yet".
+    | "listenToken"
   > {
   beats: Beat[];
   clips: Clip[];
   audioFiles: AudioFile[];
   collaborators: Collaborator[];
+}
+
+/* ---- public listen page -------------------------------------------------
+   The shapes behind /listen/:token — a separate, smaller type family on
+   purpose, mirroring the server's Listen* GraphQL types: what a stranger
+   holding the link sees is decided there, and these types just can't hold
+   more than that. Structurally they satisfy the audio engine's Playable*
+   interfaces, so the same scheduler plays both the editor and this page. */
+
+export interface ListenTrack
+  extends Pick<gql.ListenTrack, "id" | "name" | "instrument" | "position"> {
+  pattern: Step[];
+}
+
+export interface ListenBeat extends Pick<gql.ListenBeat, "id" | "name" | "position" | "bars"> {
+  tracks: ListenTrack[];
+}
+
+export type ListenClip = Pick<
+  gql.ListenClip,
+  "id" | "lane" | "startStep" | "lengthSteps" | "type" | "beatId" | "audioId"
+>;
+
+export type ListenAudio = Pick<gql.ListenAudio, "id" | "contentType" | "durationSeconds">;
+
+export interface ListenSong extends Pick<gql.ListenSong, "title" | "bpm" | "timeSignature"> {
+  beats: ListenBeat[];
+  clips: ListenClip[];
+  audioFiles: ListenAudio[];
 }
 
 /** The single place the client interprets a role — and it decides nothing:

@@ -26,6 +26,18 @@ const UNSHARE = `
   }
 `;
 
+const ENABLE_LISTEN_LINK = `
+  mutation EnableListenLink($songId: ID!) {
+    enableListenLink(songId: $songId)
+  }
+`;
+
+const DISABLE_LISTEN_LINK = `
+  mutation DisableListenLink($songId: ID!) {
+    disableListenLink(songId: $songId)
+  }
+`;
+
 const ROLE_HELP: Record<CollaboratorRole, string> = {
   EDITOR: "Can change the music",
   VIEWER: "Can listen, but not edit",
@@ -45,6 +57,11 @@ export function ShareModal({
   const [role, setRole] = useState<CollaboratorRole>("EDITOR");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Local, seeded from the prop: the mutations return the truth directly,
+  // so the section updates instantly instead of waiting on the library
+  // refetch to flow a new `song` prop down.
+  const [listenToken, setListenToken] = useState(song.listenToken ?? null);
+  const [copied, setCopied] = useState(false);
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -78,6 +95,33 @@ export function ShareModal({
 
   const revoke = (person: Collaborator) =>
     run(() => gql(UNSHARE, { songId: song.id, userId: person.userId }));
+
+  const enableLink = () =>
+    run(async () => {
+      const data = await gql<{ enableListenLink: string }>(ENABLE_LISTEN_LINK, { songId: song.id });
+      setListenToken(data.enableListenLink);
+    });
+
+  const disableLink = () =>
+    run(async () => {
+      await gql(DISABLE_LISTEN_LINK, { songId: song.id });
+      setListenToken(null);
+      setCopied(false);
+    });
+
+  const listenUrl = listenToken ? `${window.location.origin}/listen/${listenToken}` : null;
+
+  async function copyLink() {
+    if (!listenUrl) return;
+    try {
+      await navigator.clipboard.writeText(listenUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard can be denied (permissions, http origin); the URL is
+      // visible in the box either way — the user can select it by hand.
+    }
+  }
 
   return (
     <Modal title={`Share "${song.title}"`} onClose={onClose}>
@@ -168,6 +212,46 @@ export function ShareModal({
 
         {song.collaborators.length === 0 && (
           <p className="text-sm text-muted">Nobody else yet — this song is private to you.</p>
+        )}
+      </div>
+
+      {/* The growth loop: a link anyone can LISTEN to, no account. Distinct
+          from collaborator access above — a listener is not a member, they
+          hold a revocable capability. */}
+      <div className="mt-6 flex flex-col gap-3 border-t border-edge pt-5">
+        <h3 className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">
+          Public listen link
+        </h3>
+
+        {listenUrl ? (
+          <>
+            <div className="flex items-center gap-2">
+              <TextInput
+                readOnly
+                value={listenUrl}
+                aria-label="Public listen link"
+                onFocus={(e) => e.currentTarget.select()}
+                className="text-xs"
+              />
+              <Button size="sm" disabled={busy} onClick={() => void copyLink()}>
+                {copied ? "Copied!" : "Copy"}
+              </Button>
+              <Button variant="danger" size="sm" disabled={busy} onClick={() => void disableLink()}>
+                Turn off
+              </Button>
+            </div>
+            <p className="-mt-1 text-xs text-muted">
+              Anyone with this link can listen — no account needed. Turning it off kills every
+              copy; turning it back on makes a fresh link.
+            </p>
+          </>
+        ) : (
+          <div className="flex items-center gap-3">
+            <Button size="sm" disabled={busy} onClick={() => void enableLink()}>
+              Create listen link
+            </Button>
+            <p className="text-xs text-muted">Let anyone hear this song — read-only, no account.</p>
+          </div>
         )}
       </div>
     </Modal>

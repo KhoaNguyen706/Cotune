@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -49,4 +50,12 @@ public interface SongRepository extends JpaRepository<Song, UUID> {
             order by s.createdAt desc
             """)
     List<Song> findAllVisibleTo(@Param("userId") UUID userId);
+
+    /**
+     * The public listen link's lookup: the token IS the authorization (a
+     * capability), so this method is a security boundary the same way
+     * findAllVisibleTo is — it must match on the exact token and nothing
+     * else. Backed by the V12 partial unique index.
+     */
+    Optional<Song> findByListenToken(String listenToken);
 }

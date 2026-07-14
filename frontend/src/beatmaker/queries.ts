@@ -10,7 +10,7 @@
 export const SONG_QUERY = `
   query Song($id: ID!) {
     song(id: $id) {
-      id title bpm timeSignature ownerId myRole
+      id title bpm timeSignature ownerId myRole listenToken
       collaborators { userId email displayName role }
       beats {
         id name position bars

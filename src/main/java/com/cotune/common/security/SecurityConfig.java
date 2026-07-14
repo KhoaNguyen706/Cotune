@@ -72,6 +72,13 @@ public class SecurityConfig {
                         // must be reachable without one. Locked to POST —
                         // a GET /api/auth/login has no business existing.
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                        // Public listen links: the bytes for a shared song's
+                        // audio clips. The URL's token IS the authorization
+                        // (verified in ListenService — resolves to a song AND
+                        // the audio belongs to it), so like /graphql below the
+                        // gate moves off the URL rule. GET only, exact shape
+                        // only — nothing else under /api/listen exists.
+                        .requestMatchers(HttpMethod.GET, "/api/listen/*/audio/*").permitAll()
                         // Everything else under /api requires a valid token.
                         // Contrast with /graphql below: REST operations are
                         // identified by URL, so URL-level rules work again —
@@ -103,7 +110,7 @@ public class SecurityConfig {
                         // /graphql and /api/** with their own rules above.
                         .requestMatchers(HttpMethod.GET,
                                 "/", "/index.html", "/assets/**", "/favicon.ico",
-                                "/login", "/register", "/songs/*").permitAll()
+                                "/login", "/register", "/songs/*", "/listen/*").permitAll()
                         // Health is public ON PURPOSE: a monitor that must
                         // authenticate is a monitor that silently stops
                         // working when its token expires. Safe because the

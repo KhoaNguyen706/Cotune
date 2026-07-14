@@ -57,4 +57,14 @@ public class ResourceNotFoundException extends RuntimeException {
     public static ResourceNotFoundException clip(UUID id) {
         return new ResourceNotFoundException("Clip not found: " + id);
     }
+
+    /**
+     * The one factory that deliberately does NOT echo the identifier back:
+     * a listen token is a secret, and error messages end up in logs,
+     * monitoring, and screenshots. "Not found" is all a wrong link needs
+     * to hear — same answer for "never existed" and "revoked".
+     */
+    public static ResourceNotFoundException listenLink() {
+        return new ResourceNotFoundException("This listen link does not exist or was turned off");
+    }
 }
