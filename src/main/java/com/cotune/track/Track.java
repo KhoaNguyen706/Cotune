@@ -77,6 +77,17 @@ public class Track {
     @Column(nullable = false, columnDefinition = "jsonb")
     private List<Step> pattern = new ArrayList<>();
 
+    // ---- the mix (V14) — part of the song, not of the session ----------
+    // Linear gain 0..1 (1 = unity; the client maps to dB for the audio
+    // graph). Stored per lane so a collaborator hears your balance and a
+    // reload doesn't reset the mix you spent an hour on.
+    @Column(nullable = false)
+    private double volume = 1.0;
+
+    // Stereo position -1 (hard left) .. 1 (hard right), 0 = center.
+    @Column(nullable = false)
+    private double pan = 0.0;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -107,6 +118,20 @@ public class Track {
             throw new IllegalArgumentException("Track name must not be blank");
         }
         this.name = newName.strip();
+    }
+
+    public void changeVolume(double newVolume) {
+        if (newVolume < 0.0 || newVolume > 1.0) {
+            throw new IllegalArgumentException("volume must be in [0, 1], got " + newVolume);
+        }
+        this.volume = newVolume;
+    }
+
+    public void changePan(double newPan) {
+        if (newPan < -1.0 || newPan > 1.0) {
+            throw new IllegalArgumentException("pan must be in [-1, 1], got " + newPan);
+        }
+        this.pan = newPan;
     }
 
     public void changeInstrument(Instrument newInstrument) {

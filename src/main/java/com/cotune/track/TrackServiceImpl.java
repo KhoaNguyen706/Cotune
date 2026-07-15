@@ -10,6 +10,7 @@ import com.cotune.track.dto.NoteOp;
 import com.cotune.track.dto.StepInput;
 import com.cotune.track.dto.TrackDto;
 import com.cotune.track.dto.UpdateTrackInput;
+import com.cotune.track.dto.UpdateTrackPatch;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -76,9 +77,20 @@ public class TrackServiceImpl implements TrackService {
     }
 
     @Override
-    public TrackDto rename(UUID id, String name) {
+    public TrackDto patch(UUID id, UpdateTrackPatch patch) {
+        if (patch.isEmpty()) {
+            throw new IllegalArgumentException("Patch must change at least one field");
+        }
         Track track = loadTrack(id);
-        track.rename(name);
+        if (patch.name() != null) {
+            track.rename(patch.name());
+        }
+        if (patch.volume() != null) {
+            track.changeVolume(patch.volume());
+        }
+        if (patch.pan() != null) {
+            track.changePan(patch.pan());
+        }
         trackRepository.flush();
         return trackMapper.toDto(track);
     }

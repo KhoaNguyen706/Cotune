@@ -177,6 +177,11 @@ type Track {
     # The beat: note events on a 16-step grid. Unordered — clients index
     # by step number, not array position.
     pattern: [Step!]!
+    # The lane's mix (V14) — persisted so it survives reload and every
+    # collaborator hears the same balance. Changed via REST PATCH
+    # /api/tracks/{id} like renames (single-field, high-frequency).
+    volume: Float!  # linear gain 0..1 (1 = unity)
+    pan: Float!     # -1 hard left .. 1 hard right, 0 = center
     version: Int!
     createdAt: DateTime!
     updatedAt: DateTime!
@@ -351,6 +356,10 @@ type ListenTrack {
     instrument: Instrument!
     position: Int!
     pattern: [Step!]!
+    # The mix rides along: a listener hears the song as its makers
+    # balanced it. Playback-shaped data — no identity leaks here.
+    volume: Float!
+    pan: Float!
 }
 
 type ListenClip {

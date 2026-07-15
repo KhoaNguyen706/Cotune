@@ -151,32 +151,50 @@ class TrackServiceImplTest {
     }
 
     @Test
-    void renameChangesNameAndNothingElse() {
+    void patchChangesOnlyTheFieldsItCarries() {
         UUID trackId = UUID.randomUUID();
         Track track = new Track(beat, "Kick", Instrument.DRUMS, 2);
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
 
-        TrackDto dto = service.rename(trackId, "  Kick 808  ");
+        TrackDto dto = service.patch(trackId,
+                new com.cotune.track.dto.UpdateTrackPatch("  Kick 808  ", null, null));
 
-        // The entity strips whitespace; instrument and position untouched.
+        // The entity strips whitespace; instrument, position AND the mix
+        // untouched — null means "leave alone", not "reset".
         assertThat(dto.name()).isEqualTo("Kick 808");
         assertThat(dto.instrument()).isEqualTo(Instrument.DRUMS);
         assertThat(dto.position()).isEqualTo(2);
+        assertThat(dto.volume()).isEqualTo(1.0);
+        assertThat(dto.pan()).isEqualTo(0.0);
+
+        // And the mix alone, without renaming.
+        TrackDto mixed = service.patch(trackId,
+                new com.cotune.track.dto.UpdateTrackPatch(null, 0.5, -1.0));
+        assertThat(mixed.name()).isEqualTo("Kick 808");
+        assertThat(mixed.volume()).isEqualTo(0.5);
+        assertThat(mixed.pan()).isEqualTo(-1.0);
     }
 
     @Test
-    void renameRejectsUnknownTrackAndBlankName() {
+    void patchRejectsUnknownTrackBlankNameAndEmptyBody() {
         UUID trackId = UUID.randomUUID();
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.empty());
 
-        assertThatThrownBy(() -> service.rename(trackId, "New Name"))
+        assertThatThrownBy(() -> service.patch(trackId,
+                new com.cotune.track.dto.UpdateTrackPatch("New Name", null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         // Blank is stopped by the entity's domain guard, even if Bean
         // Validation at the REST boundary were bypassed.
         Track track = new Track(beat, "Kick", Instrument.DRUMS, 0);
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
-        assertThatThrownBy(() -> service.rename(trackId, "   "))
+        assertThatThrownBy(() -> service.patch(trackId,
+                new com.cotune.track.dto.UpdateTrackPatch("   ", null, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        // A patch that changes nothing is a caller bug, not a no-op.
+        assertThatThrownBy(() -> service.patch(trackId,
+                new com.cotune.track.dto.UpdateTrackPatch(null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

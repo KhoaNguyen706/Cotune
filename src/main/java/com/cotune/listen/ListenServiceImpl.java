@@ -148,6 +148,8 @@ public class ListenServiceImpl implements ListenService {
                 track.getPosition(),
                 track.getPattern().stream()
                         .map(step -> new StepDto(step.step(), step.pitch(), step.velocity(), step.length()))
-                        .toList());
+                        .toList(),
+                track.getVolume(),
+                track.getPan());
     }
 }

@@ -1,7 +1,7 @@
 package com.cotune.track;
 
-import com.cotune.track.dto.RenameTrackInput;
 import com.cotune.track.dto.TrackDto;
+import com.cotune.track.dto.UpdateTrackPatch;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/** Rename rides on REST — see SongRestController for the reasoning. */
+/** Single-field updates ride on REST — see SongRestController. Started as
+ *  rename-only; V14 added the lane's mixer state (volume/pan), which is the
+ *  same shape of update: one field, no graph, high frequency. */
 @RestController
 @RequiredArgsConstructor
 public class TrackRestController {
@@ -21,7 +23,7 @@ public class TrackRestController {
 
     @PatchMapping("/api/tracks/{id}")
     @PreAuthorize("@trackAccess.canEdit(#id, authentication)")
-    public TrackDto rename(@PathVariable UUID id, @RequestBody @Valid RenameTrackInput input) {
-        return trackService.rename(id, input.name());
+    public TrackDto patch(@PathVariable UUID id, @RequestBody @Valid UpdateTrackPatch patch) {
+        return trackService.patch(id, patch);
     }
 }

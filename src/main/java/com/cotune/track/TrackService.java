@@ -6,6 +6,7 @@ import com.cotune.track.dto.NoteOp;
 import com.cotune.track.dto.StepInput;
 import com.cotune.track.dto.TrackDto;
 import com.cotune.track.dto.UpdateTrackInput;
+import com.cotune.track.dto.UpdateTrackPatch;
 
 import java.util.List;
 import java.util.Map;
@@ -17,8 +18,9 @@ public interface TrackService {
 
     TrackDto update(UUID id, UpdateTrackInput input);
 
-    /** Name-only change — the REST rename endpoint's use case. */
-    TrackDto rename(UUID id, String name);
+    /** Single-field updates from the REST PATCH: name (rename-in-place)
+     *  and, since V14, the lane's mixer state (volume/pan). */
+    TrackDto patch(UUID id, UpdateTrackPatch patch);
 
     /**
      * Replace the track's whole step pattern (the beat grid saves as one

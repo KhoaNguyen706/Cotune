@@ -13,6 +13,9 @@ public record TrackDto(
         Instrument instrument,
         int position,
         List<StepDto> pattern,
+        // The lane's mix (V14): linear gain 0..1 and stereo pan -1..1.
+        double volume,
+        double pan,
         long version,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt

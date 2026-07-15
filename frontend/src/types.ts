@@ -31,7 +31,10 @@ export type Step = Pick<gql.Step, "step" | "pitch" | "velocity" | "length">;
 
 /** One instrument LANE inside a beat (kick lane, bass lane, ...). */
 export interface Track
-  extends Pick<gql.Track, "id" | "name" | "instrument" | "position" | "version"> {
+  extends Pick<
+    gql.Track,
+    "id" | "name" | "instrument" | "position" | "volume" | "pan" | "version"
+  > {
   pattern: Step[];
 }
 
@@ -99,7 +102,7 @@ export interface Song
    interfaces, so the same scheduler plays both the editor and this page. */
 
 export interface ListenTrack
-  extends Pick<gql.ListenTrack, "id" | "name" | "instrument" | "position"> {
+  extends Pick<gql.ListenTrack, "id" | "name" | "instrument" | "position" | "volume" | "pan"> {
   pattern: Step[];
 }
 

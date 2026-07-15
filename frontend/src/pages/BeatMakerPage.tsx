@@ -593,6 +593,17 @@ export function BeatMakerPage() {
             }}
             onRequestClear={setClearing}
             onRequestGenerate={() => setGenerateOpen(true)}
+            onMixChange={(mix) => {
+              if (!selectedId) return;
+              // State and audio move together mid-drag; the server waits
+              // for the commit below — dozens of PATCHes per drag would be
+              // traffic with no one listening.
+              data.setTrackMixLocal(selectedId, mix);
+              instruments.map.current.get(selectedId)?.setMix(mix);
+            }}
+            onMixCommit={(mix) => {
+              if (selectedId) void data.saveTrackMix(selectedId, mix);
+            }}
             onRecordHistory={recordHistory}
             onUpdateNote={updateNote}
             onPreview={preview}

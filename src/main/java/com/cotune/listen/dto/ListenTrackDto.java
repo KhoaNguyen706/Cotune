@@ -11,6 +11,10 @@ public record ListenTrackDto(
         String name,
         Instrument instrument,
         int position,
-        List<StepDto> pattern
+        List<StepDto> pattern,
+        // The lane's mix — a listener must hear the song the way its
+        // makers balanced it, so this is playback-shaped data, not a leak.
+        double volume,
+        double pan
 ) {
 }

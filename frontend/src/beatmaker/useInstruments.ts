@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { createInstrument, type TrackInstrument } from "../audio/instruments";
+import { createInstrument, type Mix, type TrackInstrument } from "../audio/instruments";
 
 export interface Instruments {
   /** The live synths, keyed by LANE id. A ref, not state: nothing renders from
    *  it, and the Tone callbacks that read it are scheduled once. */
   map: React.MutableRefObject<Map<string, TrackInstrument>>;
-  ensure: (laneId: string, instrument: string) => void;
+  ensure: (laneId: string, instrument: string, mix?: Partial<Mix>) => void;
   dispose: (laneId: string) => void;
 }
 
@@ -53,8 +53,15 @@ export function useInstruments(): Instruments {
    * useMemo on the object too: the object itself is passed to usePlayback, and a
    * fresh one each render would push the same problem one level up.
    */
-  const ensure = useCallback((laneId: string, instrument: string) => {
-    if (!map.current.has(laneId)) map.current.set(laneId, createInstrument(instrument));
+  const ensure = useCallback((laneId: string, instrument: string, mix?: Partial<Mix>) => {
+    const existing = map.current.get(laneId);
+    if (existing) {
+      // A reload may carry a mix a collaborator changed — apply it to the
+      // synth that already exists rather than rebuilding the audio graph.
+      if (mix) existing.setMix(mix);
+      return;
+    }
+    map.current.set(laneId, createInstrument(instrument, mix));
   }, []);
 
   const dispose = useCallback((laneId: string) => {

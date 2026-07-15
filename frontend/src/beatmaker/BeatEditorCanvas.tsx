@@ -33,6 +33,10 @@ interface BeatEditorCanvasProps {
   onOctaveChange: (octave: number) => void;
   onRequestClear: (scope: ClearScope) => void;
   onRequestGenerate: () => void;
+  /** Mid-drag: local state + live audio, no server traffic. */
+  onMixChange: (mix: { volume?: number; pan?: number }) => void;
+  /** Pointer-up: persist the final values — one PATCH per drag. */
+  onMixCommit: (mix: { volume?: number; pan?: number }) => void;
   onRecordHistory: () => void;
   onUpdateNote: (trackId: string, index: number, changes: Partial<Step>) => void;
   onPreview: (trackId: string, pitch: string, velocity: number) => void;
@@ -70,6 +74,8 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
     onOctaveChange,
     onRequestClear,
     onRequestGenerate,
+    onMixChange,
+    onMixCommit,
     onRecordHistory,
     onUpdateNote,
     onPreview,
@@ -127,6 +133,54 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
               <IconButton onClick={() => onOctaveChange(Math.max(0, octave - 1))} title="Octave down">−</IconButton>
               <span className="px-1 font-mono text-xs tabular-nums text-muted">oct {octave}</span>
               <IconButton onClick={() => onOctaveChange(Math.min(7, octave + 1))} title="Octave up">+</IconButton>
+            </ToolGroup>
+          )}
+          {selectedTrack && (
+            <ToolGroup>
+              {/* The lane's MIX (V14) — saved on the song, so it survives
+                  reload and collaborators hear the same balance. Live while
+                  dragging (audio + state); persisted once, on release. */}
+              <label
+                className="flex items-center gap-1.5 px-1 text-xs text-muted"
+                title={`${selectedTrack.name} volume — part of the song, everyone hears it`}
+              >
+                vol
+                <input
+                  type="range"
+                  className="w-16"
+                  min={0}
+                  max={100}
+                  value={Math.round(selectedTrack.volume * 100)}
+                  disabled={!canEdit}
+                  onChange={(event) => onMixChange({ volume: Number(event.target.value) / 100 })}
+                  onPointerUp={(event) =>
+                    onMixCommit({ volume: Number(event.currentTarget.value) / 100 })
+                  }
+                />
+              </label>
+              <label
+                className="flex items-center gap-1.5 px-1 text-xs text-muted"
+                title={`${selectedTrack.name} stereo pan — double-click to re-center`}
+              >
+                pan
+                <input
+                  type="range"
+                  className="w-16"
+                  min={-100}
+                  max={100}
+                  value={Math.round(selectedTrack.pan * 100)}
+                  disabled={!canEdit}
+                  onChange={(event) => onMixChange({ pan: Number(event.target.value) / 100 })}
+                  onPointerUp={(event) =>
+                    onMixCommit({ pan: Number(event.currentTarget.value) / 100 })
+                  }
+                  onDoubleClick={() => {
+                    // The DAW convention: double-click a pan knob = center.
+                    onMixChange({ pan: 0 });
+                    onMixCommit({ pan: 0 });
+                  }}
+                />
+              </label>
             </ToolGroup>
           )}
           {selectedTrack && canEdit && aiEnabled && (

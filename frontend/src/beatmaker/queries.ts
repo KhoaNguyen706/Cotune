@@ -14,7 +14,7 @@ export const SONG_QUERY = `
       collaborators { userId email displayName role }
       beats {
         id name position bars
-        tracks { id name instrument position version pattern { step pitch velocity length } }
+        tracks { id name instrument position volume pan version pattern { step pitch velocity length } }
       }
       clips { id lane startStep lengthSteps type beatId audioId }
       audioFiles { id filename contentType sizeBytes durationSeconds }

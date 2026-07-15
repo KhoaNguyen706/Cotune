@@ -142,8 +142,10 @@ export type ListenTrack = {
   id: Scalars['ID']['output'];
   instrument: Instrument;
   name: Scalars['String']['output'];
+  pan: Scalars['Float']['output'];
   pattern: Array<Step>;
   position: Scalars['Int']['output'];
+  volume: Scalars['Float']['output'];
 };
 
 export type Mutation = {
@@ -157,6 +159,9 @@ export type Mutation = {
   deleteTrack: Scalars['Boolean']['output'];
   disableListenLink: Scalars['Boolean']['output'];
   enableListenLink: Scalars['String']['output'];
+  generateTrackPattern: Array<Step>;
+  grantAiAccess: Scalars['Boolean']['output'];
+  revokeAiAccess: Scalars['Boolean']['output'];
   shareSong: Collaborator;
   unshareSong: Scalars['Boolean']['output'];
   updateClip: Clip;
@@ -213,6 +218,22 @@ export type MutationDisableListenLinkArgs = {
 
 export type MutationEnableListenLinkArgs = {
   songId: Scalars['ID']['input'];
+};
+
+
+export type MutationGenerateTrackPatternArgs = {
+  prompt: Scalars['String']['input'];
+  trackId: Scalars['ID']['input'];
+};
+
+
+export type MutationGrantAiAccessArgs = {
+  email: Scalars['String']['input'];
+};
+
+
+export type MutationRevokeAiAccessArgs = {
+  email: Scalars['String']['input'];
 };
 
 
@@ -321,10 +342,12 @@ export type Track = {
   id: Scalars['ID']['output'];
   instrument: Instrument;
   name: Scalars['String']['output'];
+  pan: Scalars['Float']['output'];
   pattern: Array<Step>;
   position: Scalars['Int']['output'];
   updatedAt: Scalars['DateTime']['output'];
   version: Scalars['Int']['output'];
+  volume: Scalars['Float']['output'];
 };
 
 export type UpdateClipInput = {

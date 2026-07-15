@@ -25,6 +25,11 @@ export function secondsPerStep(bpm: number): number {
 export interface PlayableTrack {
   id: string;
   instrument: string;
+  /** The lane's persisted mix (V14). Optional in the structural contract
+   *  so older shapes still schedule; when present, offline export builds
+   *  its instruments with it — the WAV honors the mix by construction. */
+  volume?: number;
+  pan?: number;
 }
 export interface PlayableBeat {
   id: string;
@@ -227,7 +232,7 @@ export async function renderArrangement(
     const instruments = new Map<string, TrackInstrument>();
     for (const beat of sources.beats) {
       for (const lane of beat.tracks) {
-        instruments.set(lane.id, createInstrument(lane.instrument));
+        instruments.set(lane.id, createInstrument(lane.instrument, { volume: lane.volume, pan: lane.pan }));
       }
     }
     scheduleArrangement({ sources, instruments, buffers });

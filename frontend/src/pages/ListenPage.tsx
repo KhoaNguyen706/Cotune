@@ -26,7 +26,7 @@ const LISTEN_QUERY = `
       title bpm timeSignature
       beats {
         id name position bars
-        tracks { id name instrument position pattern { step pitch velocity length } }
+        tracks { id name instrument position volume pan pattern { step pitch velocity length } }
       }
       clips { id lane startStep lengthSteps type beatId audioId }
       audioFiles { id contentType durationSeconds }
@@ -158,7 +158,10 @@ export function ListenPage() {
       for (const beat of song.beats) {
         for (const lane of beat.tracks) {
           if (!instrumentsRef.current.has(lane.id)) {
-            instrumentsRef.current.set(lane.id, createInstrument(lane.instrument));
+            instrumentsRef.current.set(
+              lane.id,
+              createInstrument(lane.instrument, { volume: lane.volume, pan: lane.pan }),
+            );
           }
         }
       }

@@ -48,6 +48,13 @@ export interface SongData {
   addTrack: (beatId: string, name: string, instrument: string) => Promise<void>;
   removeTrack: (trackId: string) => Promise<void>;
   renameTrack: (trackId: string, name: string) => Promise<void>;
+  /** Local-only mix update — what a slider calls MID-DRAG, possibly dozens
+   *  of times a second. State only; the caller pushes the same values into
+   *  the audio graph, and nothing touches the server. */
+  setTrackMixLocal: (trackId: string, mix: { volume?: number; pan?: number }) => void;
+  /** Persist the mix at gesture end (pointer-up): ONE PATCH per drag, the
+   *  same REST pattern as renames. */
+  saveTrackMix: (trackId: string, mix: { volume?: number; pan?: number }) => Promise<void>;
   patchSong: (patch: { title?: string; bpm?: number; timeSignature?: string }) => Promise<void>;
 }
 
@@ -65,8 +72,8 @@ export function useSongData(params: {
   songId: string | undefined;
   onError: (message: string) => void;
   /** The audio engine owns instrument lifecycles, but lanes appear and vanish
-   *  HERE, so this hook is what tells it. */
-  ensureInstrument: (laneId: string, instrument: string) => void;
+   *  HERE, so this hook is what tells it (mix included — server truth). */
+  ensureInstrument: (laneId: string, instrument: string, mix?: { volume?: number; pan?: number }) => void;
   disposeInstrument: (laneId: string) => void;
   /** Server truth replaces local state, so stale undo targets go with it. */
   resetHistory: () => void;
@@ -110,7 +117,7 @@ export function useSongData(params: {
         for (const lane of beat.tracks) {
           next[lane.id] = lane.pattern;
           trackVersionsRef.current.set(lane.id, lane.version);
-          ensureInstrument(lane.id, lane.instrument);
+          ensureInstrument(lane.id, lane.instrument, { volume: lane.volume, pan: lane.pan });
         }
       }
       setNotes(next);
@@ -277,6 +284,24 @@ export function useSongData(params: {
           }));
         beatsRef.current = patch(beatsRef.current);
         setSong((prev) => (prev ? { ...prev, beats: patch(prev.beats) } : prev));
+      }),
+
+    setTrackMixLocal: (trackId, mix) => {
+      const patch = (beats: Beat[]) =>
+        beats.map((b) => ({
+          ...b,
+          tracks: b.tracks.map((t) => (t.id === trackId ? { ...t, ...mix } : t)),
+        }));
+      beatsRef.current = patch(beatsRef.current);
+      setSong((prev) => (prev ? { ...prev, beats: patch(prev.beats) } : prev));
+    },
+
+    saveTrackMix: (trackId, mix) =>
+      mutate("Failed to save the mix", async () => {
+        // Local state was already updated live during the drag — the
+        // server just needs the final values. Reload is the recovery if
+        // this fails (the error banner says so via mutate).
+        await rest(`/api/tracks/${trackId}`, { method: "PATCH", body: mix });
       }),
 
     patchSong: (patch) =>
