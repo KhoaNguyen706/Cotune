@@ -1,0 +1,34 @@
+# Load-test target override. Use ON TOP of the base compose file:
+#
+#   docker compose -f docker-compose.yml -f load/compose.loadtest.yml up --build
+#
+# Two jobs, both about making a load run safe and possible:
+#
+# 1. PIN THE DATASOURCE TO THE LOCAL POSTGRES CONTAINER — hard values, not
+#    ${VAR:-default}. A .env in this repo routinely points the dockerized app
+#    at Supabase (the production database); a load test that inherited that
+#    would fill prod with thousands of k6 users and songs. With the values
+#    pinned here, .env cannot leak into a load run. Wipe afterwards with
+#    `docker compose down -v` (the -v drops the local volume, nothing else).
+#
+# 2. RAISE THE PER-IP RATE LIMITS. Every VU shares the runner's IP, so the
+#    production limits (auth 10/min) would 429 the setup phase at the 11th
+#    registration. Same trick the integration tests use.
+services:
+  app:
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/cotune
+      SPRING_DATASOURCE_USERNAME: cotune
+      SPRING_DATASOURCE_PASSWORD: cotune
+      COTUNE_SECURITY_RATELIMIT_AUTHPERMINUTE: "1000000"
+      COTUNE_SECURITY_RATELIMIT_GENERALPERMINUTE: "1000000"
+
+  # Same pins for the second instance, so `--profile cluster` load runs
+  # (the Redis-relay path) get the same safety.
+  app-2:
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/cotune
+      SPRING_DATASOURCE_USERNAME: cotune
+      SPRING_DATASOURCE_PASSWORD: cotune
+      COTUNE_SECURITY_RATELIMIT_AUTHPERMINUTE: "1000000"
+      COTUNE_SECURITY_RATELIMIT_GENERALPERMINUTE: "1000000"

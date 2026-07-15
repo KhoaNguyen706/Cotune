@@ -244,6 +244,37 @@ The three remaining feature items, in roadmap order:
 With this, **every feature phase of the roadmap is done** (1, 3.1, 3.2, 3.3, 4).
 Phase 2 (scale) remains gated on traffic, by design.
 
+## July 15 — Loose ends, then the measuring instrument ("continue")
+
+Pushed the four-commit backlog (this file included, `9f3f3c7`), then built the
+only unstarted roadmap item that needs no traffic to be worth doing — **Phase 2
+Step 0, the k6 baseline**:
+
+- `load/baseline.js` — one VU is one musician: register, real `/ws` WebSocket,
+  JWT in the STOMP CONNECT frame (same reasoning as socket.ts), subscribe, one
+  note op every 2.5s through the real `/app` merge path. VUs group into rooms
+  of ROOM_SIZE editors sharing one song, because fan-out is the load. The
+  metric is `note_rtt_ms`: SEND → own echo, i.e. auth + validation + merge +
+  Postgres commit + broadcast, the latency a human perceives; its p95 < 200ms
+  is the threshold, and the VU count that first breaks it is "the number".
+  Echoes are matched by (actorId, type, step, pitch) with per-member pitches,
+  so a room's concurrent ops can't cross-match. `echo_timeouts` / `op_errors`
+  must stay zero for a run to count.
+- `load/compose.loadtest.yml` — the safety file: pins the datasource to the
+  LOCAL postgres container with hard values (a `.env` pointing the dockerized
+  app at Supabase must never leak into a load run) and raises the per-IP rate
+  limits the way the integration tests do (all VUs share the runner's IP; prod
+  limits would 429 setup at the 11th registration).
+- Validated live, twice: smoke (8 VUs — fan-out math exact, 24/24 checks) and
+  a 96-editor / 24-room run: **p95 echo RTT 17ms, max 26ms, zero timeouts,
+  zero refused ops, 141/141 checks**, 17,243 events ≈ 4,387 ops × 4. A laptop
+  doesn't blink at 96 concurrent editors — consistent with the roadmap's read
+  that connections, not CPU, will be the bottleneck. The real knee must come
+  from a staging-dyno run; what's built is the method.
+- Left things as found: k6 users/songs deleted from the local dev DB (it holds
+  real dev data from July 10 — targeted deletes, never `down -v`), stack down,
+  volumes kept.
+
 ---
 
 ## Standing decisions (the ones that keep mattering)

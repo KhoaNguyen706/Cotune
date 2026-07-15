@@ -59,6 +59,8 @@ Scale plans that don't name their bottleneck are decoration.
 concurrent editors (connect socket, subscribe, send note ops at human speed)
 against a staging app. Find the number where p95 latency degrades. Everything
 after this step is driven by that number, not by vibes.
+*(Built: `load/baseline.js` + `load/compose.loadtest.yml` — see `load/README.md`
+for the knee-finding procedure. The number itself still needs a staging run.)*
 
 **Step 1 — vertical, one dyno (cheap, boring, effective).** Basic → Standard-2X
 (1GB) and raise `-Xmx` accordingly in `heroku.yml`. A single decent JVM
