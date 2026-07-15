@@ -15,6 +15,7 @@ import { CELL_H, CELL_W, PITCH_ROWS, STEPS } from "../beatmaker/constants";
 import { BeatBrowserSidebar } from "../beatmaker/BeatBrowserSidebar";
 import { BeatEditorCanvas } from "../beatmaker/BeatEditorCanvas";
 import { ClearNotesDialog, type ClearScope } from "../beatmaker/ClearNotesDialog";
+import { GeneratePatternDialog } from "../beatmaker/GeneratePatternDialog";
 import { BeatMakerTopBar, type EditorMode } from "../beatmaker/BeatMakerTopBar";
 import { useAutoSave } from "../beatmaker/useAutoSave";
 import { useHistory } from "../beatmaker/useHistory";
@@ -82,6 +83,11 @@ export function BeatMakerPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Which clear the user is being asked to confirm, if any. */
   const [clearing, setClearing] = useState<ClearScope | null>(null);
+  /** The AI generate dialog: open?, in flight?, and its own error (shown in
+   *  the dialog, where the fix — rewording the prompt — happens). */
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   // Live mirrors for handlers that are attached once and must not freeze
   // against the render that created them.
@@ -266,6 +272,32 @@ export function BeatMakerPage() {
     void patchSong({ bpm });
   }
 
+  /**
+   * The AI's notes land EXACTLY like a human's: one history snapshot (so
+   * Ctrl+Z restores the old lane), local state replaced, lane marked dirty
+   * — and the existing flush turns the change into per-note deltas that
+   * collaborators watch arrive. The server returned validated notes but
+   * saved nothing; keeping them is this client's ordinary save.
+   */
+  async function generateInto(prompt: string) {
+    if (!selectedId) return;
+    setGenerating(true);
+    setGenerateError(null);
+    try {
+      const generated = await data.generatePattern(selectedId, prompt);
+      recordHistory();
+      data.setNotes((prev) => ({ ...prev, [selectedId]: generated }));
+      data.setDirty((prev) => new Set(prev).add(selectedId));
+      setSelectedNote(null); // old indices don't exist in the new pattern
+      setGenerateOpen(false);
+    } catch (e) {
+      // Stays in the dialog: the fix is rewording the prompt, right there.
+      setGenerateError(e instanceof Error ? e.message : "Generation failed — try again.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   function toggleIn(set: Set<string>, id: string): Set<string> {
     const next = new Set(set);
     if (next.has(id)) next.delete(id);
@@ -419,6 +451,19 @@ export function BeatMakerPage() {
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
 
+      {generateOpen && selected && (
+        <GeneratePatternDialog
+          track={selected}
+          busy={generating}
+          error={generateError}
+          onCancel={() => {
+            setGenerateOpen(false);
+            setGenerateError(null);
+          }}
+          onGenerate={(prompt) => void generateInto(prompt)}
+        />
+      )}
+
       {/* A confirm, even though Ctrl+Z would undo it. Undo protects YOU; it
           does not protect the collaborator who is watching notes vanish out of
           a beat they were working in, and who has no idea it was deliberate.
@@ -534,6 +579,7 @@ export function BeatMakerPage() {
             flashing={flashing}
             live={live}
             canEdit={canEdit}
+            aiEnabled={user?.aiAccess ?? false}
             currentStep={currentStep}
             octave={octave}
             beatSteps={beatSteps}
@@ -546,6 +592,7 @@ export function BeatMakerPage() {
               if (selected) setOctaves((current) => ({ ...current, [selected.id]: nextOctave }));
             }}
             onRequestClear={setClearing}
+            onRequestGenerate={() => setGenerateOpen(true)}
             onRecordHistory={recordHistory}
             onUpdateNote={updateNote}
             onPreview={preview}

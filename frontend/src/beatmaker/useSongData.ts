@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import * as Tone from "tone";
 import { ApiError, gql, rest } from "../api/client";
 import type { AudioFile, Beat, Clip, Song, Step } from "../types";
-import { ADD_BEAT, ADD_TRACK, DELETE_BEAT, DELETE_TRACK, SAVE_PATTERN, SONG_QUERY } from "./queries";
+import { ADD_BEAT, ADD_TRACK, DELETE_BEAT, DELETE_TRACK, GENERATE_PATTERN, SAVE_PATTERN, SONG_QUERY } from "./queries";
 
 export interface SongData {
   song: Song | null;
@@ -33,6 +33,13 @@ export interface SongData {
   load: () => Promise<void>;
   /** The whole-pattern HTTP save. The fallback path — see useAutoSave. */
   saveViaHttp: (laneIds: Set<string>) => Promise<void>;
+
+  /** Ask the AI for notes for one lane. Returns server-VALIDATED notes and
+   *  saves NOTHING — the caller lands them as ordinary local edits, so
+   *  they're auditionable and undoable before they ever persist. THROWS on
+   *  failure (unlike the mutate() family): the generate dialog needs the
+   *  error to stay open and show it. */
+  generatePattern: (trackId: string, prompt: string) => Promise<Step[]>;
 
   /** Resolves to the new beat's id, so the caller can select it. */
   addBeat: () => Promise<string | null>;
@@ -198,6 +205,14 @@ export function useSongData(params: {
     serverNotesRef,
     load,
     saveViaHttp,
+
+    generatePattern: async (trackId, prompt) => {
+      const data = await gql<{ generateTrackPattern: Step[] }>(GENERATE_PATTERN, {
+        trackId,
+        prompt,
+      });
+      return data.generateTrackPattern;
+    },
 
     // No name field: "+" in the beat browser creates "Beat N" immediately, and
     // the name is editable in place (double-click) like every other name in the

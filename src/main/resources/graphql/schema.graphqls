@@ -84,6 +84,17 @@ type Mutation {
     grantAiAccess(email: String!): Boolean!
     revokeAiAccess(email: String!): Boolean!
 
+    # ---- AI pattern generation (editors on the AI invite list) ----
+    #
+    # "A boom-bap kick pattern" -> validated notes for ONE lane. Returns the
+    # notes WITHOUT saving anything: the client lands them as ordinary local
+    # edits — auditionable, undoable — and the existing save/delta machinery
+    # persists and broadcasts them exactly like notes a human drew. Every
+    # note is validated server-side through the same rules as StepInput; the
+    # model's output is never trusted. Gated like @ai (admin-granted
+    # aiAccess) plus canEdit, since these notes are headed for the song.
+    generateTrackPattern(trackId: ID!, prompt: String!): [Step!]!
+
     # ---- public listen link (owner only) ----
     #
     # Enabling returns the token (idempotent — an existing link is returned,

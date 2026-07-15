@@ -19,6 +19,9 @@ interface BeatEditorCanvasProps {
   flashing: Set<string>;
   live: boolean;
   canEdit: boolean;
+  /** Whether THIS account may use the AI (admin-granted, mirrors the @ai
+   *  chat hint) — controls only what's advertised; the server enforces. */
+  aiEnabled: boolean;
   currentStep: number;
   octave: number;
   beatSteps: number;
@@ -29,6 +32,7 @@ interface BeatEditorCanvasProps {
   onPatchBeat: (beatId: string, patch: { bars?: number }) => void;
   onOctaveChange: (octave: number) => void;
   onRequestClear: (scope: ClearScope) => void;
+  onRequestGenerate: () => void;
   onRecordHistory: () => void;
   onUpdateNote: (trackId: string, index: number, changes: Partial<Step>) => void;
   onPreview: (trackId: string, pitch: string, velocity: number) => void;
@@ -54,6 +58,7 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
     flashing,
     live,
     canEdit,
+    aiEnabled,
     currentStep,
     octave,
     beatSteps,
@@ -64,6 +69,7 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
     onPatchBeat,
     onOctaveChange,
     onRequestClear,
+    onRequestGenerate,
     onRecordHistory,
     onUpdateNote,
     onPreview,
@@ -122,6 +128,14 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
               <span className="px-1 font-mono text-xs tabular-nums text-muted">oct {octave}</span>
               <IconButton onClick={() => onOctaveChange(Math.min(7, octave + 1))} title="Octave up">+</IconButton>
             </ToolGroup>
+          )}
+          {selectedTrack && canEdit && aiEnabled && (
+            <IconButton
+              title={`Describe a pattern and the AI writes it into ${selectedTrack.name} — undoable like any edit`}
+              onClick={onRequestGenerate}
+            >
+              ✨ Generate
+            </IconButton>
           )}
           {selectedTrack && canEdit && (
             <ToolGroup>

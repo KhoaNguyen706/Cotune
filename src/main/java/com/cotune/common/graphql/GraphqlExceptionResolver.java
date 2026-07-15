@@ -1,5 +1,6 @@
 package com.cotune.common.graphql;
 
+import com.cotune.ai.PatternGenerator;
 import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.common.exception.StaleAccountException;
 import com.cotune.common.exception.StaleVersionException;
@@ -64,6 +65,17 @@ public class GraphqlExceptionResolver extends DataFetcherExceptionResolverAdapte
             return GraphqlErrorBuilder.newError(env)
                     .errorType(CotuneErrorType.CONFLICT)
                     .message(stale.getMessage())
+                    .build();
+        }
+
+        // The AI feature saying "not now": keyless deploy, provider rate
+        // limit, provider outage. The exception's message is written to be
+        // shown to the person, so it passes through — unlike the generic
+        // INTERNAL_ERROR fallthrough below, which would swallow it.
+        if (ex instanceof PatternGenerator.GenerationUnavailableException unavailable) {
+            return GraphqlErrorBuilder.newError(env)
+                    .errorType(CotuneErrorType.UNAVAILABLE)
+                    .message(unavailable.getMessage())
                     .build();
         }
 

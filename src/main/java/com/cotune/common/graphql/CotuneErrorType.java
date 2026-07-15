@@ -11,5 +11,10 @@ import graphql.ErrorClassification;
 public enum CotuneErrorType implements ErrorClassification {
 
     /** Optimistic-concurrency failure: reload and re-apply (HTTP 409's twin). */
-    CONFLICT
+    CONFLICT,
+
+    /** A dependency the server needs is missing or refusing (HTTP 503's
+     *  twin) — not the caller's fault, not a bug: retry later or ask the
+     *  operator. Today: the AI feature keyless, rate-limited, or erroring. */
+    UNAVAILABLE
 }

@@ -42,6 +42,12 @@ export const DELETE_TRACK = `
   mutation DeleteTrack($id: ID!) { deleteTrack(id: $id) }
 `;
 
+export const GENERATE_PATTERN = `
+  mutation GeneratePattern($trackId: ID!, $prompt: String!) {
+    generateTrackPattern(trackId: $trackId, prompt: $prompt) { step pitch velocity length }
+  }
+`;
+
 export const SAVE_PATTERN = `
   mutation SavePattern($id: ID!, $pattern: [StepInput!]!, $expectedVersion: Int) {
     updateTrackPattern(id: $id, pattern: $pattern, expectedVersion: $expectedVersion) { id version }
