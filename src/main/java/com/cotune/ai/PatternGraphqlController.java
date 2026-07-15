@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * The generation mutation, and every gate in front of it. The gates
  * deliberately mirror ChatAiBridge — same question ("who may spend the
- * app's Anthropic tokens?"), same answer, and canEdit on top because
+ * app's AI tokens?"), same answer, and canEdit on top because
  * unlike advice, generated notes are headed for the song:
  *
  *   1. canEdit on the track (@trackAccess — VIEWERs and strangers out)

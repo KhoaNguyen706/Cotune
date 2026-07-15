@@ -275,6 +275,40 @@ Step 0, the k6 baseline**:
   real dev data from July 10 — targeted deletes, never `down -v`), stack down,
   volumes kept.
 
+## July 15 — AI provider switch: Anthropic → Gemini (same day, user request)
+
+**Asked:** audit the Claude API integration (came back clean, two advisory
+notes: the caching comments overstated reality, and no HTTP timeout was set);
+how to get an API key; is a key different from a Pro subscription; then the
+decision that followed from the economics: "change from anthropic provider to
+gemini" — Gemini flash has a free tier.
+
+**Shipped:** the provider swap, contained by design because the AI seam was
+always two classes behind `enabled()` gates:
+
+- New `GeminiClient` — plain REST over Spring's `RestClient` (the
+  SupabaseAudioStorage house pattern, explicit 5s/60s timeouts — fixing the
+  timeout gap the audit found) instead of Google's SDK: two call shapes
+  (`generateText`, `generateJson`) don't earn a dependency. JSON shape is
+  enforced by Gemini's `responseSchema` constrained decoding; typed failures
+  (rate-limited / unusable / API error) let callers pick user-safe words.
+- `AiAdvisor` and `PatternGenerator` keep their public seams (`advise()`,
+  `generate()`, `enabled()`, exception types) — ChatAiBridge, the GraphQL
+  controller, and every test compile untouched. The pattern schema the
+  Anthropic SDK derived from records via reflection is now an explicit
+  `PATTERN_SCHEMA` constant.
+- Config: `GEMINI_API_KEY`/`GEMINI_MODEL` (default `gemini-2.5-flash` — free
+  tier, thinking on by default) across application.yml and both compose
+  services; `anthropic-java` removed from the pom entirely.
+- Verified: suite 153/153 green; live probe against a host-run backend with
+  the user's real key — `generateTrackPattern("boom bap...")` returned kicks
+  on 0/6/10, snares on 4/12, all through the Step-constructor validation.
+  Probe data swept from the local DB afterwards.
+
+**Note:** the user's key was pasted in chat — flagged for rotation. Prod
+enablement is now `heroku config:set GEMINI_API_KEY=... -a cotune` (and a
+deploy — prod still runs the Anthropic build until then).
+
 ---
 
 ## Standing decisions (the ones that keep mattering)

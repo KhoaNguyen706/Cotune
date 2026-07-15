@@ -117,7 +117,7 @@ class ChatAiBridgeTest {
         bridge.maybeHandle(songId, message(memberId, "@ai make it slap"));
 
         // ...but not on the AI invitation list: being in the chat and being
-        // allowed to spend Anthropic tokens are different powers.
+        // allowed to spend AI tokens are different powers.
         verify(chatService).post(eq(songId), isNull(), eq(ChatAiBridge.AI_NAME),
                 contains("invite-only"));
         verifyNoInteractions(advisor, songDescriber);

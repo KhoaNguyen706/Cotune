@@ -114,20 +114,21 @@ cotune:
       service-key: ${SUPABASE_SERVICE_KEY:}
       bucket: ${SUPABASE_BUCKET:cotune-audio}
   ai:
-    # The @ai chat advisor (server-side Claude call — see AiAdvisor). An EMPTY
-    # key means DISABLED, and that is the correct dev default: the app must
-    # boot, test and demo with no Anthropic account, and an @ai mention then
-    # gets a polite "not configured" chat reply instead of an error. Set the
-    # ANTHROPIC_API_KEY config var in prod to switch it on — no code change,
+    # The @ai chat advisor + pattern generator (server-side Gemini call —
+    # see GeminiClient; switched from Anthropic July 15). An EMPTY key means
+    # DISABLED, and that is the correct dev default: the app must boot, test
+    # and demo with no Google account, and an @ai mention then gets a polite
+    # "not configured" chat reply instead of an error. Set the
+    # GEMINI_API_KEY config var in prod to switch it on — no code change,
     # no profile change.
-    api-key: ${ANTHROPIC_API_KEY:}
-    # Anthropic's CHEAPEST current model (chosen deliberately, July 14):
-    # musical advice over a 16-step text grid is squarely inside Haiku's
-    # range, and at $1/$5 per MTok a question costs well under a tenth of a
-    # cent. Overridable per deploy — set ANTHROPIC_MODEL=claude-opus-4-8 to
-    # trade pennies for the strongest answers; AiAdvisor's request shape is
-    # valid on every current model, so the swap is config-only.
-    model: ${ANTHROPIC_MODEL:claude-haiku-4-5}
+    api-key: ${GEMINI_API_KEY:}
+    # Gemini's fast workhorse, and the reason for the provider switch: flash
+    # has a FREE tier, and musical advice over a 16-step text grid is
+    # squarely inside its range. Overridable per deploy — set
+    # GEMINI_MODEL=gemini-2.5-pro for the strongest answers; the request
+    # shape is plain generateContent, valid on every current Gemini model,
+    # so the swap is config-only.
+    model: ${GEMINI_MODEL:gemini-2.5-flash}
 
   security:
     # Accounts that are ALWAYS admins — applied at startup (AdminBootstrap)

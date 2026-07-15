@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * generateTrackPattern's gates over real HTTP — deliberately WITHOUT an
- * Anthropic key, like CI and every fresh deploy. What can be proven
+ * Gemini key, like CI and every fresh deploy. What can be proven
  * keylessly is exactly what must never depend on the key: who is refused
  * (strangers, viewers, the uninvited), what malformed input gets, that a
  * keyless server answers with a configured-operator message instead of a
@@ -99,7 +99,7 @@ class PatternGenerationIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void keylessServerSaysSoAndTheCooldownStillHolds() {
-        // An invited account on a server with no ANTHROPIC_API_KEY — the
+        // An invited account on a server with no GEMINI_API_KEY — the
         // exact state of CI and a fresh deploy.
         AuthPayload admin = registerAdmin();
         AuthPayload owner = registerFreshUser();

@@ -209,7 +209,7 @@ class ChatStompIntegrationTest extends AbstractIntegrationTest {
         // never waits on the AI machinery.
         assertThat(owner.nextMessage().body()).startsWith("@ai");
 
-        // Tests run with no ANTHROPIC_API_KEY, so the advisor's reply is its
+        // Tests run with no GEMINI_API_KEY, so the advisor's reply is its
         // "not configured" line — which is exactly what this test wants to
         // pin down: the @ai trigger, the async answer path, the null-author
         // AI identity and the broadcast all work WITHOUT the external

@@ -33,8 +33,8 @@ import java.util.concurrent.Executors;
  * shape a deleted human account already has, so every consumer (frontend
  * colors, history query, relays) handles it because it already had to.
  *
- * Asynchronous by construction: Claude takes seconds, and the caller is a
- * STOMP handler thread that other messages are waiting on. The user's own
+ * Asynchronous by construction: the model takes seconds, and the caller is
+ * a STOMP handler thread that other messages are waiting on. The user's own
  * @ai line echoes back instantly like any message; the answer lands when
  * it lands, exactly like a human collaborator typing.
  */
@@ -109,7 +109,7 @@ public class ChatAiBridge {
         }
 
         // Gate 2 — invited to the AI itself, BY AN ADMIN (V13): being in a
-        // song's chat and being allowed to spend the app's Anthropic tokens
+        // song's chat and being allowed to spend the app's AI tokens
         // are different powers, and the second is a per-account grant
         // (grantAiAccess), not a side effect of the first. Admins are
         // always in — the people who hold the invitation list don't need
