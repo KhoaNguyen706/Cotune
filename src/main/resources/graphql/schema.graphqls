@@ -22,6 +22,18 @@ type Query {
     # mutation here, the same way note edits don't.
     chatMessages(songId: ID!): [ChatMessage!]!
 
+    # ---- version history (V15) ----
+    #
+    # The song's append-only edit log, newest first: who did what to which
+    # lane, when. canView — looking at history is looking at the song.
+    songHistory(songId: ID!, limit: Int! = 50): [SongEvent!]!
+    # One lane's grid as of (and including) an event — REPLAY, not storage.
+    # Restore is deliberately NOT a mutation: the client lands these notes
+    # as an ordinary undoable local edit (exactly like AI generation), and
+    # KEEPING them is a normal save — live-broadcast, history-recorded,
+    # permission-checked where saves always were.
+    trackPatternAt(trackId: ID!, eventId: ID!): [Step!]!
+
     # THE ONE PUBLIC OPERATION in this schema: no login, the token is the
     # authorization (an unguessable capability the owner can revoke). It
     # returns Listen* types — a deliberately separate, playback-shaped
@@ -304,6 +316,30 @@ input AddTrackInput {
 input UpdateTrackInput {
     name: String!
     instrument: Instrument!
+}
+
+# ---- version history ---------------------------------------------------------
+
+# One line of a song's edit log. Names are resolved server-side and their
+# ABSENCE is information: a null trackName means the lane was deleted (and
+# the event is not restorable into it); a null actorName means nobody — the
+# baseline snapshot recorded when history began (V15's backfill).
+type SongEvent {
+    id: ID!
+    trackId: ID!
+    trackName: String
+    actorName: String
+    type: SongEventType!
+    # A human sentence ("added C2 at step 4") built server-side, so every
+    # client tells the story the same way.
+    summary: String!
+    createdAt: DateTime!
+}
+
+enum SongEventType {
+    NOTE_ADD
+    NOTE_REMOVE
+    PATTERN_SET
 }
 
 # ---- chat ------------------------------------------------------------------

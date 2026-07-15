@@ -42,6 +42,20 @@ export const DELETE_TRACK = `
   mutation DeleteTrack($id: ID!) { deleteTrack(id: $id) }
 `;
 
+export const SONG_HISTORY = `
+  query SongHistory($songId: ID!) {
+    songHistory(songId: $songId) {
+      id trackId trackName actorName type summary createdAt
+    }
+  }
+`;
+
+export const TRACK_PATTERN_AT = `
+  query TrackPatternAt($trackId: ID!, $eventId: ID!) {
+    trackPatternAt(trackId: $trackId, eventId: $eventId) { step pitch velocity length }
+  }
+`;
+
 export const GENERATE_PATTERN = `
   mutation GeneratePattern($trackId: ID!, $prompt: String!) {
     generateTrackPattern(trackId: $trackId, prompt: $prompt) { step pitch velocity length }

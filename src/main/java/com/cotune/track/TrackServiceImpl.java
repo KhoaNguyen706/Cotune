@@ -3,6 +3,7 @@ package com.cotune.track;
 import com.cotune.beat.Beat;
 import com.cotune.beat.BeatRepository;
 import com.cotune.common.exception.ResourceNotFoundException;
+import com.cotune.history.SongHistoryService;
 import com.cotune.common.exception.StaleVersionException;
 import com.cotune.track.dto.AddTrackInput;
 import com.cotune.track.dto.NoteApplied;
@@ -34,6 +35,10 @@ public class TrackServiceImpl implements TrackService {
     // reaching into another feature's tables with raw SQL.
     private final BeatRepository beatRepository;
     private final TrackMapper trackMapper;
+    // Cross-feature dependency on the history SERVICE (not its table):
+    // every pattern write reports itself, inside its own transaction, so
+    // the log and the lane commit or roll back together.
+    private final SongHistoryService songHistoryService;
 
     @Override
     public TrackDto add(AddTrackInput input) {
@@ -96,7 +101,7 @@ public class TrackServiceImpl implements TrackService {
     }
 
     @Override
-    public NoteApplied applyNote(UUID songId, UUID trackId, NoteOp op) {
+    public NoteApplied applyNote(UUID songId, UUID trackId, NoteOp op, UUID actorId) {
         // AUTHORIZATION DEPENDS ON THIS LINE. The caller proved they may edit
         // `songId` (@PreAuthorize on the message handler), but trackId came
         // from the message body — an attacker with an editor seat on their own
@@ -122,6 +127,15 @@ public class TrackServiceImpl implements TrackService {
         // makes ADD an upsert and makes both ops idempotent: re-applying either
         // one leaves the lane exactly as it was, so a client that retries an op
         // it wasn't sure landed cannot corrupt anything.
+        //
+        // The note at that key — as it actually was — is captured first,
+        // because history (V15) needs it: a remove op only identifies
+        // step+pitch, but "removed C2 (soft, 2 steps)" is what the log
+        // should say, and only the server saw the note before it died.
+        Step existing = track.getPattern().stream()
+                .filter(note -> note.step() == op.step() && note.pitch().equals(op.pitch()))
+                .findFirst()
+                .orElse(null);
         List<Step> merged = new ArrayList<>(track.getPattern());
         merged.removeIf(note -> note.step() == op.step() && note.pitch().equals(op.pitch()));
         if (op.type() == NoteOpType.ADD) {
@@ -130,7 +144,15 @@ public class TrackServiceImpl implements TrackService {
             // A hostile op cannot write a note the REST/GraphQL path would
             // have rejected — the domain rules sit BELOW the transport, so
             // adding a new transport cannot bypass them.
-            merged.add(new Step(op.step(), op.pitch(), op.velocity(), op.length()));
+            Step added = new Step(op.step(), op.pitch(), op.velocity(), op.length());
+            merged.add(added);
+            // Idempotent retries stay invisible: re-adding the identical
+            // note changes nothing, so history says nothing.
+            if (!added.equals(existing)) {
+                songHistoryService.recordNoteAdd(songId, trackId, actorId, added);
+            }
+        } else if (existing != null) {
+            songHistoryService.recordNoteRemove(songId, trackId, actorId, existing);
         }
         track.replacePattern(merged);
 
@@ -141,7 +163,7 @@ public class TrackServiceImpl implements TrackService {
     }
 
     @Override
-    public TrackDto updatePattern(UUID id, List<StepInput> pattern, Long expectedVersion) {
+    public TrackDto updatePattern(UUID id, List<StepInput> pattern, Long expectedVersion, UUID actorId) {
         Track track = loadTrack(id);
         StaleVersionException.check("Track pattern", expectedVersion, track.getVersion());
 
@@ -152,6 +174,13 @@ public class TrackServiceImpl implements TrackService {
                 .map(input -> new Step(input.step(), input.pitch(), input.velocity(), input.length()))
                 .toList();
         track.replacePattern(steps);
+
+        // History (V15): one PATTERN_SET per whole-grid save, in the same
+        // transaction — the log and the lane can't disagree. Recorded
+        // AFTER replacePattern so a rejected grid never enters history.
+        UUID songId = trackRepository.findSongIdById(id)
+                .orElseThrow(() -> ResourceNotFoundException.track(id));
+        songHistoryService.recordPatternSet(songId, id, actorId, steps);
 
         // Managed entity + dirty checking persists the JSONB column; flush
         // now so the returned DTO carries the bumped version/updatedAt

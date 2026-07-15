@@ -62,8 +62,10 @@ public class RealtimeController {
                      @Payload @Valid NoteOp op,
                      Authentication authentication) {
 
-        NoteApplied applied = trackService.applyNote(songId, op.trackId(), op);
         UUID actor = UUID.fromString(authentication.getName());
+        // The actor rides into the service so history (V15) can attribute
+        // the delta — the same identity the broadcast already stamps.
+        NoteApplied applied = trackService.applyNote(songId, op.trackId(), op, actor);
 
         // Broadcast to EVERYONE on the song, the sender included. Echoing to
         // the sender is deliberate: it is their acknowledgement that the op

@@ -11,6 +11,7 @@ import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.BatchMapping;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.annotation.Validated;
 
@@ -60,8 +61,12 @@ public class TrackGraphqlController {
     @PreAuthorize("isAuthenticated() and @trackAccess.canEdit(#id, authentication)")
     public TrackDto updateTrackPattern(@Argument UUID id,
                                        @Argument @Valid List<StepInput> pattern,
-                                       @Argument Long expectedVersion) {
-        return trackService.updatePattern(id, pattern, expectedVersion);
+                                       @Argument Long expectedVersion,
+                                       Authentication authentication) {
+        // Identity from the TOKEN for the history log — same rule as the
+        // socket path: "who did this" is never client-supplied data.
+        return trackService.updatePattern(id, pattern, expectedVersion,
+                UUID.fromString(authentication.getName()));
     }
 
     /**

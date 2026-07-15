@@ -276,7 +276,9 @@ export type Query = {
   chatMessages: Array<ChatMessage>;
   listen?: Maybe<ListenSong>;
   song?: Maybe<Song>;
+  songHistory: Array<SongEvent>;
   songs: Array<Song>;
+  trackPatternAt: Array<Step>;
 };
 
 
@@ -292,6 +294,18 @@ export type QueryListenArgs = {
 
 export type QuerySongArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QuerySongHistoryArgs = {
+  limit?: Scalars['Int']['input'];
+  songId: Scalars['ID']['input'];
+};
+
+
+export type QueryTrackPatternAtArgs = {
+  eventId: Scalars['ID']['input'];
+  trackId: Scalars['ID']['input'];
 };
 
 export type ShareSongInput = {
@@ -316,6 +330,21 @@ export type Song = {
   updatedAt: Scalars['DateTime']['output'];
   version: Scalars['Int']['output'];
 };
+
+export type SongEvent = {
+  actorName?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  summary: Scalars['String']['output'];
+  trackId: Scalars['ID']['output'];
+  trackName?: Maybe<Scalars['String']['output']>;
+  type: SongEventType;
+};
+
+export type SongEventType =
+  | 'NOTE_ADD'
+  | 'NOTE_REMOVE'
+  | 'PATTERN_SET';
 
 export type SongRole =
   | 'EDITOR'

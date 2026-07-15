@@ -40,15 +40,22 @@ class TrackServiceImplTest {
     @Mock
     private BeatRepository beatRepository;
 
+    // Mocked (unlike the mapper): recording history is I/O to another
+    // feature — these tests assert the track logic, not the log.
+    @Mock
+    private com.cotune.history.SongHistoryService songHistoryService;
+
     private TrackServiceImpl service;
 
     private final UUID beatId = UUID.randomUUID();
+    private final UUID actor = UUID.randomUUID();
     private final Beat beat =
             new Beat(new Song("Test Song", 120, "4/4", UUID.randomUUID()), "Beat 1", 0);
 
     @BeforeEach
     void setUp() {
-        service = new TrackServiceImpl(trackRepository, beatRepository, new TrackMapper());
+        service = new TrackServiceImpl(
+                trackRepository, beatRepository, new TrackMapper(), songHistoryService);
     }
 
     @Test
@@ -96,10 +103,12 @@ class TrackServiceImplTest {
         UUID trackId = UUID.randomUUID();
         Track track = new Track(beat, "Kick", Instrument.DRUMS, 0);
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
+        when(trackRepository.findSongIdById(trackId))
+                .thenReturn(java.util.Optional.of(UUID.randomUUID()));
 
         TrackDto dto = service.updatePattern(trackId, java.util.List.of(
                 new com.cotune.track.dto.StepInput(0, "C1", 0.9, 1),
-                new com.cotune.track.dto.StepInput(8, "C1", 0.9, 4)), null);
+                new com.cotune.track.dto.StepInput(8, "C1", 0.9, 4)), null, actor);
 
         assertThat(dto.pattern()).hasSize(2);
         assertThat(dto.pattern().getFirst().pitch()).isEqualTo("C1");
@@ -108,13 +117,13 @@ class TrackServiceImplTest {
         // Bad pitch is stopped by the Step value object itself — the domain
         // guarantee holds even if boundary validation were bypassed.
         assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
-                new com.cotune.track.dto.StepInput(0, "H4", 0.9, 1)), null))
+                new com.cotune.track.dto.StepInput(0, "H4", 0.9, 1)), null, actor))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("pitch");
 
         // A note may not overrun the loop: step 14 + length 4 ends at 18.
         assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
-                new com.cotune.track.dto.StepInput(14, "C1", 0.9, 4)), null))
+                new com.cotune.track.dto.StepInput(14, "C1", 0.9, 4)), null, actor))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("length");
     }
@@ -125,13 +134,15 @@ class TrackServiceImplTest {
         // A fresh entity's @Version is 0 (unpersisted default).
         Track track = new Track(beat, "Kick", Instrument.DRUMS, 0);
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
+        when(trackRepository.findSongIdById(trackId))
+                .thenReturn(java.util.Optional.of(UUID.randomUUID()));
         var pattern = java.util.List.of(new com.cotune.track.dto.StepInput(0, "C1", 0.9, 1));
 
         // Matching version → saves.
-        assertThat(service.updatePattern(trackId, pattern, 0L).pattern()).hasSize(1);
+        assertThat(service.updatePattern(trackId, pattern, 0L, actor).pattern()).hasSize(1);
 
         // Stale version → conflict, and the pattern was NOT replaced.
-        assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(), 7L))
+        assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(), 7L, actor))
                 .isInstanceOf(StaleVersionException.class)
                 .hasMessageContaining("version");
         assertThat(track.getPattern()).hasSize(1);
@@ -145,7 +156,7 @@ class TrackServiceImplTest {
 
         assertThatThrownBy(() -> service.updatePattern(trackId, java.util.List.of(
                 new com.cotune.track.dto.StepInput(3, "C2", 0.9, 1),
-                new com.cotune.track.dto.StepInput(3, "C2", 0.5, 2)), null))
+                new com.cotune.track.dto.StepInput(3, "C2", 0.5, 2)), null, actor))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("duplicate");
     }

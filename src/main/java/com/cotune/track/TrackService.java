@@ -27,8 +27,12 @@ public interface TrackService {
      * unit). expectedVersion, when present, must match the row's current
      * @Version or the save is rejected as a conflict — two editors can't
      * silently overwrite each other's grids.
+     *
+     * actorId is who is doing it — history (V15) records every pattern
+     * write with its author, and "who" comes from the caller's verified
+     * token, never from a payload.
      */
-    TrackDto updatePattern(UUID id, List<StepInput> pattern, Long expectedVersion);
+    TrackDto updatePattern(UUID id, List<StepInput> pattern, Long expectedVersion, UUID actorId);
 
     /**
      * Apply ONE note delta to a lane and report the lane's new version — the
@@ -46,8 +50,10 @@ public interface TrackService {
      * (canEdit on that song), so the implementation must verify the track
      * actually lives in it. Skip that and anyone who can edit any one song can
      * edit every lane in the database by naming a foreign trackId.
+     *
+     * actorId: see updatePattern — history records deltas too.
      */
-    NoteApplied applyNote(UUID songId, UUID trackId, NoteOp op);
+    NoteApplied applyNote(UUID songId, UUID trackId, NoteOp op, UUID actorId);
 
     void delete(UUID id);
 

@@ -1,8 +1,18 @@
 import { useCallback, useRef, useState } from "react";
 import * as Tone from "tone";
 import { ApiError, gql, rest } from "../api/client";
-import type { AudioFile, Beat, Clip, Song, Step } from "../types";
-import { ADD_BEAT, ADD_TRACK, DELETE_BEAT, DELETE_TRACK, GENERATE_PATTERN, SAVE_PATTERN, SONG_QUERY } from "./queries";
+import type { AudioFile, Beat, Clip, Song, SongEvent, Step } from "../types";
+import {
+  ADD_BEAT,
+  ADD_TRACK,
+  DELETE_BEAT,
+  DELETE_TRACK,
+  GENERATE_PATTERN,
+  SAVE_PATTERN,
+  SONG_HISTORY,
+  SONG_QUERY,
+  TRACK_PATTERN_AT,
+} from "./queries";
 
 export interface SongData {
   song: Song | null;
@@ -40,6 +50,13 @@ export interface SongData {
    *  failure (unlike the mutate() family): the generate dialog needs the
    *  error to stay open and show it. */
   generatePattern: (trackId: string, prompt: string) => Promise<Step[]>;
+
+  /** The song's edit log, newest first. THROWS — the history panel shows
+   *  its own loading/error states. */
+  fetchHistory: () => Promise<SongEvent[]>;
+  /** One lane's grid as of an event — replayed server-side, saved nowhere.
+   *  The caller lands it exactly like a generated pattern. */
+  patternAt: (trackId: string, eventId: string) => Promise<Step[]>;
 
   /** Resolves to the new beat's id, so the caller can select it. */
   addBeat: () => Promise<string | null>;
@@ -219,6 +236,16 @@ export function useSongData(params: {
         prompt,
       });
       return data.generateTrackPattern;
+    },
+
+    fetchHistory: async () => {
+      const data = await gql<{ songHistory: SongEvent[] }>(SONG_HISTORY, { songId });
+      return data.songHistory;
+    },
+
+    patternAt: async (trackId, eventId) => {
+      const data = await gql<{ trackPatternAt: Step[] }>(TRACK_PATTERN_AT, { trackId, eventId });
+      return data.trackPatternAt;
     },
 
     // No name field: "+" in the beat browser creates "Beat N" immediately, and

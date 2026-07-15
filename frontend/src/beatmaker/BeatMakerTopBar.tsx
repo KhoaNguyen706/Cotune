@@ -38,6 +38,7 @@ interface BeatMakerTopBarProps {
   onSave: () => void;
   onExport: (format: "wav" | "mp3") => void;
   onToggleChat: () => void;
+  onOpenHistory: () => void;
   onOpenSettings: () => void;
 }
 
@@ -83,6 +84,7 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
     onSave,
     onExport,
     onToggleChat,
+    onOpenHistory,
     onOpenSettings,
   } = props;
 
@@ -249,6 +251,9 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
               </span>
             )}
           </span>
+          <IconButton onClick={onOpenHistory} title="History — who changed what, and restore a lane to any moment">
+            🕘
+          </IconButton>
           <IconButton onClick={onOpenSettings} title="Settings">⚙</IconButton>
         </>
       }

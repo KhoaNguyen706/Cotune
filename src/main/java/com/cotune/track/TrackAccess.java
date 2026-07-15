@@ -22,4 +22,11 @@ public class TrackAccess {
                 .map(songId -> songAccess.canEdit(songId, authentication))
                 .orElse(true);
     }
+
+    @Transactional(readOnly = true)
+    public boolean canView(UUID trackId, Authentication authentication) {
+        return trackRepository.findSongIdById(trackId)
+                .map(songId -> songAccess.canView(songId, authentication))
+                .orElse(true);
+    }
 }

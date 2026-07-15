@@ -39,16 +39,28 @@ class TrackNoteOpTest {
     private TrackRepository trackRepository;
     @Mock
     private BeatRepository beatRepository;
+    // Mocked: history is another feature's I/O; these tests assert the merge.
+    @Mock
+    private com.cotune.history.SongHistoryService songHistoryService;
 
     private TrackServiceImpl service;
 
     private final UUID songId = UUID.randomUUID();
     private final UUID trackId = UUID.randomUUID();
+    private final UUID actor = UUID.randomUUID();
     private Track track;
+
+    /** Every op in this file is "this actor edits this song" — the helper
+     *  keeps the merge scenarios readable now that applyNote also carries
+     *  the actor for history attribution. */
+    private NoteApplied apply(NoteOp op) {
+        return service.applyNote(songId, op.trackId(), op, actor);
+    }
 
     @BeforeEach
     void setUp() {
-        service = new TrackServiceImpl(trackRepository, beatRepository, new TrackMapper());
+        service = new TrackServiceImpl(
+                trackRepository, beatRepository, new TrackMapper(), songHistoryService);
 
         Song song = new Song("Test Song", 120, "4/4", UUID.randomUUID());
         ReflectionTestUtils.setField(song, "id", songId);
@@ -72,8 +84,8 @@ class TrackNoteOpTest {
     @Test
     void twoEditorsAddingDifferentNotesToOneLaneBothSurvive() {
         // Alice adds a kick; Bob — who has never heard of it — adds a snare.
-        service.applyNote(songId, trackId, add(trackId, 0, "C3"));
-        service.applyNote(songId, trackId, add(trackId, 8, "E3"));
+        apply( add(trackId, 0, "C3"));
+        apply( add(trackId, 8, "E3"));
 
         // With whole-pattern saves, Bob's array (built from a snapshot taken
         // before Alice's note existed) would have overwritten the lane and
@@ -86,10 +98,10 @@ class TrackNoteOpTest {
 
     @Test
     void aRemovalOnlyTakesTheNoteItNames() {
-        service.applyNote(songId, trackId, add(trackId, 0, "C3"));
-        service.applyNote(songId, trackId, add(trackId, 8, "E3"));
+        apply( add(trackId, 0, "C3"));
+        apply( add(trackId, 8, "E3"));
 
-        service.applyNote(songId, trackId, remove(trackId, 0, "C3"));
+        apply( remove(trackId, 0, "C3"));
 
         assertThat(track.getPattern()).extracting(Step::pitch).containsExactly("E3");
     }
@@ -98,11 +110,11 @@ class TrackNoteOpTest {
 
     @Test
     void addingTheSameNoteTwiceUpsertsRatherThanDuplicating() {
-        service.applyNote(songId, trackId, add(trackId, 4, "G3"));
+        apply( add(trackId, 4, "G3"));
         // Same key (step 4, G3), louder and longer. A client re-sending an op
         // it wasn't sure had landed must not be able to corrupt the lane —
         // and Track.replacePattern would REJECT an outright duplicate anyway.
-        service.applyNote(songId, trackId, new NoteOp(NoteOpType.ADD, trackId, 4, "G3", 0.4, 3));
+        apply( new NoteOp(NoteOpType.ADD, trackId, 4, "G3", 0.4, 3));
 
         assertThat(track.getPattern()).singleElement().satisfies(note -> {
             assertThat(note.velocity()).isEqualTo(0.4);
@@ -115,19 +127,19 @@ class TrackNoteOpTest {
         // Two people delete the same note at once; the second removal arrives
         // to find nothing. Erroring would surface a scary message for an
         // outcome the user already wanted.
-        service.applyNote(songId, trackId, remove(trackId, 2, "D3"));
+        apply( remove(trackId, 2, "D3"));
 
         assertThat(track.getPattern()).isEmpty();
     }
 
     @Test
     void aMoveIsARemovalPlusAnAdditionAndLeavesOneNote() {
-        service.applyNote(songId, trackId, add(trackId, 0, "C3"));
+        apply( add(trackId, 0, "C3"));
 
         // Dragging C3 from step 0 to step 4 — the client diff emits exactly
         // these two ops, in this order.
-        service.applyNote(songId, trackId, remove(trackId, 0, "C3"));
-        service.applyNote(songId, trackId, add(trackId, 4, "C3"));
+        apply( remove(trackId, 0, "C3"));
+        apply( add(trackId, 4, "C3"));
 
         assertThat(track.getPattern()).singleElement()
                 .satisfies(note -> assertThat(note.step()).isEqualTo(4));
@@ -140,18 +152,18 @@ class TrackNoteOpTest {
         // A new transport must not become a new way past the domain rules.
         // Step's constructor and Track.replacePattern sit BELOW the wire, so
         // they still fire.
-        assertThatThrownBy(() -> service.applyNote(songId, trackId,
+        assertThatThrownBy(() -> apply(
                 new NoteOp(NoteOpType.ADD, trackId, 0, "H9", 0.9, 1)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("pitch");
 
-        assertThatThrownBy(() -> service.applyNote(songId, trackId,
+        assertThatThrownBy(() -> apply(
                 new NoteOp(NoteOpType.ADD, trackId, 0, "C3", 5.0, 1)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("velocity");
 
         // A 1-bar beat is 16 steps; a note at 20 does not fit it.
-        assertThatThrownBy(() -> service.applyNote(songId, trackId,
+        assertThatThrownBy(() -> apply(
                 new NoteOp(NoteOpType.ADD, trackId, 20, "C3", 0.9, 1)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -169,7 +181,7 @@ class TrackNoteOpTest {
         // an editor on any one song could write to every lane in the database
         // by naming a foreign trackId — authorizing one id and acting on
         // another is a classic hole.
-        assertThatThrownBy(() -> service.applyNote(songId, foreignTrack, add(foreignTrack, 0, "C3")))
+        assertThatThrownBy(() -> apply( add(foreignTrack, 0, "C3")))
                 .isInstanceOf(AccessDeniedException.class);
     }
 
@@ -178,7 +190,7 @@ class TrackNoteOpTest {
         UUID ghost = UUID.randomUUID();
         when(trackRepository.findSongIdById(ghost)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.applyNote(songId, ghost, add(ghost, 0, "C3")))
+        assertThatThrownBy(() -> apply( add(ghost, 0, "C3")))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -186,7 +198,7 @@ class TrackNoteOpTest {
     void theAppliedVersionIsReportedBackForTheBroadcast() {
         // Clients keep this to feed expectedVersion if the socket drops and the
         // editor falls back to the whole-pattern HTTP save.
-        NoteApplied applied = service.applyNote(songId, trackId, add(trackId, 0, "C3"));
+        NoteApplied applied = apply( add(trackId, 0, "C3"));
 
         assertThat(applied.trackId()).isEqualTo(trackId);
         assertThat(applied.version()).isEqualTo(track.getVersion());
@@ -201,7 +213,7 @@ class TrackNoteOpTest {
                 remove(trackId, 4, "E3"),
                 add(trackId, 12, "C4"));
 
-        ops.forEach(op -> service.applyNote(songId, trackId, op));
+        ops.forEach(op -> apply( op));
 
         assertThat(track.getPattern())
                 .extracting(Step::pitch)

@@ -9,13 +9,14 @@ import { SettingsModal } from "../ui/SettingsModal";
 import { ErrorBanner, Skeleton } from "../ui/kit";
 import { AppShell, Canvas, Sidebar, TopBar, Workspace } from "../ui/shell";
 import { canEditSong } from "../types";
-import type { Beat } from "../types";
+import type { Beat, SongEvent } from "../types";
 
 import { CELL_H, CELL_W, PITCH_ROWS, STEPS } from "../beatmaker/constants";
 import { BeatBrowserSidebar } from "../beatmaker/BeatBrowserSidebar";
 import { BeatEditorCanvas } from "../beatmaker/BeatEditorCanvas";
 import { ClearNotesDialog, type ClearScope } from "../beatmaker/ClearNotesDialog";
 import { GeneratePatternDialog } from "../beatmaker/GeneratePatternDialog";
+import { HistoryPanel } from "../beatmaker/HistoryPanel";
 import { BeatMakerTopBar, type EditorMode } from "../beatmaker/BeatMakerTopBar";
 import { useAutoSave } from "../beatmaker/useAutoSave";
 import { useHistory } from "../beatmaker/useHistory";
@@ -88,6 +89,12 @@ export function BeatMakerPage() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  /** The history panel: open?, its entries (null = loading), its error,
+   *  and which entry's restore is in flight. */
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<SongEvent[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   // Live mirrors for handlers that are attached once and must not freeze
   // against the render that created them.
@@ -298,6 +305,49 @@ export function BeatMakerPage() {
     }
   }
 
+  /** Open the panel and fetch fresh — history grows every edit, so a
+   *  cached page would immediately lie. */
+  async function openHistory() {
+    setHistoryOpen(true);
+    setHistoryEntries(null);
+    setHistoryError(null);
+    try {
+      setHistoryEntries(await data.fetchHistory());
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : "Couldn't load history");
+    }
+  }
+
+  /**
+   * Restore = replay + land. The server replays the lane to that moment;
+   * the notes land here exactly like AI generation — one history.record()
+   * (Ctrl+Z un-restores), lane replaced, marked dirty, flushed by the
+   * existing machinery as deltas everyone sees. The panel closes and the
+   * restored lane is selected in the beat editor so the result is LOOKED AT,
+   * not taken on faith.
+   */
+  async function restoreFrom(entry: SongEvent) {
+    setRestoringId(entry.id);
+    try {
+      const restored = await data.patternAt(entry.trackId, entry.id);
+      recordHistory();
+      data.setNotes((prev) => ({ ...prev, [entry.trackId]: restored }));
+      data.setDirty((prev) => new Set(prev).add(entry.trackId));
+      setSelectedNote(null);
+      const owningBeat = sortedBeats.find((b) => b.tracks.some((t) => t.id === entry.trackId));
+      if (owningBeat) {
+        setSelectedBeatId(owningBeat.id);
+        setSelectedId(entry.trackId);
+        switchMode("beats");
+      }
+      setHistoryOpen(false);
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : "Restore failed");
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
   function toggleIn(set: Set<string>, id: string): Set<string> {
     const next = new Set(set);
     if (next.has(id)) next.delete(id);
@@ -446,8 +496,20 @@ export function BeatMakerPage() {
         onSave={() => void save()}
         onExport={(format) => void exportAs(format)}
         onToggleChat={() => chat.setOpen(!chat.open)}
+        onOpenHistory={() => void openHistory()}
         onOpenSettings={() => setSettingsOpen(true)}
       />
+
+      {historyOpen && (
+        <HistoryPanel
+          entries={historyEntries}
+          error={historyError}
+          canEdit={canEdit}
+          restoringId={restoringId}
+          onRestore={(entry) => void restoreFrom(entry)}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
 

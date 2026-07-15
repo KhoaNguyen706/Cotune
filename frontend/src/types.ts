@@ -45,6 +45,13 @@ export interface Beat extends Pick<gql.Beat, "id" | "name" | "position" | "bars"
   tracks: Track[];
 }
 
+/** One line of the song's edit log (V15). trackName null = the lane was
+ *  deleted (not restorable); actorName null = the pre-history baseline. */
+export type SongEvent = Pick<
+  gql.SongEvent,
+  "id" | "trackId" | "trackName" | "actorName" | "type" | "summary" | "createdAt"
+>;
+
 export type ClipType = gql.ClipType;
 
 /** One placement on the arrangement timeline. Time in 16th-note steps
