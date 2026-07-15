@@ -196,6 +196,12 @@ export function SongsPage() {
             onClick={() => setView("shared")}
           />
           <NavItem icon="☰" label="Library" soon />
+          {/* Admins get one extra destination: the AI-invite console. Gated
+              on role here for the affordance; the /admin route and the
+              mutations behind it enforce it server-side regardless. */}
+          {user?.role === "ADMIN" && (
+            <NavItem icon="⚑" label="Admin" onClick={() => navigate("/admin")} />
+          )}
           <NavItem icon="⚙" label="Settings" onClick={() => setSettingsOpen(true)} />
         </NavRail>
 

@@ -309,6 +309,42 @@ always two classes behind `enabled()` gates:
 enablement is now `heroku config:set GEMINI_API_KEY=... -a cotune` (and a
 deploy — prod still runs the Anthropic build until then).
 
+**Same session, continued — prod enablement + deploy:**
+- Set `GEMINI_API_KEY`/`GEMINI_MODEL` on Heroku (`config:set`). Discovered
+  prod had NO `ANTHROPIC_API_KEY` at all — the July 14 enablement was never
+  done, so @ai on the live site had been answering "not configured" all
+  along. Also found prod was 503-crashed and stuck on `e97225b` (a **July 13**
+  build); the config restart cleared the crash.
+- Deployed with `git push heroku main` (container stack) — prod jumped
+  `e97225b`→`b928948` (release v19). Booted healthy in 13.6s, no R14.
+- Verified Gemini LIVE on production: registered a throwaway, promoted it to
+  ADMIN in Supabase, and `generateTrackPattern("four on the floor house
+  kick with an offbeat clap")` returned a real house pattern — kick (C2) on
+  0/4/8/12, clap (D#2) on the offbeats 4/12. Probe data swept after.
+- Surfaced during probing: the **Supabase session pooler caps at 15 clients**
+  (`EMAXCONNSESSION`) — my psql probes contended with prod's Hikari pool.
+  This is exactly the ROADMAP Phase-2 "Hikari × dynos arithmetic" concern,
+  seen early. Transient here; worth watching as real traffic arrives.
+
+## July 15 — Admin AI-invite tab (ROADMAP-adjacent, user request)
+
+**Asked:** "add one tab admin i can give people ai feature invite through
+email" — a frontend surface for the existing admin-only invite mutations.
+
+**Shipped (frontend-only — the backend already had it):** the
+`grantAiAccess(email)`/`revokeAiAccess(email)` mutations (V13, `hasRole
+('ADMIN')`, email-keyed) needed no change. Added:
+- `frontend/src/pages/AdminPage.tsx` — an admin console (one card for now):
+  email field + Grant/Revoke, mapping 404 to "No account found for X". Same
+  app shell + nav rail as the songs page.
+- `/admin` route gated by a new `requireAdmin` flag on `ProtectedRoute`
+  (non-admins bounce to `/`; the server's hasRole is still the only gate).
+- An "Admin" nav item on the songs page, rendered only when
+  `user.role === "ADMIN"`.
+Verified: frontend builds clean (tsc strict); the mutations behind it are
+already covered by AiAccessIntegrationTest over real HTTP (part of 153/153)
+— non-admin FORBIDDEN, grant/revoke round-trip, unknown-email 404.
+
 ---
 
 ## Standing decisions (the ones that keep mattering)

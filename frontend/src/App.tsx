@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
+import { AdminPage } from "./pages/AdminPage";
 import { BeatMakerPage } from "./pages/BeatMakerPage";
 import { ListenPage } from "./pages/ListenPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -36,6 +37,14 @@ export function App() {
             element={
               <ProtectedRoute>
                 <BeatMakerPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute requireAdmin>
+                <AdminPage />
               </ProtectedRoute>
             }
           />
