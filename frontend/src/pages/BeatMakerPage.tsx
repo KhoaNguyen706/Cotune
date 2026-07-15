@@ -1,32 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useSettings } from "../ui/settings";
-import { peerColor, type Peer } from "../realtime/socket";
 import { ArrangementPalette, ArrangementTimeline, type Armed } from "../components/ArrangementPanel";
 import { ChatPanel } from "../chat/ChatPanel";
 import { useChat } from "../chat/useChat";
 import { SettingsModal } from "../ui/SettingsModal";
-import { beatColor, colorFor } from "../ui/trackColors";
-import { Button, EditableName, EmptyState, ErrorBanner, Select, Skeleton, TextInput } from "../ui/kit";
-import {
-  AppShell,
-  Canvas,
-  CanvasBar,
-  IconButton,
-  Modal,
-  Readout,
-  Sidebar,
-  SidebarSection,
-  ToolGroup,
-  TopBar,
-  Workspace,
-} from "../ui/shell";
+import { ErrorBanner, Skeleton } from "../ui/kit";
+import { AppShell, Canvas, Sidebar, TopBar, Workspace } from "../ui/shell";
 import { canEditSong } from "../types";
 import type { Beat } from "../types";
 
-import { CELL_H, CELL_W, PITCH_ROWS, STEPS, rowOf } from "../beatmaker/constants";
-import { PeerDots } from "../beatmaker/PeerDots";
+import { CELL_H, CELL_W, PITCH_ROWS, STEPS } from "../beatmaker/constants";
+import { BeatBrowserSidebar } from "../beatmaker/BeatBrowserSidebar";
+import { BeatEditorCanvas } from "../beatmaker/BeatEditorCanvas";
+import { ClearNotesDialog, type ClearScope } from "../beatmaker/ClearNotesDialog";
+import { BeatMakerTopBar, type EditorMode } from "../beatmaker/BeatMakerTopBar";
 import { useAutoSave } from "../beatmaker/useAutoSave";
 import { useHistory } from "../beatmaker/useHistory";
 import { useInstruments } from "../beatmaker/useInstruments";
@@ -76,7 +65,7 @@ export function BeatMakerPage() {
   // Two editors, one page: "arrange" is the song timeline (clips place whole
   // beats), "beats" is where you build each beat — pick Beat 1/2/3, edit its
   // instrument lanes. One transport serves both.
-  const [mode, setMode] = useState<"arrange" | "beats">("arrange");
+  const [mode, setMode] = useState<EditorMode>("arrange");
   const [selectedBeatId, setSelectedBeatId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null); // lane id
   const [selectedNote, setSelectedNote] = useState<number | null>(null);
@@ -92,9 +81,7 @@ export function BeatMakerPage() {
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Which clear the user is being asked to confirm, if any. */
-  const [clearing, setClearing] = useState<"lane" | "beat" | null>(null);
-  const [newTrackName, setNewTrackName] = useState("");
-  const [newInstrument, setNewInstrument] = useState("DRUMS");
+  const [clearing, setClearing] = useState<ClearScope | null>(null);
 
   // Live mirrors for handlers that are attached once and must not freeze
   // against the render that created them.
@@ -256,7 +243,7 @@ export function BeatMakerPage() {
 
   // ---- the wiring the page adds on top ------------------------------------
 
-  function switchMode(next: "arrange" | "beats") {
+  function switchMode(next: EditorMode) {
     // Switching views mid-playback would leave the play button lying about what
     // it plays — stop first.
     if (playing) playback.stop();
@@ -266,13 +253,6 @@ export function BeatMakerPage() {
   async function addBeat() {
     const id = await data.addBeat();
     if (id) setSelectedBeatId(id); // select what you just made
-  }
-
-  async function addTrack(event: React.FormEvent) {
-    event.preventDefault();
-    if (!selectedBeatId) return;
-    await data.addTrack(selectedBeatId, newTrackName, newInstrument);
-    setNewTrackName("");
   }
 
   function changeBpm(raw: string) {
@@ -387,21 +367,6 @@ export function BeatMakerPage() {
     ? [...selectedBeat.tracks].sort((a, b) => a.position - b.position)
     : [];
 
-  /**
-   * "lane:step" → who is hovering it. Built once per render, so the rack can
-   * ask about a cell in O(1) instead of every cell re-scanning every peer —
-   * at 8 bars that would be 128 steps × lanes × peers comparisons per frame,
-   * on a component that re-renders ~20 times a second while a cursor moves.
-   */
-  const peerCells = new Map<string, Peer[]>();
-  for (const peer of Object.values(peers)) {
-    if (!peer.trackId) continue;
-    const key = `${peer.trackId}:${peer.step}`;
-    const at = peerCells.get(key);
-    if (at) at.push(peer);
-    else peerCells.set(key, [peer]);
-  }
-
   // What a clear would actually destroy. Counted across ALL octaves, not just
   // the rows currently on screen — a "clear" that quietly spared the notes you
   // had scrolled past would be the worst kind of surprise.
@@ -411,274 +376,45 @@ export function BeatMakerPage() {
     0,
   );
 
-  /** Where a collaborator is, in words. A peer with no beat is on the Arrange
-   *  timeline (or hasn't touched a grid yet) — say so rather than guess. */
-  function locationOf(peer: Peer): string {
-    const beat = sortedBeats.find((b) => b.id === peer.beatId);
-    const lane = beat?.tracks.find((t) => t.id === peer.trackId);
-    if (beat && lane) return `${beat.name} · ${lane.name}`;
-    if (beat) return beat.name;
-    return "elsewhere in this song";
-  }
   const selected = sortedLanes.find((t) => t.id === selectedId) ?? null;
   const octave = selected ? octaves[selected.id] ?? 4 : 4;
-  const selectedNotes = selected ? notesByTrack[selected.id] ?? [] : [];
-  const hiddenNotes = selected
-    ? selectedNotes.filter((n) => rowOf(n.pitch, octave) === null).length
-    : 0;
-  const currentNote =
-    selected !== null && selectedNote !== null ? selectedNotes[selectedNote] ?? null : null;
 
-  const msButton =
-    "rounded border px-1.5 py-0.5 text-[0.62rem] font-bold transition-colors duration-150 cursor-pointer " +
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
-
-  // Tabs pick which CANVAS is mounted; the transport, sidebar and title bar
-  // are shared chrome. That's the whole reason for a shell — the frame
-  // stays, only the work surface swaps.
-  const tab = (id: "arrange" | "beats", label: string) => (
-    <IconButton
-      active={mode === id}
-      className="px-3"
-      onClick={() => switchMode(id)}
-      title={id === "arrange" ? "Arrange the song timeline" : "Build the beats"}
-    >
-      {label}
-    </IconButton>
-  );
 
   return (
     <AppShell>
-      <TopBar
-        left={
-          <>
-            <Link
-              to="/"
-              title="Back to songs"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-            >
-              ←
-            </Link>
-            <IconButton
-              onClick={() => setSidebarCollapsed((c) => !c)}
-              active={!sidebarCollapsed}
-              title={sidebarCollapsed ? "Show panel" : "Hide panel"}
-            >
-              ☰
-            </IconButton>
-            <span className="min-w-0">
-              <h1 className="flex items-center gap-2 truncate text-base font-bold leading-tight tracking-tight">
-                {canEdit ? (
-                  <EditableName
-                    value={song.title}
-                    maxLength={120}
-                    onRename={(title) => patchSong({ title })}
-                  />
-                ) : (
-                  song.title
-                )}
-                {/* Honest about the socket. When this is dark, edits are still
-                    saved (the HTTP fallback) but nobody else sees them arrive —
-                    which is a thing the user genuinely needs to know, so it is
-                    not hidden behind a settings panel. */}
-                <span
-                  // The smoke test's definition of "the socket is up" — same
-                  // idea as the roll's testid: a hook that survives restyling.
-                  data-testid="socket-status"
-                  title={
-                    live
-                      ? "Live — collaborators see your edits as you make them"
-                      : "Offline — edits are saved, but not shared live"
-                  }
-                  className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[0.55rem] font-bold uppercase tracking-wider ${
-                    live
-                      ? "border-accent/40 bg-accent/10 text-accent"
-                      : "border-edge bg-surface-2 text-muted"
-                  }`}
-                >
-                  <i
-                    className={`h-1.5 w-1.5 rounded-full ${live ? "bg-accent" : "bg-muted"}`}
-                    aria-hidden
-                  />
-                  {live ? "live" : "offline"}
-                </span>
-
-                {/* Who else is in here. Same colour as their cursor down in the
-                    grid, so the dot beside a note and the face up here are
-                    obviously the same person. */}
-                {Object.values(peers).map((peer) => (
-                  <span
-                    key={peer.userId}
-                    // Says WHERE, not just "is here" — the useful half of the
-                    // sentence, and the only one you can act on.
-                    title={`${peer.displayName} — ${locationOf(peer)}`}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.6rem] font-bold text-bg ring-2 ring-bg"
-                    style={{ background: peerColor(peer.userId) }}
-                  >
-                    {peer.displayName[0]?.toUpperCase() ?? "?"}
-                  </span>
-                ))}
-              </h1>
-              {/* Save state lives WITH the title — it's a property of this
-                  document, not a button you press. */}
-              <span className="text-[0.68rem] text-muted">
-                {readOnly
-                  ? // NOT "you don't own this song" any more: an EDITOR doesn't
-                    // own it either, and can edit it perfectly well. The thing
-                    // that stops you is the ROLE, so say that.
-                    "Read-only — you were invited to view this song"
-                  : saving
-                    ? "Saving…"
-                    : dirty.size > 0
-                      ? autoSave || live
-                        ? `${dirty.size} unsaved · saving shortly`
-                        : `${dirty.size} unsaved`
-                      : "All changes saved"}
-              </span>
-            </span>
-          </>
-        }
-        center={
-          <>
-            <ToolGroup>
-              {tab("arrange", "Arrange")}
-              {tab("beats", "Beats")}
-            </ToolGroup>
-
-            {/* TRANSPORT: the one primary action, flanked by the edit
-                history. Grouped and sized identically — the old header had
-                these as four differently-shaped buttons in a loose row. */}
-            <ToolGroup>
-              <IconButton onClick={undo} disabled={historySizes.past === 0} title="Undo (Ctrl+Z)">
-                ↺
-              </IconButton>
-              <IconButton
-                onClick={redo}
-                disabled={historySizes.future === 0}
-                title="Redo (Ctrl+Shift+Z)"
-              >
-                ↻
-              </IconButton>
-              <IconButton
-                tone="solid"
-                className="min-w-16"
-                onClick={() => void togglePlay()}
-                title={
-                  mode === "arrange" ? "Play the arrangement (Space)" : "Loop the selected beat (Space)"
-                }
-              >
-                {playing ? "■ Stop" : "▶ Play"}
-              </IconButton>
-            </ToolGroup>
-
-            <ToolGroup>
-              {/* Tempo and meter are DATA, so they read as data (a numeric
-                  readout), not as two more buttons. Still editable —
-                  double-click, same as everywhere else in the app. */}
-              <Readout label="BPM">
-                {canEdit ? (
-                  <EditableName value={String(song.bpm)} maxLength={3} onRename={changeBpm} />
-                ) : (
-                  song.bpm
-                )}
-              </Readout>
-              <Readout label="Sig">
-                {canEdit ? (
-                  <EditableName
-                    value={song.timeSignature}
-                    maxLength={5}
-                    onRename={(timeSignature) => void patchSong({ timeSignature })}
-                  />
-                ) : (
-                  song.timeSignature
-                )}
-              </Readout>
-            </ToolGroup>
-          </>
-        }
-        right={
-          <>
-            <ToolGroup>
-              <label className="flex items-center gap-2 px-2" title="Master volume">
-                <span aria-hidden className="text-xs">
-                  🔊
-                </span>
-                <input
-                  type="range"
-                  className="w-20"
-                  min={0}
-                  max={100}
-                  value={volume}
-                  onChange={(e) => applyVolume(Number(e.target.value))}
-                />
-              </label>
-              <IconButton
-                onClick={() => void testSound()}
-                title="Play a test blip — if you can't hear this, check your tab/OS volume"
-              >
-                🎧
-              </IconButton>
-            </ToolGroup>
-
-            {/* With auto-save on, an explicit Save button is redundant
-                chrome — it only appears when you've opted out of auto-save
-                (or while a save is in flight). */}
-            {!readOnly && !autoSave && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void save()}
-                disabled={saving || dirty.size === 0}
-              >
-                {saving ? "Saving…" : dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
-              </Button>
-            )}
-
-            {mode === "arrange" && (
-              <ToolGroup>
-                <IconButton
-                  onClick={() => void exportAs("wav")}
-                  disabled={exporting}
-                  title="Render the arrangement to a WAV file (lossless)"
-                >
-                  {exporting ? "…" : "WAV"}
-                </IconButton>
-                <IconButton
-                  onClick={() => void exportAs("mp3")}
-                  disabled={exporting}
-                  title="Render the arrangement to an MP3 file (192 kbps)"
-                >
-                  {exporting ? "…" : "MP3"}
-                </IconButton>
-              </ToolGroup>
-            )}
-
-            {/* Chat toggle. The badge is the closed panel's only voice —
-                without it a collaborator's "wait, don't delete that" sits
-                unseen behind a button. */}
-            <span className="relative">
-              <IconButton
-                active={chat.open}
-                onClick={() => chat.setOpen(!chat.open)}
-                title={chat.open ? "Close chat" : "Chat with everyone in this song"}
-              >
-                💬
-              </IconButton>
-              {!chat.open && chat.unread > 0 && (
-                <span
-                  className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.6rem] font-bold text-bg"
-                  data-testid="chat-unread"
-                >
-                  {chat.unread > 9 ? "9+" : chat.unread}
-                </span>
-              )}
-            </span>
-
-            <IconButton onClick={() => setSettingsOpen(true)} title="Settings">
-              ⚙
-            </IconButton>
-          </>
-        }
+      <BeatMakerTopBar
+        song={song}
+        beats={sortedBeats}
+        peers={peers}
+        mode={mode}
+        canEdit={canEdit}
+        readOnly={readOnly}
+        live={live}
+        autoSave={autoSave}
+        saving={saving}
+        dirtyCount={dirty.size}
+        sidebarCollapsed={sidebarCollapsed}
+        playing={playing}
+        historyPast={historySizes.past}
+        historyFuture={historySizes.future}
+        volume={volume}
+        exporting={exporting}
+        chatOpen={chat.open}
+        chatUnread={chat.unread}
+        onToggleSidebar={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        onRenameSong={(title) => void patchSong({ title })}
+        onChangeBpm={changeBpm}
+        onChangeTimeSignature={(timeSignature) => void patchSong({ timeSignature })}
+        onModeChange={switchMode}
+        onUndo={undo}
+        onRedo={redo}
+        onTogglePlay={() => void togglePlay()}
+        onVolumeChange={applyVolume}
+        onTestSound={() => void testSound()}
+        onSave={() => void save()}
+        onExport={(format) => void exportAs(format)}
+        onToggleChat={() => chat.setOpen(!chat.open)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
@@ -688,58 +424,25 @@ export function BeatMakerPage() {
           a beat they were working in, and who has no idea it was deliberate.
           Destructive-and-shared earns one question. */}
       {clearing && selectedBeat && (
-        <Modal
-          title={clearing === "lane" ? `Clear the ${selected?.name} lane?` : `Clear ${selectedBeat.name}?`}
-          onClose={() => setClearing(null)}
-        >
-          <p className="text-sm text-muted">
-            {clearing === "lane" ? (
-              <>
-                This deletes all <strong className="text-text">{laneNoteCount}</strong> note
-                {laneNoteCount === 1 ? "" : "s"} in{" "}
-                <strong className="text-text">{selected?.name}</strong>. Other lanes are untouched.
-              </>
-            ) : (
-              <>
-                This deletes all <strong className="text-text">{beatNoteCount}</strong> note
-                {beatNoteCount === 1 ? "" : "s"} across every lane in{" "}
-                <strong className="text-text">{selectedBeat.name}</strong>.
-              </>
-            )}{" "}
-            {Object.keys(peers).length > 0 && (
-              <>
-                <strong className="text-text">
-                  {Object.values(peers)
-                    .map((p) => p.displayName)
-                    .join(" and ")}
-                </strong>{" "}
-                {Object.keys(peers).length === 1 ? "is" : "are"} in this song right now and will see
-                it happen.{" "}
-              </>
-            )}
-            You can undo with Ctrl+Z.
-          </p>
-
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setClearing(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() =>
-                clearLanes(
-                  clearing === "lane"
-                    ? selectedId
-                      ? [selectedId]
-                      : []
-                    : sortedLanes.map((lane) => lane.id),
-                )
-              }
-            >
-              {clearing === "lane" ? "Clear lane" : "Clear beat"}
-            </Button>
-          </div>
-        </Modal>
+        <ClearNotesDialog
+          scope={clearing}
+          beat={selectedBeat}
+          track={selected}
+          laneNoteCount={laneNoteCount}
+          beatNoteCount={beatNoteCount}
+          peers={peers}
+          onCancel={() => setClearing(null)}
+          onConfirm={() => {
+            clearLanes(
+              clearing === "lane"
+                ? selectedId
+                  ? [selectedId]
+                  : []
+                : sortedLanes.map((lane) => lane.id),
+            );
+            setClearing(null);
+          }}
+        />
       )}
 
       <Workspace>
@@ -759,203 +462,33 @@ export function BeatMakerPage() {
               canEdit={canEdit}
             />
           ) : (
-            <>
-              {/* -- beat browser ---------------------------------------- */}
-              <SidebarSection
-                title="Beats"
-                action={
-                  canEdit ? (
-                    <IconButton onClick={() => void addBeat()} title="New beat">
-                      +
-                    </IconButton>
-                  ) : undefined
-                }
-              >
-                <div className="flex flex-col gap-1">
-                  {sortedBeats.length === 0 && (
-                    <p className="text-xs text-muted">
-                      A beat is a full multi-instrument groove. Create one to start.
-                    </p>
-                  )}
-                  {sortedBeats.map((beat) => (
-                    <div
-                      key={beat.id}
-                      className={
-                        "group flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors duration-150 " +
-                        (beat.id === selectedBeatId
-                          ? "border-accent bg-accent/15 text-text"
-                          : "border-edge bg-bg-soft text-muted hover:border-edge-strong hover:text-text")
-                      }
-                      onClick={() => {
-                        setSelectedBeatId(beat.id);
-                        setSelectedId(
-                          [...beat.tracks].sort((a, b) => a.position - b.position)[0]?.id ?? null,
-                        );
-                      }}
-                    >
-                      <i
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ background: beatColor(beat.position) }}
-                      />
-                      <strong className="min-w-0 flex-1 truncate font-semibold">
-                        {canEdit ? (
-                          <EditableName
-                            value={beat.name}
-                            onRename={(name) => patchBeat(beat.id, { name })}
-                          />
-                        ) : (
-                          beat.name
-                        )}
-                      </strong>
-                      {/* Who's working in this beat — visible even when it is
-                          not the beat you have open. */}
-                      <PeerDots
-                        list={Object.values(peers).filter((peer) => peer.beatId === beat.id)}
-                        where={beat.name}
-                      />
-                      <span className="shrink-0 text-[0.6rem] tabular-nums">
-                        {beat.bars} bar{beat.bars > 1 ? "s" : ""}
-                      </span>
-                      {canEdit && (
-                        <button
-                          className="shrink-0 rounded text-muted opacity-0 transition-opacity hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover:opacity-100"
-                          title="Delete beat (removes its lanes and timeline clips)"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void removeBeat(beat.id);
-                          }}
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </SidebarSection>
-
-              {/* -- lane browser (the "channel rack") -------------------- */}
-              {selectedBeat && (
-                <SidebarSection title={`${selectedBeat.name} · lanes`}>
-                  <div className="flex flex-col gap-1">
-                    {sortedLanes.length === 0 && (
-                      <p className="text-xs text-muted">
-                        No lanes yet — add drums below, then draw a kick in the roll.
-                      </p>
-                    )}
-                    {sortedLanes.map((track) => {
-                      const isMuted = muted.has(track.id);
-                      const isSolo = soloed.has(track.id);
-                      return (
-                        <div
-                          key={track.id}
-                          className={
-                            "flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs transition-colors duration-150 " +
-                            (track.id === selectedId
-                              ? "border-edge-strong bg-surface-2 text-text"
-                              : "border-edge bg-bg-soft text-muted hover:border-edge-strong")
-                          }
-                          onClick={() => setSelectedId(track.id)}
-                        >
-                          <span
-                            className="h-2.5 w-2.5 shrink-0 rounded-full"
-                            style={{ background: colorFor(track.instrument) }}
-                          />
-                          <strong className="min-w-0 flex-1 truncate font-semibold">
-                            {canEdit ? (
-                              <EditableName
-                                value={track.name}
-                                onRename={(name) => renameTrack(track.id, name)}
-                              />
-                            ) : (
-                              track.name
-                            )}
-                          </strong>
-                          {/* THE ANSWER TO "where is their cursor?" — they are
-                              on this lane, and you are not looking at it. */}
-                          <PeerDots
-                            list={Object.values(peers).filter(
-                              (peer) => peer.trackId === track.id,
-                            )}
-                            where={track.name}
-                          />
-                          <button
-                            className={
-                              msButton +
-                              (isMuted
-                                ? " border-danger bg-danger text-bg"
-                                : " border-edge text-muted hover:border-edge-strong")
-                            }
-                            title="Mute"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMuted((prev) => toggleIn(prev, track.id));
-                            }}
-                          >
-                            M
-                          </button>
-                          <button
-                            className={
-                              msButton +
-                              (isSolo
-                                ? " border-solo bg-solo text-bg"
-                                : " border-edge text-muted hover:border-edge-strong")
-                            }
-                            title="Solo"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSoloed((prev) => toggleIn(prev, track.id));
-                            }}
-                          >
-                            S
-                          </button>
-                          {canEdit && (
-                            <button
-                              className="shrink-0 rounded px-0.5 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                              title="Delete lane"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void removeTrack(track.id);
-                              }}
-                            >
-                              ×
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {canEdit && (
-                  <form onSubmit={(e) => void addTrack(e)} className="mt-2 flex flex-col gap-2">
-                    <TextInput
-                      className="!py-1 text-xs"
-                      value={newTrackName}
-                      onChange={(e) => setNewTrackName(e.target.value)}
-                      placeholder="808 Kick"
-                      required
-                      maxLength={80}
-                    />
-                    <div className="flex gap-2">
-                      <Select
-                        className="!py-1 text-xs"
-                        value={newInstrument}
-                        onChange={(e) => setNewInstrument(e.target.value)}
-                      >
-                        {["DRUMS", "BASS", "SYNTH", "PIANO", "GUITAR", "STRINGS"].map((i) => (
-                          <option key={i} value={i}>
-                            {i.toLowerCase()}
-                          </option>
-                        ))}
-                      </Select>
-                      <Button type="submit" size="sm">
-                        Add
-                      </Button>
-                    </div>
-                  </form>
-                  )}
-                </SidebarSection>
-              )}
-            </>
+            <BeatBrowserSidebar
+              beats={sortedBeats}
+              selectedBeat={selectedBeat}
+              selectedBeatId={selectedBeatId}
+              tracks={sortedLanes}
+              selectedTrackId={selectedId}
+              peers={peers}
+              muted={muted}
+              soloed={soloed}
+              canEdit={canEdit}
+              onAddBeat={() => void addBeat()}
+              onSelectBeat={(beatId, firstTrackId) => {
+                setSelectedBeatId(beatId);
+                setSelectedId(firstTrackId);
+              }}
+              onRenameBeat={(beatId, name) => void patchBeat(beatId, { name })}
+              onRemoveBeat={(beatId) => void removeBeat(beatId)}
+              onSelectTrack={setSelectedId}
+              onRenameTrack={(trackId, name) => void renameTrack(trackId, name)}
+              onRemoveTrack={(trackId) => void removeTrack(trackId)}
+              onToggleMute={(trackId) => setMuted((current) => toggleIn(current, trackId))}
+              onToggleSolo={(trackId) => setSoloed((current) => toggleIn(current, trackId))}
+              onAddTrack={async (name, instrument) => {
+                if (!selectedBeatId) return;
+                await data.addTrack(selectedBeatId, name, instrument);
+              }}
+            />
           )}
         </Sidebar>
 
@@ -989,338 +522,40 @@ export function BeatMakerPage() {
             />
           </Canvas>
         ) : (
-          <Canvas>
-            {/* The contextual strip: what you can do to THIS beat / THIS
-                note. Everything global already lives in the transport. */}
-            {selectedBeat && (
-              <CanvasBar>
-                <span className="text-sm font-bold tracking-tight">
-                  {selected ? selected.name : selectedBeat.name}
-                </span>
-                {selected && (
-                  <span className="text-xs text-muted">{selected.instrument.toLowerCase()}</span>
-                )}
-
-                <label className="ml-auto flex items-center gap-2 text-xs text-muted">
-                  length
-                  <Select
-                    className="!w-auto !py-0.5 text-xs"
-                    value={selectedBeat.bars}
-                    disabled={!canEdit}
-                    onChange={(e) => void patchBeat(selectedBeat.id, { bars: Number(e.target.value) })}
-                  >
-                    {[1, 2, 4, 8].map((b) => (
-                      <option key={b} value={b}>
-                        {b} bar{b > 1 ? "s" : ""}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-
-                {selected && (
-                  <ToolGroup>
-                    <IconButton
-                      onClick={() =>
-                        setOctaves((p) => ({ ...p, [selected.id]: Math.max(0, octave - 1) }))
-                      }
-                      title="Octave down"
-                    >
-                      −
-                    </IconButton>
-                    <span className="px-1 font-mono text-xs tabular-nums text-muted">
-                      oct {octave}
-                    </span>
-                    <IconButton
-                      onClick={() =>
-                        setOctaves((p) => ({ ...p, [selected.id]: Math.min(7, octave + 1) }))
-                      }
-                      title="Octave up"
-                    >
-                      +
-                    </IconButton>
-                  </ToolGroup>
-                )}
-
-                {/* Clearing. Two scopes, because "clear" is ambiguous the moment
-                    a beat has more than one lane and the roll only shows you
-                    one of them — a single button would wipe something the user
-                    couldn't see either way. Disabled when there is nothing to
-                    clear, so the button never lies about having work to do. */}
-                {selected && canEdit && (
-                  <ToolGroup>
-                    <IconButton
-                      tone="danger"
-                      disabled={laneNoteCount === 0}
-                      title={`Clear the ${selected.name} lane (${laneNoteCount} note${laneNoteCount === 1 ? "" : "s"})`}
-                      onClick={() => setClearing("lane")}
-                    >
-                      Clear lane
-                    </IconButton>
-                    <IconButton
-                      tone="danger"
-                      disabled={beatNoteCount === 0}
-                      title={`Clear every lane in ${selectedBeat.name} (${beatNoteCount} note${beatNoteCount === 1 ? "" : "s"})`}
-                      onClick={() => setClearing("beat")}
-                    >
-                      Clear beat
-                    </IconButton>
-                  </ToolGroup>
-                )}
-
-                {/* Velocity only exists when a note is selected — a control
-                    with nothing to control is noise, so it isn't rendered. */}
-                {currentNote && selected && (
-                  <label className="flex items-center gap-2 whitespace-nowrap text-xs text-muted">
-                    vel {Math.round(currentNote.velocity * 100)}%
-                    <input
-                      type="range"
-                      className="w-24"
-                      min={10}
-                      max={100}
-                      value={Math.round(currentNote.velocity * 100)}
-                      onPointerDown={recordHistory}
-                      onChange={(e) => {
-                        const velocity = Number(e.target.value) / 100;
-                        updateNote(selected.id, selectedNote!, { velocity });
-                        preview(selected.id, currentNote.pitch, velocity);
-                      }}
-                    />
-                  </label>
-                )}
-
-                {hiddenNotes > 0 && (
-                  <span className="text-xs text-muted">{hiddenNotes} note(s) in other octaves</span>
-                )}
-              </CanvasBar>
-            )}
-
-            {error && (
-              <div className="px-4 pt-4">
-                <ErrorBanner>{error}</ErrorBanner>
-              </div>
-            )}
-
-            {!selectedBeat ? (
-              <div className="flex h-full items-center justify-center">
-                <EmptyState
-                  icon="🧱"
-                  title="No beats yet"
-                  hint='A beat is a full multi-instrument groove — "Beat 1" with kick, snare and bass lanes. Create one in the left panel, build it here, then place it on the Arrange timeline.'
-                />
-              </div>
-            ) : !selected ? (
-              <div className="flex h-full items-center justify-center">
-                <EmptyState
-                  icon="🥁"
-                  title="No lanes in this beat"
-                  hint="Add a drums lane in the left panel, then click cells here to lay down your first kick pattern."
-                />
-              </div>
-            ) : (
-              // ONE horizontal scroll box holds the roll AND the channel
-              // rack, so they scroll together and stay column-aligned. At 8
-              // bars the grid is 128 steps (~4300px) wide: it must scroll
-              // INSIDE this box, not blow the page open — which is what made
-              // the 8-bar view "scale" into something unusable.
-              // `max-w-full min-w-0` is what actually constrains it to the
-              // canvas; without them a flex/grid child sizes to its content
-              // and the box would just grow instead of scrolling.
-              <div className="flex min-w-0 flex-col p-4">
-                <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-edge bg-bg-soft p-2">
-                  <div className="w-max select-none">
-                    {/* -- piano roll ------------------------------------ */}
-                    <div className="flex">
-                      {/* The pitch gutter is sticky: scroll to bar 7 and you
-                          can still tell a C from an F#. */}
-                      <div className="sticky left-0 z-2 w-11 shrink-0 bg-bg-soft text-[0.68rem] text-muted">
-                        {PITCH_ROWS.map((p) => (
-                          <div
-                            key={p}
-                            style={{ height: CELL_H }}
-                            className={
-                              "flex items-center justify-end pr-2" +
-                              (p.includes("#") ? " text-muted/50" : "")
-                            }
-                          >
-                            {p}
-                            {octave}
-                          </div>
-                        ))}
-                      </div>
-                      <div
-                        className="roll"
-                        ref={rollRef}
-                        data-testid="piano-roll"
-                        onMouseDown={canEdit ? onRollMouseDown : undefined}
-                        // Presence is NOT gated on canEdit: a viewer looking
-                        // over your shoulder is exactly who you want to see the
-                        // cursor of. Watching is not writing.
-                        onMouseMove={live ? onRollCursorMove : undefined}
-                        style={{ width: beatSteps * CELL_W, height: PITCH_ROWS.length * CELL_H }}
-                      >
-                        {PITCH_ROWS.map((p, row) =>
-                          Array.from({ length: beatSteps }, (_, col) => (
-                            <div
-                              key={`${row}-${col}`}
-                              className={[
-                                "roll-cell",
-                                p.includes("#") ? "dark" : "",
-                                col % 16 === 0 ? "bar" : col % 4 === 0 ? "beat" : "",
-                                col === currentStep ? "playcol" : "",
-                              ].join(" ")}
-                              style={{
-                                left: col * CELL_W,
-                                top: row * CELL_H,
-                                width: CELL_W,
-                                height: CELL_H,
-                              }}
-                            />
-                          )),
-                        )}
-                        {/* Other people's cursors, drawn INSIDE the roll so
-                            they share its coordinate system — the same
-                            col*CELL_W the notes use. Only peers looking at THIS
-                            beat and THIS lane appear; a cursor from a lane you
-                            can't see would be a dot floating over unrelated
-                            notes, which is worse than nothing. */}
-                        {Object.values(peers)
-                          .filter(
-                            (peer) =>
-                              peer.trackId === selected.id && peer.beatId === selectedBeatId,
-                          )
-                          .map((peer) => (
-                            <div
-                              key={peer.userId}
-                              className="peer-cursor"
-                              style={
-                                {
-                                  left: peer.step * CELL_W,
-                                  top: peer.row * CELL_H,
-                                  "--pc": peerColor(peer.userId),
-                                } as React.CSSProperties
-                              }
-                            >
-                              <span className="peer-label">{peer.displayName}</span>
-                            </div>
-                          ))}
-
-                        {selectedNotes.map((note, index) => {
-                          const row = rowOf(note.pitch, octave);
-                          if (row === null) return null;
-                          const remote = flashing.has(`${selected.id}:${note.step}:${note.pitch}`);
-                          return (
-                            <div
-                              key={index}
-                              className={`note ${index === selectedNote ? "selected" : ""} ${remote ? "landed" : ""}`}
-                              style={
-                                {
-                                  left: note.step * CELL_W + 1,
-                                  top: row * CELL_H + 2,
-                                  width: note.length * CELL_W - 3,
-                                  height: CELL_H - 4,
-                                  // Velocity is VISIBLE: quiet notes are translucent.
-                                  opacity: 0.35 + 0.65 * note.velocity,
-                                  "--tc": colorFor(selected.instrument),
-                                } as React.CSSProperties
-                              }
-                              onMouseDown={
-                                canEdit ? (e) => onNoteMouseDown(e, index, note, false) : undefined
-                              }
-                              onContextMenu={
-                                canEdit ? (e) => onNoteContextMenu(e, index) : undefined
-                              }
-                            >
-                              {canEdit && (
-                                <span
-                                  className="note-handle"
-                                  onMouseDown={(e) => onNoteMouseDown(e, index, note, true)}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* -- channel rack: every lane of this beat at a glance.
-                           Cells are sized from CELL_W so its columns line up
-                           with the roll above — a rack that drifts out of
-                           alignment is worse than no rack. --------------- */}
-                    <div className="mt-3 flex flex-col gap-1 border-t border-edge pt-3">
-                      {sortedLanes.map((track) => {
-                        const notes = notesByTrack[track.id] ?? [];
-                        return (
-                          <div
-                            key={track.id}
-                            className={
-                              "flex cursor-pointer items-center rounded transition-colors duration-150 " +
-                              (track.id === selectedId ? "bg-surface-2" : "hover:bg-surface-2/60")
-                            }
-                            onClick={() => setSelectedId(track.id)}
-                          >
-                            <span className="sticky left-0 z-2 flex w-11 shrink-0 items-center gap-1 bg-bg-soft pr-1">
-                              <i
-                                className="h-2 w-2 shrink-0 rounded-full"
-                                style={{ background: colorFor(track.instrument) }}
-                                title={track.name}
-                              />
-                              <span className="truncate text-[0.6rem] font-semibold text-muted">
-                                {track.name}
-                              </span>
-                            </span>
-                            <div
-                              className="flex"
-                              onMouseMove={
-                                live ? (e) => onRackCursorMove(e, track.id) : undefined
-                              }
-                              style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
-                            >
-                              {Array.from({ length: beatSteps }, (_, s) => {
-                                // Who is hovering THIS cell? The rack shows every
-                                // lane at once, so unlike the piano roll it can
-                                // point at a collaborator no matter which lane
-                                // they are on — this is the one view where
-                                // "where is everybody" is answerable in full.
-                                const here = peerCells.get(`${track.id}:${s}`);
-                                return (
-                                  <span
-                                    key={s}
-                                    title={
-                                      here && `${here.map((p) => p.displayName).join(", ")} here`
-                                    }
-                                    className={[
-                                      "cell",
-                                      notes.some((n) => s >= n.step && s < n.step + n.length)
-                                        ? "on"
-                                        : "",
-                                      s === currentStep ? "playhead" : "",
-                                      s % 16 === 0 ? "bar" : s % 4 === 0 ? "beat" : "",
-                                      here ? "peer" : "",
-                                    ].join(" ")}
-                                    style={
-                                      {
-                                        width: CELL_W - 3,
-                                        height: 16,
-                                        marginRight: 3,
-                                        // First one wins if two people share a
-                                        // cell — a blended colour would name
-                                        // neither of them.
-                                        ...(here ? { "--pcell": peerColor(here[0].userId) } : {}),
-                                      } as React.CSSProperties
-                                    }
-                                  />
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </Canvas>
+          <BeatEditorCanvas
+            selectedBeat={selectedBeat}
+            selectedTrack={selected}
+            tracks={sortedLanes}
+            selectedBeatId={selectedBeatId}
+            selectedTrackId={selectedId}
+            selectedNote={selectedNote}
+            notesByTrack={notesByTrack}
+            peers={peers}
+            flashing={flashing}
+            live={live}
+            canEdit={canEdit}
+            currentStep={currentStep}
+            octave={octave}
+            beatSteps={beatSteps}
+            laneNoteCount={laneNoteCount}
+            beatNoteCount={beatNoteCount}
+            error={error}
+            rollRef={rollRef}
+            onPatchBeat={(beatId, patch) => void patchBeat(beatId, patch)}
+            onOctaveChange={(nextOctave) => {
+              if (selected) setOctaves((current) => ({ ...current, [selected.id]: nextOctave }));
+            }}
+            onRequestClear={setClearing}
+            onRecordHistory={recordHistory}
+            onUpdateNote={updateNote}
+            onPreview={preview}
+            onRollMouseDown={onRollMouseDown}
+            onNoteMouseDown={onNoteMouseDown}
+            onNoteContextMenu={onNoteContextMenu}
+            onRollCursorMove={onRollCursorMove}
+            onRackCursorMove={onRackCursorMove}
+            onSelectTrack={setSelectedId}
+          />
         )}
 
         {chat.open && (
