@@ -72,9 +72,26 @@ export function coverFor(id: string, source?: CoverSource): Cover {
   const rand = seeded(h);
   const hue = h % 360;
 
+  /**
+   * Per-song hue, but at the DESIGN'S chroma, which is the whole trick.
+   *
+   * This used to be `hsl(hue 40% 14%)` — a properly coloured panel — and on
+   * the old violet palette it passed. Against lime it did not: a grid of
+   * fully saturated teal, salmon and purple panels next to one lime accent
+   * reads as a crayon box, and the brand colour stops meaning "this is the
+   * action" because everything is shouting.
+   *
+   * So the tint drops to chroma 0.026 — a hue you can name if you look, and
+   * cannot see if you don't. The BARS keep real colour (0.13), because they
+   * are the thing being identified; the panel behind them is just the room
+   * they stand in. oklch, not hsl, so that every hue lands at the same
+   * PERCEIVED lightness: hsl(60 …) and hsl(240 …) at identical "lightness"
+   * are wildly different to the eye, which is why the old covers had some
+   * cards glowing and others muddy.
+   */
   const palette = {
-    accent: `hsl(${hue} 70% 62%)`,
-    backdrop: `linear-gradient(160deg, hsl(${hue} 40% 14%), hsl(${(hue + 40) % 360} 45% 8%))`,
+    accent: `oklch(0.74 0.13 ${hue})`,
+    backdrop: `oklch(0.19 0.026 ${hue})`,
   };
 
   const hasNotes = source != null && source.steps.length > 0 && source.totalSteps > 0;

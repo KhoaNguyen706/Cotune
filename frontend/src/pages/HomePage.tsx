@@ -1,11 +1,5 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-// Imported HERE and not in main.tsx on purpose: an @font-face rule costs
-// nothing until something renders text in that family, so the app's own
-// screens never fetch these two — only this page does. Self-hosted, same
-// reasoning as Inter (see main.tsx).
-import "@fontsource-variable/space-grotesk";
-import "@fontsource-variable/jetbrains-mono";
 
 /**
  * The PUBLIC front door. Until this existed, / redirected straight to
@@ -33,8 +27,10 @@ import "@fontsource-variable/jetbrains-mono";
  * its own scroll container the way .page-center does.
  */
 export function HomePage() {
+  // No font-* class below: --font-sans IS Space Grotesk since the app
+  // adopted this page's palette, so the body's default is already right.
   return (
-    <div className="h-full overflow-y-auto bg-studio-bg font-display text-studio-text antialiased">
+    <div className="h-full overflow-y-auto bg-studio-bg text-studio-text antialiased">
       {/* relative + overflow-x-hidden: the ambient glow below is wider than
           the viewport on a phone and would otherwise scroll the page
           sideways. */}

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
-import { Button, Card, ErrorBanner, Field, TextInput } from "../ui/kit";
+import { Button, Card, ErrorBanner, Field, TextInput, Wordmark } from "../ui/kit";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -45,14 +45,9 @@ export function LoginPage() {
       <Link
         to="/"
         aria-label="Cotune home"
-        className="mb-6 flex items-center justify-center gap-2 rounded text-3xl font-extrabold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+        className="mb-6 flex justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
       >
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-xl text-bg shadow-glow">
-          ♪
-        </span>
-        <span className="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-transparent">
-          Cotune
-        </span>
+        <Wordmark size="lg" />
       </Link>
 
       <Card>

@@ -4,7 +4,8 @@ import { useAuth } from "../auth/AuthContext";
 import { ApiError, gql, rest } from "../api/client";
 import { beatColor } from "../ui/trackColors";
 import { coverFor } from "../ui/cover";
-import { Button, EditableName, ErrorBanner, Field, Skeleton, TextInput } from "../ui/kit";
+import { Button, EditableName, ErrorBanner, Field, Skeleton, TextInput, Wordmark } from "../ui/kit";
+import { LibraryIcon, ListIcon, SearchIcon, ShareIcon, ShieldIcon, SlidersIcon } from "../ui/icons";
 import { AppShell, Canvas, Modal, NavItem, NavRail, Workspace } from "../ui/shell";
 import { SettingsModal } from "../ui/SettingsModal";
 import { ShareModal } from "../ui/ShareModal";
@@ -49,6 +50,30 @@ const DELETE_SONG = `
 /** Which slice of the library is on screen. Both come from the same query. */
 type View = "mine" | "shared";
 
+/**
+ * Filter the library by what you typed.
+ *
+ * CLIENT-SIDE, and that is a decision with a shelf life. `songs` is already
+ * in memory — the whole library, with its beats, fetched in one query — so
+ * a server round trip per keystroke would be slower AND would need a new
+ * endpoint to answer a question the browser can already answer. It stops
+ * being right at the point where the library no longer fits in one query;
+ * the same day the grid needs pagination, this needs to move to the server.
+ *
+ * It matches BEAT NAMES as well as titles because the placeholder promises
+ * "songs and beats" — a search box that quietly ignores half its own label
+ * is worse than one that never mentioned beats.
+ */
+function matching(songs: Song[], query: string): Song[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return songs;
+  return songs.filter(
+    (song) =>
+      song.title.toLowerCase().includes(needle) ||
+      song.beats.some((beat) => beat.name.toLowerCase().includes(needle)),
+  );
+}
+
 export function SongsPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -56,6 +81,10 @@ export function SongsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>("mine");
+  /** The search box. Not in the URL: a filter you typed is a glance, not a
+   *  place — you don't bookmark it and you don't want Back to walk you out
+   *  of it one letter at a time. */
+  const [query, setQuery] = useState("");
 
   const [creating, setCreating] = useState(false); // modal open?
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -93,8 +122,8 @@ export function SongsPage() {
   // One query, two views. `myRole` is the server's answer, not our guess.
   const mine = songs.filter((song) => song.myRole === "OWNER");
   const shared = songs.filter((song) => song.myRole !== "OWNER");
-  const visible = view === "mine" ? mine : shared;
   const sharing = songs.find((song) => song.id === sharingId) ?? null;
+  const visible = matching(view === "mine" ? mine : shared, query);
 
   async function onCreate(event: FormEvent) {
     event.preventDefault();
@@ -154,13 +183,14 @@ export function SongsPage() {
               {/* The account card: who am I, on what plan. Pinned to the
                   bottom of the rail because identity is ambient — always
                   available, never the thing you came here to do. */}
-              <div className="flex items-center gap-3 rounded-xl border border-edge bg-bg-soft/60 p-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-sm font-bold text-bg">
-                  {user?.displayName?.[0]?.toUpperCase() ?? "?"}
-                </span>
+              <div className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3">
+                <Avatar name={user?.displayName} />
                 <span className="min-w-0 leading-tight">
                   <span className="block truncate text-sm font-bold">{user?.displayName}</span>
-                  <span className="block text-xs text-muted">Free plan</span>
+                  {/* Mono, like every other piece of machine state in the
+                      designs — a plan name is a fact about the account, not
+                      prose. */}
+                  <span className="block font-mono text-[10.5px] text-muted">Free plan</span>
                 </span>
               </div>
               <button
@@ -172,15 +202,12 @@ export function SongsPage() {
             </>
           }
         >
-          <div className="mb-4 flex items-center gap-3 px-1 py-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-base text-bg shadow-glow">
-              ♪
-            </span>
-            <span className="text-lg font-extrabold tracking-tight">Cotune</span>
+          <div className="mb-4 px-1 py-2">
+            <Wordmark />
           </div>
 
           <NavItem
-            icon="▤"
+            icon={<ListIcon className="h-[17px] w-[17px]" />}
             label="My songs"
             active={view === "mine"}
             onClick={() => setView("mine")}
@@ -190,41 +217,62 @@ export function SongsPage() {
               asset store — and it stays honestly inert rather than linking
               to a blank page. */}
           <NavItem
-            icon="◎"
+            icon={<ShareIcon className="h-[17px] w-[17px]" />}
             label="Shared with me"
             active={view === "shared"}
             onClick={() => setView("shared")}
           />
-          <NavItem icon="☰" label="Library" soon />
+          <NavItem icon={<LibraryIcon className="h-[17px] w-[17px]" />} label="Library" soon />
           {/* Admins get one extra destination: the AI-invite console. Gated
               on role here for the affordance; the /admin route and the
               mutations behind it enforce it server-side regardless. */}
           {user?.role === "ADMIN" && (
-            <NavItem icon="⚑" label="Admin" onClick={() => navigate("/admin")} />
+            <NavItem
+              icon={<ShieldIcon className="h-[17px] w-[17px]" />}
+              label="Admin"
+              onClick={() => navigate("/admin")}
+            />
           )}
-          <NavItem icon="⚙" label="Settings" onClick={() => setSettingsOpen(true)} />
+          <NavItem
+            icon={<SlidersIcon className="h-[17px] w-[17px]" />}
+            label="Settings"
+            onClick={() => setSettingsOpen(true)}
+          />
         </NavRail>
 
         <Canvas className="p-8">
           <div className="mx-auto max-w-[1400px]">
-            <div className="mb-8 flex items-start justify-between gap-4">
+            <div className="mb-8 flex items-start justify-between gap-5 max-md:flex-col">
               <div>
-                <h1 className="text-3xl font-extrabold tracking-tight">
+                <h1 className="text-3xl font-semibold tracking-[-0.02em]">
                   {view === "mine" ? "My songs" : "Shared with me"}
                 </h1>
-                <p className="mt-1 text-sm text-muted">
+                <p className="mt-1.5 text-sm text-muted">
                   {loading
                     ? "Loading…"
                     : view === "mine"
-                      ? `${mine.length} song${mine.length === 1 ? "" : "s"} · sketches sync automatically`
+                      ? `${mine.length} song${mine.length === 1 ? "" : "s"} · autosaved to your account`
                       : `${shared.length} song${shared.length === 1 ? "" : "s"} shared with you`}
                 </p>
               </div>
-              {view === "mine" && (
-                <Button className="shadow-glow" onClick={() => setCreating(true)}>
-                  + New song
-                </Button>
-              )}
+              <div className="flex items-center gap-3 max-md:w-full">
+                <label className="relative flex items-center max-md:flex-1">
+                  <SearchIcon className="pointer-events-none absolute left-3 h-[15px] w-[15px] text-muted" />
+                  <TextInput
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search songs and beats"
+                    aria-label="Search songs and beats"
+                    className="w-[230px] pl-9 max-md:w-full"
+                  />
+                </label>
+                {view === "mine" && (
+                  <Button className="shrink-0 shadow-glow" onClick={() => setCreating(true)}>
+                    + New song
+                  </Button>
+                )}
+              </div>
             </div>
 
             {error && <ErrorBanner>{error}</ErrorBanner>}
@@ -309,7 +357,7 @@ export function SongsPage() {
                             it beats the stretched link and keeps its own
                             label for screen readers. */}
                         <button
-                          className="absolute -bottom-5 right-5 z-20 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-2 pl-0.5 text-sm text-bg shadow-glow transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                          className="absolute -bottom-5 right-5 z-20 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-accent pl-0.5 text-sm text-bg shadow-glow transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                           title={`Open ${song.title} in the editor`}
                           aria-label={`Open ${song.title} in the editor`}
                           onClick={() => navigate(`/songs/${song.id}`)}
@@ -321,7 +369,7 @@ export function SongsPage() {
                       {/* -- body --------------------------------------- */}
                       <div className="p-5 pt-6">
                         <div className="flex items-center gap-2">
-                          <strong className="min-w-0 truncate text-lg font-bold tracking-tight">
+                          <strong className="min-w-0 truncate font-semibold tracking-[-0.01em]">
                             {editable ? (
                               // z-20: sits above the stretched link so
                               // double-click-to-rename still reaches it.
@@ -339,7 +387,11 @@ export function SongsPage() {
                           <RoleBadge role={song.myRole} />
                         </div>
 
-                        <p className="mt-1 text-sm text-muted">
+                        {/* Mono: this line is four numbers and a time
+                            signature. Proportional digits make "124 BPM ·
+                            4/4" read as a sentence; tabular ones make it
+                            read as a spec, which is what it is. */}
+                        <p className="mt-2 font-mono text-xs text-muted">
                           {song.bpm} BPM · {song.timeSignature} · {trackCount} track
                           {trackCount === 1 ? "" : "s"}
                         </p>
@@ -370,28 +422,45 @@ export function SongsPage() {
                             <span className="text-xs text-muted">no beats yet</span>
                           )}
 
-                          {/* Sharing and deleting are OWNER rights — an editor
-                              has neither (see SongAccess). The UI mirrors the
-                              server rule so nobody meets a button that is
-                              guaranteed to 403; the real gate is @PreAuthorize
-                              server-side, and it stays the only one that
-                              decides anything. */}
-                          {isOwner && (
-                            <span className="relative z-20 ml-auto flex items-center gap-1 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
-                              <button
-                                className="cursor-pointer rounded px-1 text-sm font-medium text-muted transition-colors duration-150 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                                onClick={() => setSharingId(song.id)}
-                              >
-                                Share
-                              </button>
-                              <button
-                                className="cursor-pointer rounded px-1 text-sm font-medium text-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                                onClick={() => void onDelete(song.id)}
-                              >
-                                Delete
-                              </button>
+                          {/* The right-hand slot holds two things that both
+                              want the same corner, so they take turns: at
+                              rest it shows WHO is on the song (the design's
+                              idea), and on hover it becomes what you can DO
+                              about it. The actions were hover-only before
+                              this redesign too — the avatars just gave the
+                              resting state something true to say.
+
+                              Sharing and deleting are OWNER rights — an
+                              editor has neither (see SongAccess). The UI
+                              mirrors the server rule so nobody meets a button
+                              guaranteed to 403; @PreAuthorize is still the
+                              only thing that decides. */}
+                          <div className="relative ml-auto flex shrink-0 items-center">
+                            <span
+                              className={
+                                "transition-opacity duration-150 " +
+                                (isOwner ? "group-hover:opacity-0 group-focus-within:opacity-0" : "")
+                              }
+                            >
+                              <Collaborators people={song.collaborators} />
                             </span>
-                          )}
+                            {isOwner && (
+                              <span className="absolute right-0 z-20 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+                                <button
+                                  className="cursor-pointer rounded px-1 text-sm font-medium text-muted transition-colors duration-150 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                                  onClick={() => setSharingId(song.id)}
+                                >
+                                  Share
+                                </button>
+                                <button
+                                  className="cursor-pointer rounded px-1 text-sm font-medium text-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                                  onClick={() => void onDelete(song.id)}
+                                >
+                                  Delete
+                                </button>
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </li>
@@ -400,22 +469,36 @@ export function SongsPage() {
 
                 {/* The create affordance lives IN the grid too, where your eye
                     already is after scanning the songs — but only on YOUR
-                    songs. "New song" in the Shared-with-me grid would create
-                    a song that promptly vanishes from the view you made it in. */}
-                {view === "mine" && (
+                    songs, and not while you are searching: "New song" as the
+                    lone answer to a query that matched nothing reads as a
+                    result, and clicking it is never what you meant. */}
+                {view === "mine" && !query.trim() && (
                   <li>
                     <button
                       onClick={() => setCreating(true)}
-                      className="flex h-full min-h-[240px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-edge text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      className="flex h-full min-h-[240px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-edge-strong text-muted transition-colors duration-150 hover:border-accent hover:bg-surface hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      <span className="text-3xl">+</span>
-                      <span className="text-sm font-semibold">New song</span>
+                      <span className="text-3xl font-light">+</span>
+                      <span className="text-sm font-medium">New song</span>
                     </button>
                   </li>
                 )}
 
-                {view === "shared" && shared.length === 0 && (
-                  <li className="col-span-full rounded-2xl border-2 border-dashed border-edge p-10 text-center">
+                {/* A search with no hits must say so. Without this the grid
+                    just empties, which looks identical to "your songs are
+                    gone" — the scariest possible reading of a filter. */}
+                {query.trim() && visible.length === 0 && (
+                  <li className="col-span-full rounded-2xl border border-dashed border-edge p-10 text-center">
+                    <p className="text-sm font-semibold">No matches for “{query.trim()}”</p>
+                    <p className="mt-1 text-sm text-muted">
+                      Searches song titles and beat names in{" "}
+                      {view === "mine" ? "your songs" : "songs shared with you"}.
+                    </p>
+                  </li>
+                )}
+
+                {!query.trim() && view === "shared" && shared.length === 0 && (
+                  <li className="col-span-full rounded-2xl border border-dashed border-edge p-10 text-center">
                     <p className="text-sm font-semibold">Nothing shared with you yet</p>
                     <p className="mt-1 text-sm text-muted">
                       When someone invites you to a song, it shows up here.
@@ -491,6 +574,62 @@ export function SongsPage() {
         </Modal>
       )}
     </AppShell>
+  );
+}
+
+/** Someone's initials in a tile. The account card's version of a face,
+ *  and the atom the collaborator stack below is built from. */
+function Avatar({ name, className }: { name?: string | null; className?: string }) {
+  return (
+    <span
+      className={
+        "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg " +
+        "bg-accent/15 text-[13px] font-semibold text-accent " +
+        (className ?? "")
+      }
+    >
+      {name?.trim()?.[0]?.toUpperCase() ?? "?"}
+    </span>
+  );
+}
+
+/**
+ * Who else is on this song, as a stack of overlapping initials.
+ *
+ * It reads from `collaborators`, which the songs query already asks for —
+ * no new request. The point is that a shared song should LOOK shared from
+ * across the grid, before you read a single word: the "SHARED" chip tells
+ * you the fact, but faces tell you it is a room with people in it.
+ *
+ * Capped at three plus a count. Four 24px circles is a design; eleven is a
+ * caterpillar.
+ */
+function Collaborators({ people }: { people: Song["collaborators"] }) {
+  if (!people?.length) return null;
+  const shown = people.slice(0, 3);
+  const rest = people.length - shown.length;
+
+  return (
+    <div
+      className="flex items-center"
+      // One label for the stack: a screen reader wants "shared with Maya and
+      // 2 others", not three separate mystery letters.
+      aria-label={`Shared with ${people.map((p) => p.displayName).join(", ")}`}
+    >
+      {shown.map((person, i) => (
+        <span
+          key={person.userId}
+          title={person.displayName}
+          className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-2 font-mono text-[9.5px] font-semibold text-muted first:ml-0"
+          style={{ marginLeft: i ? -8 : 0, zIndex: 10 - i }}
+        >
+          {person.displayName?.trim()?.[0]?.toUpperCase() ?? "?"}
+        </span>
+      ))}
+      {rest > 0 && (
+        <span className="ml-1.5 font-mono text-[10px] text-muted">+{rest}</span>
+      )}
+    </div>
   );
 }
 

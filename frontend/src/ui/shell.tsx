@@ -227,8 +227,9 @@ export function IconButton({ tone = "default", active, className, ...props }: Ic
           "text-sm font-semibold transition-colors duration-150 " +
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 " +
           "disabled:cursor-default disabled:opacity-40",
-        tone === "solid" &&
-          "bg-gradient-to-br from-accent to-accent-2 text-bg hover:not-disabled:brightness-110",
+        // Flat accent — same reasoning as kit.tsx's primary Button: the
+        // lime→amber ramp goes through olive.
+        tone === "solid" && "bg-accent text-bg hover:not-disabled:brightness-110",
         tone === "danger" && "text-muted hover:not-disabled:bg-danger/15 hover:not-disabled:text-danger",
         tone === "default" &&
           !active &&

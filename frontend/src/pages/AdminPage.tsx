@@ -2,7 +2,8 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError, gql } from "../api/client";
-import { Button, Card, Field, TextInput } from "../ui/kit";
+import { Button, Card, Field, TextInput, Wordmark } from "../ui/kit";
+import { ListIcon, ShieldIcon } from "../ui/icons";
 import { AppShell, Canvas, NavItem, NavRail, Workspace } from "../ui/shell";
 
 // The two ADMIN-gated mutations already exist server-side (AiAccessGraphql
@@ -68,13 +69,13 @@ export function AdminPage() {
         <NavRail
           footer={
             <>
-              <div className="flex items-center gap-3 rounded-xl border border-edge bg-bg-soft/60 p-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-sm font-bold text-bg">
+              <div className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3">
+                <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-accent/15 text-[13px] font-semibold text-accent">
                   {user?.displayName?.[0]?.toUpperCase() ?? "?"}
                 </span>
                 <span className="min-w-0 leading-tight">
                   <span className="block truncate text-sm font-bold">{user?.displayName}</span>
-                  <span className="block text-xs text-muted">Admin</span>
+                  <span className="block font-mono text-[10.5px] text-muted">Admin</span>
                 </span>
               </div>
               <button
@@ -86,15 +87,16 @@ export function AdminPage() {
             </>
           }
         >
-          <div className="mb-4 flex items-center gap-3 px-1 py-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-base text-bg shadow-glow">
-              ♪
-            </span>
-            <span className="text-lg font-extrabold tracking-tight">Cotune</span>
+          <div className="mb-4 px-1 py-2">
+            <Wordmark />
           </div>
 
-          <NavItem icon="▤" label="My songs" onClick={() => navigate("/songs")} />
-          <NavItem icon="⚑" label="Admin" active />
+          <NavItem
+            icon={<ListIcon className="h-[17px] w-[17px]" />}
+            label="My songs"
+            onClick={() => navigate("/songs")}
+          />
+          <NavItem icon={<ShieldIcon className="h-[17px] w-[17px]" />} label="Admin" active />
         </NavRail>
 
         <Canvas className="p-8">

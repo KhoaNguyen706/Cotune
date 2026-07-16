@@ -29,9 +29,14 @@ const buttonBase =
   "active:scale-[0.97] disabled:opacity-55 disabled:cursor-default disabled:active:scale-100";
 
 const buttonVariants: Record<NonNullable<ButtonProps["variant"]>, string> = {
-  primary:
-    "bg-gradient-to-br from-accent to-accent-2 text-bg " +
-    "hover:not-disabled:brightness-110 hover:not-disabled:shadow-glow",
+  // FLAT, not a gradient. It used to run accent → accent-2, which worked
+  // when those were violet → sky (neighbours on the wheel). The studio
+  // palette's pair is lime → amber, nearly a third of the wheel apart, and
+  // the ramp between them passes through olive: the button read as a smear
+  // rather than a colour. The designs use one flat lime for the one primary
+  // action, which is also the more honest signal — a gradient says "look at
+  // me twice".
+  primary: "bg-accent text-bg hover:not-disabled:brightness-110 hover:not-disabled:shadow-glow",
   ghost:
     "border border-edge-strong text-text bg-transparent " +
     "hover:not-disabled:border-accent hover:not-disabled:text-text",
@@ -51,6 +56,48 @@ export function Button({ variant = "primary", size = "md", className, ...props }
       className={cx(buttonBase, buttonVariants[variant], buttonSizes[size], className)}
       {...props}
     />
+  );
+}
+
+/* ---------- Brand ---------- */
+
+/**
+ * The wordmark: a live dot in a tile, then the name.
+ *
+ * It exists as ONE component because it had been copy-pasted into five
+ * screens (login, register, listen, songs, admin), each with its own
+ * slightly different gradient ♪ — so the repalette would have meant fixing
+ * the same mark five times and, realistically, missing one.
+ *
+ * The dot is the design's idea and it is a good one: Cotune's whole point
+ * is that a session is LIVE and someone else is in it. A pulsing dot says
+ * that; a music note glyph says "audio software", which you already knew.
+ */
+export function Wordmark({ size = "md" }: { size?: "md" | "lg" }) {
+  const lg = size === "lg";
+  return (
+    <span className="flex items-center gap-2.5">
+      <span
+        className={cx(
+          "flex shrink-0 items-center justify-center rounded-lg border border-edge bg-surface-2",
+          lg ? "h-10 w-10" : "h-[30px] w-[30px]",
+        )}
+      >
+        {/* aria-hidden: the dot is decoration next to the name, and a
+            screen reader announcing "bullet Cotune" helps nobody. */}
+        <span
+          aria-hidden
+          className={cx(
+            "rounded-full bg-accent motion-safe:animate-[blink_2.4s_ease-in-out_infinite]",
+            lg ? "h-2.5 w-2.5" : "h-2 w-2",
+          )}
+          style={{ boxShadow: "0 0 10px -1px var(--color-accent)" }}
+        />
+      </span>
+      <span className={cx("font-bold tracking-[-0.01em]", lg ? "text-2xl" : "text-[17px]")}>
+        Cotune
+      </span>
+    </span>
   );
 }
 
@@ -203,7 +250,10 @@ export function EmptyState({
   title,
   hint,
 }: {
-  icon: string;
+  /** ReactNode, not string: a drawn mark can take the accent and look the
+   *  same on every machine, which an emoji cannot (see icons.tsx). Still
+   *  accepts a string, so the emoji call sites keep working. */
+  icon: ReactNode;
   title: string;
   hint: string;
 }) {

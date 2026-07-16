@@ -17,44 +17,64 @@
 @import "tailwindcss";
 
 @theme {
-  /* -- color tokens (semantic, not descriptive: "surface", never "gray-900") -- */
-  --color-bg: #0b0c10; /* app canvas */
-  --color-bg-soft: #11131a; /* inputs, wells, roll cells */
-  --color-surface: #161923; /* cards */
-  --color-surface-2: #1c2030; /* raised card top, hover fills, skeletons */
-  --color-edge: #272c3c; /* default borders */
-  --color-edge-strong: #39405a; /* emphasized borders, hover borders */
+  /* -- color tokens (semantic, not descriptive: "surface", never "gray-900") --
 
-  --color-text: #edeef4; /* primary text  (15.2:1 on bg) */
-  --color-muted: #9aa1b4; /* secondary text (6.9:1 on surface) */
+     THE STUDIO PALETTE: warm near-black and lime, from the Dashboard and
+     Editor designs. It replaced a cool violet set, and the swap touched
+     exactly this block — no component changed, because no component has
+     ever named a colour. That is the whole return on the "semantic tokens
+     only" rule at the top of this file, collected in one commit.
 
-  --color-accent: #8b7cf8; /* brand violet */
-  --color-accent-2: #38bdf8; /* brand sky — gradient partner */
-  --color-danger: #fb7185; /* destructive, errors (5.9:1 on bg) */
-  --color-solo: #f5d76b; /* solo-active amber */
+     Warm, not neutral: every grey here carries hue 95 at low chroma, so
+     the greys agree with the lime instead of fighting it. A true-neutral
+     #161616 next to this accent reads faintly blue and dirty.
 
-  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+     The ratios in the comments are MEASURED (see the AA CONTRAST rule
+     above), not estimated. Change a value and re-check the pair. */
+  --color-bg: oklch(0.15 0.006 95); /* app canvas */
+  --color-bg-soft: oklch(0.19 0.006 95); /* inputs, wells, roll cells */
+  --color-surface: oklch(0.185 0.006 95); /* cards, sidebars, top bar */
+  --color-surface-2: oklch(0.22 0.007 95); /* raised fills, hover, nav-active, skeletons */
+  --color-edge: oklch(0.26 0.007 95); /* default borders */
+  --color-edge-strong: oklch(0.38 0.008 95); /* emphasized + hover borders */
 
-  --shadow-card: 0 10px 30px rgb(0 0 0 / 0.35);
-  --shadow-glow: 0 6px 18px rgb(139 124 248 / 0.35);
+  --color-text: oklch(0.96 0.004 95); /* primary text (17.5:1 on bg) */
+  --color-muted: oklch(0.7 0.006 95); /* secondary text (7.0:1 on surface) */
+
+  --color-accent: oklch(0.86 0.19 138); /* brand lime — an ON step, the one primary action */
+  --color-accent-2: oklch(0.82 0.16 62); /* brand amber — gradient partner, audio clips */
+  --color-danger: oklch(0.72 0.17 25); /* destructive, errors */
+  --color-solo: oklch(0.85 0.16 85); /* solo-active amber */
+
+  /* Space Grotesk is the designs' voice: a grotesk with just enough
+     personality to read as a product rather than a bootstrap template.
+     JetBrains Mono carries every NUMBER and label — BPM, bar counts, step
+     positions, plan names. That split is not decoration: tabular digits
+     stop the transport readout jittering as it counts, and a mono label
+     reads as machine state rather than prose. Both self-hosted (see
+     main.tsx); Inter is gone with the violet. */
+  --font-sans: "Space Grotesk Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", monospace;
+
+  --shadow-card: 0 18px 40px -24px rgb(0 0 0 / 0.8);
+  --shadow-glow: 0 0 24px -10px oklch(0.86 0.19 138 / 0.9);
 
   /* ---------------------------------------------------------------------
-     THE STUDIO PALETTE — the marketing landing page (/) and nothing else.
+     THE POSTER PALETTE — the marketing landing page (/) and nothing else.
 
-     Why a SECOND palette at all: the tokens above describe the app, whose
-     job is to disappear behind an eight-hour session — cool, low-chroma,
-     two themes. The landing page has the opposite job: it has ten seconds
-     to say what this is. It is a poster, not a workstation, and it is the
-     one screen a stranger sees before deciding to close the tab.
+     These used to be a whole second identity, because the app was violet
+     and the landing page was not. Now they are the SAME family, and what
+     is left is a deliberately smaller difference: the landing page sits a
+     touch lighter than the app (0.17 vs 0.15) because a poster wants air
+     where a workstation wants its canvas to recede.
 
-     Two rules keep this from rotting into a free-for-all:
-       1. ONLY HomePage.tsx may use `studio-*`. Anything that appears in the
-          app proper uses the semantic tokens above, or it will not follow
-          the light theme.
-       2. These are FIXED — deliberately not remapped under
-          [data-theme="light"] below. The page is a dark poster in both
-          themes; a lime-on-white version of it is a different design, not
-          a token swap, and half-doing it would just be a broken one.
+     They still exist for one reason, and it is the same one as before:
+     these are FIXED. They do not remap under [data-theme="light"], so the
+     landing page stays a dark poster whichever theme you use. A lime-on-
+     white version of that page is a different design, not a token swap,
+     and half-doing it would just be a broken one. ONLY HomePage.tsx may
+     use `studio-*`; everything inside the app uses the semantic tokens
+     above, or it will not follow the theme toggle.
      --------------------------------------------------------------------- */
   --color-studio-bg: oklch(0.17 0.006 95); /* warm near-black */
   --color-studio-panel: oklch(0.205 0.007 95); /* the sequencer mock's body */
@@ -68,12 +88,6 @@
   --color-studio-dim: oklch(0.6 0.006 95); /* mono eyebrows, footer links */
   --color-studio-lime: oklch(0.86 0.19 138); /* THE accent — an ON step */
   --color-studio-amber: oklch(0.82 0.16 62); /* the second peer's cursor */
-
-  /* Display + mono, self-hosted like Inter (imported by HomePage.tsx, so
-     the woff2 files are only fetched on the page that actually uses them —
-     @font-face alone never triggers a download). */
-  --font-display: "Space Grotesk Variable", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
 }
 
 /* The landing page's three ambient animations. The playhead sweep is the
@@ -121,25 +135,41 @@
    Selector, not @media: the user's explicit choice must be able to BEAT
    their OS preference. main.tsx stamps data-theme on <html>; "system" mode
    stamps whichever the OS currently reports.
+
+   THERE IS NO MOCK FOR THIS ONE. The Dashboard and Editor designs are
+   dark-only, so this block is derived rather than copied, under one rule:
+   keep the HUES, re-pick the LIGHTNESS. The warm greys invert around hue
+   95 so the light theme is warm paper rather than blue-white, and it stays
+   recognisably the same product.
+
+   The accent is where a naive inversion breaks, and it is worth being
+   explicit about why. The brand lime is oklch(0.86 ...) — nearly as light
+   as white. As text or a border on white it measures about 1.5:1: not
+   "slightly under AA", but genuinely unreadable. So light mode uses a
+   deep green of the same hue for anything that must be READ (text-accent,
+   focus rings), which is the same trade the old violet made here. Buttons
+   are unaffected in kind: they are an accent FILL with bg-coloured text,
+   and a dark fill with near-white text is exactly as legible as the
+   reverse.
    ========================================================================== */
 :root[data-theme="light"] {
-  --color-bg: #f6f7fb; /* app canvas */
-  --color-bg-soft: #ffffff; /* inputs, wells, roll cells */
-  --color-surface: #ffffff; /* cards */
-  --color-surface-2: #eef0f6; /* raised/hover fills, skeletons */
-  --color-edge: #dcdfea; /* default borders */
-  --color-edge-strong: #b9bed0; /* emphasized borders */
+  --color-bg: oklch(0.97 0.005 95); /* warm paper, not blue-white */
+  --color-bg-soft: oklch(1 0 0); /* inputs, wells, roll cells */
+  --color-surface: oklch(1 0 0); /* cards */
+  --color-surface-2: oklch(0.945 0.006 95); /* raised/hover fills, skeletons */
+  --color-edge: oklch(0.89 0.006 95); /* default borders */
+  --color-edge-strong: oklch(0.76 0.008 95); /* emphasized borders */
 
-  --color-text: #14161f; /* 16.1:1 on bg */
-  --color-muted: #5c6377; /* 5.9:1 on surface — passes AA for body text */
+  --color-text: oklch(0.22 0.006 95); /* 15.8:1 on bg */
+  --color-muted: oklch(0.455 0.006 95); /* 6.9:1 on surface */
 
-  --color-accent: #6544e8; /* darkened: the dark-mode violet fails AA on white */
-  --color-accent-2: #0a84c4; /* darkened sky, same reason */
-  --color-danger: #c2264b;
-  --color-solo: #a97a00;
+  --color-accent: oklch(0.495 0.14 145); /* deep green: the brand lime is ~1.5:1 on white */
+  --color-accent-2: oklch(0.52 0.12 62); /* darkened amber, same reason */
+  --color-danger: oklch(0.5 0.19 25);
+  --color-solo: oklch(0.52 0.12 85);
 
-  --shadow-card: 0 6px 20px rgb(20 22 31 / 0.08);
-  --shadow-glow: 0 6px 18px rgb(101 68 232 / 0.28);
+  --shadow-card: 0 6px 20px rgb(32 30 24 / 0.1);
+  --shadow-glow: 0 0 24px -10px oklch(0.52 0.14 145 / 0.5);
 }
 
 /* ---------- base ----------
@@ -169,8 +199,17 @@ body {
   @apply bg-bg text-text font-sans antialiased;
   font-size: 15px;
   /* one soft brand glow, top-right — depth without imagery. Fixed, so it
-     doesn't smear when a pane scrolls under it. */
-  background-image: radial-gradient(1200px 600px at 88% -12%, rgb(139 124 248 / 0.1), transparent 62%);
+     doesn't smear when a pane scrolls under it.
+     Derived from the accent token, not a literal: this line was a hardcoded
+     violet rgb() and it survived the whole repalette — the one thing on the
+     page still glowing the old brand colour. Exactly the failure the "no raw
+     hex in a component" rule at the top of this file exists to prevent, sitting
+     in the file that declares the rule. */
+  background-image: radial-gradient(
+    1200px 600px at 88% -12%,
+    color-mix(in oklch, var(--color-accent) 10%, transparent),
+    transparent 62%
+  );
   background-attachment: fixed;
   overflow: hidden;
 }
@@ -378,7 +417,14 @@ input[type="range"] {
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--pc);
-  color: #0b0b12;
+  /* FIXED DARK, and deliberately not var(--color-bg) — I tried, and it is
+     wrong. This is text on the PEER'S colour, not on the page: peerColor()
+     always returns hsl(... 75% 62%), a light saturated fill, in every
+     theme. Following the theme would make it near-white on light-green in
+     light mode. The one rule it must obey is "contrast with --pc", and --pc
+     does not care what theme you are in. Warm-neutral so it matches the
+     palette's greys rather than reading blue. */
+  color: oklch(0.15 0.006 95);
   font-size: 0.6rem;
   font-weight: 700;
   line-height: 1.4;

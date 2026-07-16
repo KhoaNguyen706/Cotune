@@ -3,6 +3,7 @@ import { ApiError, fetchBinary, gql, rest } from "../api/client";
 import { downloadBlob, evictAudioBuffer, secondsPerStep, STEPS_PER_BAR, uploadAudioFile } from "../audio/engine";
 import { beatColor, colorFor } from "../ui/trackColors";
 import { EmptyState } from "../ui/kit";
+import { TimelineMark } from "../ui/icons";
 import { IconButton, SidebarSection } from "../ui/shell";
 import type { AudioFile, Beat, Clip } from "../types";
 
@@ -665,7 +666,7 @@ export function ArrangementTimeline({
             {clips.length === 0 && !armed && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <EmptyState
-                  icon="🎬"
+                  icon={<TimelineMark />}
                   title="Empty timeline"
                   hint={
                     canEdit
