@@ -131,5 +131,32 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(stompAuthChannelInterceptor, new SecurityContextChannelInterceptor());
+
+        // EVERY inbound frame — every cursor, every note — is handled on this
+        // pool, and a note op BLOCKS one of these threads for the whole
+        // read-lock-write-commit against a Postgres in another datacentre.
+        //
+        // The default is availableProcessors() * 2, which on a small dyno is
+        // FOUR. Four threads, each parked on a ~100ms round trip, is a handler
+        // pool that spends its life waiting — and once every thread is waiting,
+        // the frames behind them (including everyone else's cursors) simply sit
+        // in the queue. That is head-of-line blocking, and it is why the lag was
+        // never proportional to how much work the server was actually doing.
+        //
+        // Sized against the DB pool (maximum-pool-size: 5 in prod), not against
+        // the CPU: these threads are I/O-bound, so the right number is "enough
+        // that a full DB pool plus some slack is in flight", not "one per core".
+        // Above that they'd only queue somewhere else — Hikari — with less
+        // visibility. Presence frames cost no database at all since
+        // SongAccessCache, so they now fly through this pool instead of
+        // occupying it.
+        registration.taskExecutor()
+                .corePoolSize(16)
+                .maxPoolSize(32)
+                // Bounded, and small: a queue is latency you cannot see. If 32
+                // threads are all busy the honest outcome is backpressure on the
+                // socket, not a thousand cursor frames quietly ageing in RAM to
+                // be delivered long after the mouse has moved on.
+                .queueCapacity(200);
     }
 }

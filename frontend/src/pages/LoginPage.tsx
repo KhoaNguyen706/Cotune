@@ -20,7 +20,10 @@ export function LoginPage() {
     setBusy(true);
     try {
       await login(email, password);
-      navigate("/");
+      // /songs, not "/": "/" is the landing page, and signing in only to be
+      // shown the "Start a session" pitch again would be a joke at the
+      // user's expense.
+      navigate("/songs");
     } catch (e) {
       // The server's 401 message is deliberately vague ("Invalid email or
       // password") — we show it verbatim rather than "improving" it into
@@ -36,14 +39,21 @@ export function LoginPage() {
     // right — there's no workspace to fill. Everything else is full-bleed.
     <main className="page-center flex-col">
       <div className="w-full max-w-sm">
-      <div className="mb-6 flex items-center justify-center gap-2 text-3xl font-extrabold tracking-tight">
+      {/* The wordmark goes home. Every site trains you to click the logo to
+          escape, and until the landing page existed there was nowhere to
+          escape TO — now there is, so this stops being decoration. */}
+      <Link
+        to="/"
+        aria-label="Cotune home"
+        className="mb-6 flex items-center justify-center gap-2 rounded text-3xl font-extrabold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      >
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-xl text-bg shadow-glow">
           ♪
         </span>
         <span className="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-transparent">
           Cotune
         </span>
-      </div>
+      </Link>
 
       <Card>
         <h2 className="mb-1 font-semibold">Sign in</h2>

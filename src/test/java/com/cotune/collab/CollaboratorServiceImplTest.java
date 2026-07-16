@@ -4,6 +4,7 @@ import com.cotune.collab.dto.CollaboratorDto;
 import com.cotune.collab.dto.ShareSongInput;
 import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.song.Song;
+import com.cotune.song.SongAccessCache;
 import com.cotune.song.SongRepository;
 import com.cotune.user.User;
 import com.cotune.user.UserRepository;
@@ -34,6 +35,12 @@ class CollaboratorServiceImplTest {
     private SongRepository songRepository;
     @Mock
     private UserRepository userRepository;
+    /** Mocked because it is the socket's authorization memo talking to nothing
+     *  here — that sharing EVICTS it is behaviour a mock can only assert was
+     *  called, so the real proof lives in an integration test with a live
+     *  socket (RealtimeStompIntegrationTest#revokingAnEditorStopsTheirVeryNextNote). */
+    @Mock
+    private SongAccessCache songAccessCache;
 
     private CollaboratorServiceImpl service;
 
@@ -48,7 +55,8 @@ class CollaboratorServiceImplTest {
         // The mapper is a pure function — mocking it would only let a broken
         // mapping pass. Use the real one; mock only what talks to a database.
         service = new CollaboratorServiceImpl(
-                collaboratorRepository, songRepository, userRepository, new CollaboratorMapper());
+                collaboratorRepository, songRepository, userRepository, new CollaboratorMapper(),
+                songAccessCache);
 
         song = new Song("Shared Sketch", 120, "4/4", ownerId);
         ReflectionTestUtils.setField(song, "id", songId);

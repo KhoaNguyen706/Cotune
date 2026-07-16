@@ -55,9 +55,15 @@ public class RealtimeController {
      * may subscribe and watch the beat change under them, and may not touch it.
      * The rule is the same object, from the same class, as the HTTP path — the
      * one thing you must never do is re-implement it here "for the socket".
+     *
+     * It goes through @songAccessCache, which does not bend that rule: on a miss
+     * it asks the very same SongAccess. What it buys is that a drag's worth of
+     * ops doesn't pay for the same two SELECTs over and over. See SongAccessCache
+     * for what the memo costs (a bounded staleness window) and why the socket is
+     * the only caller that takes it.
      */
     @MessageMapping("/songs/{songId}/notes")
-    @PreAuthorize("@songAccess.canEdit(#songId, authentication)")
+    @PreAuthorize("@songAccessCache.canEdit(#songId, authentication)")
     public void note(@DestinationVariable UUID songId,
                      @Payload @Valid NoteOp op,
                      Authentication authentication) {
@@ -98,9 +104,15 @@ public class RealtimeController {
      * quiet — is worked out by each client from the stream it receives; see
      * PresenceKind for why a server-side session registry would be both leakier
      * and wrong the moment there are two instances.
+     *
+     * THIS is the handler the cache was built for. It runs 20 times a second per
+     * moving mouse, and it used to spend a database round trip on each one
+     * deciding a question whose answer cannot change mid-drag — while the note
+     * ops that actually matter queued behind it for a connection. A frame that
+     * stores nothing should cost nothing; PresenceQueryCostTest holds it to that.
      */
     @MessageMapping("/songs/{songId}/presence")
-    @PreAuthorize("@songAccess.canView(#songId, authentication)")
+    @PreAuthorize("@songAccessCache.canView(#songId, authentication)")
     public void presence(@DestinationVariable UUID songId,
                          @Payload @Valid PresenceInput input,
                          Authentication authentication) {

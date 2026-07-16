@@ -108,9 +108,16 @@ public class SecurityConfig {
                         // from classpath:/static in the Docker image). Only
                         // HTML/JS/CSS — all DATA still rides through
                         // /graphql and /api/** with their own rules above.
+                        // "/songs" and "/songs/*" are BOTH here: an Ant pattern
+                        // with a trailing /* does not match the bare path, so
+                        // the library page needs its own entry or a refresh of
+                        // it is a 403 from the deny-by-default rule below.
+                        // These serve the HTML SHELL only — being able to fetch
+                        // the page is not being able to fetch anybody's songs,
+                        // which still goes through /graphql with its own rules.
                         .requestMatchers(HttpMethod.GET,
                                 "/", "/index.html", "/assets/**", "/favicon.ico",
-                                "/login", "/register", "/songs/*", "/listen/*").permitAll()
+                                "/login", "/register", "/songs", "/songs/*", "/listen/*").permitAll()
                         // Health is public ON PURPOSE: a monitor that must
                         // authenticate is a monitor that silently stops
                         // working when its token expires. Safe because the

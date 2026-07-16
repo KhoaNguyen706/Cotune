@@ -1,0 +1,26 @@
+<!doctype html>
+<!--
+  A STAND-IN for the real SPA shell, and it exists for exactly one test.
+
+  In production the Dockerfile's node stage builds the React app and copies
+  frontend/dist into classpath:/static, so SpaForwardingController's
+  "forward:/index.html" resolves and every client-side route serves the app.
+  Tests have no such file: `mvn test` never runs Vite. So without this,
+  every SPA forward 404s in tests for a boring reason (no shell) — which
+  makes "did we register this route?" untestable, because a route that was
+  never registered 404s in precisely the same way.
+
+  Serving a shell here separates those two 404s. A registered route now
+  answers 200 with this marker; an unregistered one still answers 404, and
+  SpaRoutesIntegrationTest can finally tell them apart. It is a test fixture
+  standing in for a build artifact, not a second copy of the frontend.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Cotune</title>
+  </head>
+  <body>
+    <div id="root" data-test-shell="spa-forwarding-stub"></div>
+  </body>
+</html>

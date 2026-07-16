@@ -26,7 +26,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class SpaForwardingController {
 
-    @GetMapping({"/", "/login", "/register", "/songs/{id}", "/listen/{token}"})
+    // "/songs" (the library) is listed SEPARATELY from "/songs/{id}" (the
+    // editor) on purpose: they are different URL shapes, and {id} does not
+    // match the empty path. Miss it and the app works perfectly until someone
+    // refreshes their own library page in production, which is the one place
+    // nobody tests.
+    @GetMapping({"/", "/login", "/register", "/songs", "/songs/{id}", "/listen/{token}"})
     public String forwardToSpa() {
         return "forward:/index.html";
     }

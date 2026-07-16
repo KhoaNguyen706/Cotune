@@ -37,6 +37,76 @@
 
   --shadow-card: 0 10px 30px rgb(0 0 0 / 0.35);
   --shadow-glow: 0 6px 18px rgb(139 124 248 / 0.35);
+
+  /* ---------------------------------------------------------------------
+     THE STUDIO PALETTE — the marketing landing page (/) and nothing else.
+
+     Why a SECOND palette at all: the tokens above describe the app, whose
+     job is to disappear behind an eight-hour session — cool, low-chroma,
+     two themes. The landing page has the opposite job: it has ten seconds
+     to say what this is. It is a poster, not a workstation, and it is the
+     one screen a stranger sees before deciding to close the tab.
+
+     Two rules keep this from rotting into a free-for-all:
+       1. ONLY HomePage.tsx may use `studio-*`. Anything that appears in the
+          app proper uses the semantic tokens above, or it will not follow
+          the light theme.
+       2. These are FIXED — deliberately not remapped under
+          [data-theme="light"] below. The page is a dark poster in both
+          themes; a lime-on-white version of it is a different design, not
+          a token swap, and half-doing it would just be a broken one.
+     --------------------------------------------------------------------- */
+  --color-studio-bg: oklch(0.17 0.006 95); /* warm near-black */
+  --color-studio-panel: oklch(0.205 0.007 95); /* the sequencer mock's body */
+  --color-studio-panel-2: oklch(0.215 0.007 95); /* feature cards, CTA band */
+  --color-studio-cell: oklch(0.255 0.008 95); /* an OFF step */
+  --color-studio-edge: oklch(0.28 0.008 95);
+  --color-studio-edge-2: oklch(0.31 0.008 95);
+  --color-studio-edge-3: oklch(0.4 0.008 95); /* bar lines — every 4th step */
+  --color-studio-text: oklch(0.96 0.004 95);
+  --color-studio-muted: oklch(0.74 0.006 95); /* body copy */
+  --color-studio-dim: oklch(0.6 0.006 95); /* mono eyebrows, footer links */
+  --color-studio-lime: oklch(0.86 0.19 138); /* THE accent — an ON step */
+  --color-studio-amber: oklch(0.82 0.16 62); /* the second peer's cursor */
+
+  /* Display + mono, self-hosted like Inter (imported by HomePage.tsx, so
+     the woff2 files are only fetched on the page that actually uses them —
+     @font-face alone never triggers a download). */
+  --font-display: "Space Grotesk Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+}
+
+/* The landing page's three ambient animations. The playhead sweep is the
+   one that matters: a static grid is a screenshot, and a grid with a bar
+   travelling across it is a thing that is RUNNING. All three are inert
+   under prefers-reduced-motion via the global rule further down. */
+@keyframes sweep {
+  0% {
+    left: 0%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* ==========================================================================

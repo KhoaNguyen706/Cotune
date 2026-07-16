@@ -241,6 +241,48 @@ class RealtimeStompIntegrationTest extends AbstractIntegrationTest {
         assertThat(viewer.nextEvent().pitch()).isEqualTo("D3");
     }
 
+    /**
+     * THE TEST THAT GUARDS THE CACHE.
+     *
+     * Since SongAccessCache, "may Bob edit this song" is memoized for the
+     * socket — that is what stopped 20-cursor-frames-a-second from costing 20
+     * queries and starving real edits of the connection pool. The bill for it
+     * is this: a cached `true` outlives the revocation that made it false,
+     * unless something evicts it (CollaboratorServiceImpl does).
+     *
+     * So the interesting moment is not "a viewer cannot write" — that never
+     * consulted the cache. It is an editor who has ALREADY written, whose
+     * `true` is therefore sitting in the map, being revoked while their socket
+     * stays open. Delete the evictSong() call in CollaboratorServiceImpl and
+     * this test fails; nothing else in the suite would notice.
+     */
+    @Test
+    void revokingAnEditorStopsTheirVeryNextNote() throws Exception {
+        AuthPayload alice = registerFreshUser();
+        AuthPayload bob = registerFreshUser();
+        UUID songId = createSong(alice, "Revoked Mid Session");
+        UUID trackId = addLane(alice, songId);
+        share(alice, songId, bob, "EDITOR");
+
+        Client editor = join(bob.token(), songId);
+        Client owner = join(alice.token(), songId);
+
+        // Bob edits: legitimate, and it is what puts canEdit=true in the cache.
+        editor.session().send("/app/songs/" + songId + "/notes", addNote(trackId, 0, "C3"));
+        assertThat(owner.nextEvent().pitch()).isEqualTo("C3");
+
+        graphQl(alice.token())
+                .document("mutation Unshare($songId: ID!, $userId: ID!) { unshareSong(songId: $songId, userId: $userId) }")
+                .variable("songId", songId.toString())
+                .variable("userId", bob.user().id().toString())
+                .execute().path("unshareSong").entity(Boolean.class).isEqualTo(true);
+
+        // The next op must be refused NOW — not when a TTL happens to lapse.
+        editor.session().send("/app/songs/" + songId + "/notes", addNote(trackId, 4, "E3"));
+        assertThat(editor.nextError()).isNotBlank();
+        owner.expectNoEvent();
+    }
+
     @Test
     void aStrangerCannotSubscribeToSomeoneElsesSong() throws Exception {
         AuthPayload alice = registerFreshUser();

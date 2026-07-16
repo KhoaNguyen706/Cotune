@@ -24,7 +24,8 @@ export function RegisterPage() {
     setBusy(true);
     try {
       await register(email, password, displayName);
-      navigate("/");
+      // Straight into the library — see LoginPage for why not "/".
+      navigate("/songs");
     } catch (e) {
       if (e instanceof ApiError) {
         setError(e.message);
@@ -42,14 +43,19 @@ export function RegisterPage() {
     // right — there's no workspace to fill (see styles.css).
     <main className="page-center flex-col">
       <div className="w-full max-w-sm">
-      <div className="mb-6 flex items-center justify-center gap-2 text-3xl font-extrabold tracking-tight">
+      {/* Links home, same reasoning as LoginPage. */}
+      <Link
+        to="/"
+        aria-label="Cotune home"
+        className="mb-6 flex items-center justify-center gap-2 rounded text-3xl font-extrabold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      >
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-xl text-bg shadow-glow">
           ♪
         </span>
         <span className="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-transparent">
           Cotune
         </span>
-      </div>
+      </Link>
 
       <Card>
         <h2 className="mb-1 font-semibold">Create account</h2>

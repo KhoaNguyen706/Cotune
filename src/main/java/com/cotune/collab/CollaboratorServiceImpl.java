@@ -4,6 +4,7 @@ import com.cotune.collab.dto.CollaboratorDto;
 import com.cotune.collab.dto.ShareSongInput;
 import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.song.Song;
+import com.cotune.song.SongAccessCache;
 import com.cotune.song.SongRepository;
 import com.cotune.user.User;
 import com.cotune.user.UserRepository;
@@ -28,6 +29,16 @@ public class CollaboratorServiceImpl implements CollaboratorService {
     private final SongRepository songRepository;
     private final UserRepository userRepository;
     private final CollaboratorMapper collaboratorMapper;
+    /**
+     * The WebSocket memoizes "may this person edit this song" so that a cursor
+     * frame doesn't cost a query 20 times a second (see SongAccessCache). THIS
+     * class owns the only event that can turn one of those cached answers into
+     * a lie, so it is the one that has to say so. Without these two evictions
+     * the cache would still be correct — but only within its TTL, and a
+     * revocation you can watch not happening for ten seconds is the kind of
+     * thing that reads as a security bug even when it is bounded.
+     */
+    private final SongAccessCache songAccessCache;
 
     @Override
     public CollaboratorDto share(ShareSongInput input, UUID actorId) {
@@ -68,6 +79,11 @@ public class CollaboratorServiceImpl implements CollaboratorService {
         // to force it now, or the response hands the client a null timestamp
         // for a brand-new invite. (Same reason SongServiceImpl.update flushes.)
         collaboratorRepository.flush();
+        // A DEMOTION is a revocation: EDITOR → VIEWER has to stop their next
+        // note op, not their next-but-fifty. (A promotion evicts too — a cached
+        // `false` that outlives the invite is a collaborator staring at a grid
+        // they were just told they can edit.)
+        songAccessCache.evictSong(song.getId());
         return collaboratorMapper.toDto(collaborator, invitee);
     }
 
@@ -80,6 +96,9 @@ public class CollaboratorServiceImpl implements CollaboratorService {
             throw ResourceNotFoundException.collaborator(songId, userId);
         }
         collaboratorRepository.deleteById_SongIdAndId_UserId(songId, userId);
+        // The revocation that matters most: they may have a socket open on this
+        // song RIGHT NOW.
+        songAccessCache.evictSong(songId);
     }
 
     @Override

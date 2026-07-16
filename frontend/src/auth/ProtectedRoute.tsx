@@ -12,6 +12,11 @@ import { useAuth } from "./AuthContext";
  * types /admin lands back on their songs instead of a page whose every
  * button 403s. The server's hasRole('ADMIN') is still the only thing
  * that decides.
+ *
+ * Both redirects below name a route deliberately: signed OUT goes to /login
+ * (you need an account), while a signed-in non-admin goes to /songs — their
+ * library, not "/" — because "/" is the landing page now and bouncing a
+ * logged-in user onto the sales pitch is not "back where you were".
  */
 export function ProtectedRoute({
   children,
@@ -25,7 +30,7 @@ export function ProtectedRoute({
     return <Navigate to="/login" replace />;
   }
   if (requireAdmin && user.role !== "ADMIN") {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/songs" replace />;
   }
   return children;
 }

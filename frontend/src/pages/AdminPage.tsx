@@ -93,7 +93,7 @@ export function AdminPage() {
             <span className="text-lg font-extrabold tracking-tight">Cotune</span>
           </div>
 
-          <NavItem icon="▤" label="My songs" onClick={() => navigate("/")} />
+          <NavItem icon="▤" label="My songs" onClick={() => navigate("/songs")} />
           <NavItem icon="⚑" label="Admin" active />
         </NavRail>
 

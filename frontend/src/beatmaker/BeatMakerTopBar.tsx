@@ -104,7 +104,7 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
       left={
         <>
           <Link
-            to="/"
+            to="/songs"
             title="Back to songs"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
