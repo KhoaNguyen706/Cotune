@@ -4,6 +4,7 @@ import { peerColor, type Peer } from "../realtime/socket";
 import { colorFor } from "../ui/trackColors";
 import { EmptyState, ErrorBanner, Select } from "../ui/kit";
 import { Canvas, CanvasBar, IconButton, ToolGroup } from "../ui/shell";
+import { BlocksIcon, LibraryIcon, SparkIcon } from "../ui/icons";
 import { CELL_H, CELL_W, PITCH_ROWS, rowOf } from "./constants";
 import type { ClearScope } from "./ClearNotesDialog";
 
@@ -194,7 +195,8 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
               title={`Describe a beat and the AI writes ${selectedBeat.name} — tempo, lanes and all`}
               onClick={onRequestCompose}
             >
-              ✨ Compose beat
+              <SparkIcon className="h-4 w-4" />
+              Compose beat
             </IconButton>
           )}
           {selectedTrack && canEdit && aiEnabled && (
@@ -202,7 +204,8 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
               title={`Describe a pattern and the AI writes it into ${selectedTrack.name} — undoable like any edit`}
               onClick={onRequestGenerate}
             >
-              ✨ Generate
+              <SparkIcon className="h-4 w-4" />
+              Generate
             </IconButton>
           )}
           {selectedTrack && canEdit && (
@@ -256,7 +259,7 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
       {!selectedBeat ? (
         <div className="flex h-full items-center justify-center">
           <EmptyState
-            icon="🧱"
+            icon={<BlocksIcon className="h-9 w-9 text-muted" />}
             title="No beats yet"
             hint={'A beat is a full multi-instrument groove — "Beat 1" with kick, snare and bass lanes. Create one in the left panel, build it here, then place it on the Arrange timeline.'}
           />
@@ -264,7 +267,7 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
       ) : !selectedTrack ? (
         <div className="flex h-full items-center justify-center">
           <EmptyState
-            icon="🥁"
+            icon={<LibraryIcon className="h-9 w-9 text-muted" />}
             title="No lanes in this beat"
             hint="Add a drums lane in the left panel, then click cells here to lay down your first kick pattern."
           />

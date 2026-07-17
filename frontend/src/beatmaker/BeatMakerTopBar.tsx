@@ -3,6 +3,21 @@ import type { Beat, Song } from "../types";
 import { peerColor, type Peer } from "../realtime/socket";
 import { Button, EditableName } from "../ui/kit";
 import { IconButton, Readout, ToolGroup, TopBar } from "../ui/shell";
+import {
+  BackIcon,
+  ChatIcon,
+  ClockIcon,
+  HeadphonesIcon,
+  MenuIcon,
+  PlayIcon,
+  RedoIcon,
+  SlidersIcon,
+  StopIcon,
+  UndoIcon,
+  VolumeIcon,
+} from "../ui/icons";
+
+const ICON = "h-[18px] w-[18px]";
 
 export type EditorMode = "arrange" | "beats";
 
@@ -108,14 +123,14 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
             title="Back to songs"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
-            ←
+            <BackIcon className={ICON} />
           </Link>
           <IconButton
             onClick={onToggleSidebar}
             active={!sidebarCollapsed}
             title={sidebarCollapsed ? "Show panel" : "Hide panel"}
           >
-            ☰
+            <MenuIcon className={ICON} />
           </IconButton>
           <span className="min-w-0">
             <h1 className="flex items-center gap-2 truncate text-base font-bold leading-tight tracking-tight">
@@ -173,10 +188,10 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
           </ToolGroup>
           <ToolGroup>
             <IconButton onClick={onUndo} disabled={historyPast === 0} title="Undo (Ctrl+Z)">
-              ↺
+              <UndoIcon className={ICON} />
             </IconButton>
             <IconButton onClick={onRedo} disabled={historyFuture === 0} title="Redo (Ctrl+Shift+Z)">
-              ↻
+              <RedoIcon className={ICON} />
             </IconButton>
             <IconButton
               tone="solid"
@@ -184,7 +199,8 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
               onClick={onTogglePlay}
               title={mode === "arrange" ? "Play the arrangement (Space)" : "Loop the selected beat (Space)"}
             >
-              {playing ? "■ Stop" : "▶ Play"}
+              {playing ? <StopIcon className={ICON} /> : <PlayIcon className={ICON} />}
+              {playing ? "Stop" : "Play"}
             </IconButton>
           </ToolGroup>
           <ToolGroup>
@@ -209,7 +225,7 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
         <>
           <ToolGroup>
             <label className="flex items-center gap-2 px-2" title="Master volume">
-              <span aria-hidden className="text-xs">🔊</span>
+              <VolumeIcon className={`${ICON} shrink-0 text-muted`} />
               <input
                 type="range"
                 className="w-20"
@@ -220,7 +236,7 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
               />
             </label>
             <IconButton onClick={onTestSound} title="Play a test blip — if you can't hear this, check your tab/OS volume">
-              🎧
+              <HeadphonesIcon className={ICON} />
             </IconButton>
           </ToolGroup>
           {!readOnly && !autoSave && (
@@ -240,7 +256,7 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
           )}
           <span className="relative">
             <IconButton active={chatOpen} onClick={onToggleChat} title={chatOpen ? "Close chat" : "Chat with everyone in this song"}>
-              💬
+              <ChatIcon className={ICON} />
             </IconButton>
             {!chatOpen && chatUnread > 0 && (
               <span
@@ -252,9 +268,11 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
             )}
           </span>
           <IconButton onClick={onOpenHistory} title="History — who changed what, and restore a lane to any moment">
-            🕘
+            <ClockIcon className={ICON} />
           </IconButton>
-          <IconButton onClick={onOpenSettings} title="Settings">⚙</IconButton>
+          <IconButton onClick={onOpenSettings} title="Settings">
+            <SlidersIcon className={ICON} />
+          </IconButton>
         </>
       }
     />

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { AiAction, Beat } from "../types";
 import { Button, ErrorBanner, TextInput } from "../ui/kit";
 import { Modal } from "../ui/shell";
+import { SparkIcon } from "../ui/icons";
 import { hasIrreversible, planSummary } from "./plan";
 
 interface ComposeBeatDialogProps {
@@ -140,7 +141,14 @@ export function ComposeBeatDialog({
             Cancel
           </Button>
           <Button type="submit" disabled={!ready}>
-            {busy ? "Composing…" : "✨ Compose beat"}
+            {busy ? (
+              "Composing…"
+            ) : (
+              <>
+                <SparkIcon className="h-4 w-4" />
+                Compose beat
+              </>
+            )}
           </Button>
         </div>
       </form>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Track } from "../types";
 import { Button, ErrorBanner, TextInput } from "../ui/kit";
 import { Modal } from "../ui/shell";
+import { SparkIcon } from "../ui/icons";
 
 interface GeneratePatternDialogProps {
   track: Track;
@@ -63,7 +64,14 @@ export function GeneratePatternDialog({
             Cancel
           </Button>
           <Button type="submit" disabled={!ready}>
-            {busy ? "Composing…" : "✨ Generate"}
+            {busy ? (
+              "Composing…"
+            ) : (
+              <>
+                <SparkIcon className="h-4 w-4" />
+                Generate
+              </>
+            )}
           </Button>
         </div>
       </form>

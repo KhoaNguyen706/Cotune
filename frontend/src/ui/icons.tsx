@@ -134,6 +134,146 @@ export function CheckIcon(props: IconProps) {
   );
 }
 
+/** Sidebar toggle — three lines. */
+export function MenuIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="17" x2="20" y2="17" />
+    </Icon>
+  );
+}
+
+/** Undo — a counter-clockwise loop back. */
+export function UndoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 12 A9 9 0 1 0 6 5.3 L3 8" />
+      <polyline points="3 3 3 8 8 8" />
+    </Icon>
+  );
+}
+
+/** Redo — undo, mirrored. */
+export function RedoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 12 A9 9 0 1 1 18 5.3 L21 8" />
+      <polyline points="21 3 21 8 16 8" />
+    </Icon>
+  );
+}
+
+/** Transport play — an outline triangle, in the line family (not a filled
+ *  glyph), so it sits with the rest of the toolbar. */
+export function PlayIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 5 L19 12 L7 19 Z" />
+    </Icon>
+  );
+}
+
+/** Transport stop. */
+export function StopIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="6" y="6" width="12" height="12" rx="1.5" />
+    </Icon>
+  );
+}
+
+/** Master volume — a speaker with waves. */
+export function VolumeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M11 5 L6 9 H2 v6 h4 l5 4 Z" />
+      <path d="M15.5 8.5 a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5 a9 9 0 0 1 0 13" />
+    </Icon>
+  );
+}
+
+/** Test-sound / audio sample — headphones. */
+export function HeadphonesIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 14 v-1 a8 8 0 0 1 16 0 v1" />
+      <rect x="3" y="14" width="4.5" height="7" rx="1.5" />
+      <rect x="16.5" y="14" width="4.5" height="7" rx="1.5" />
+    </Icon>
+  );
+}
+
+/** Chat — a speech bubble. */
+export function ChatIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 15 a2 2 0 0 1 -2 2 H8 l-4 4 V6 a2 2 0 0 1 2 -2 h12 a2 2 0 0 1 2 2 Z" />
+    </Icon>
+  );
+}
+
+/** History — a clock. */
+export function ClockIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15 14" />
+    </Icon>
+  );
+}
+
+/** Download — tray with a down arrow. */
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 15 v4 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </Icon>
+  );
+}
+
+/** Close — an X. Replaces the ✕/× glyphs, which render in whatever font the
+ *  OS picks and drift off the icon family. */
+export function CloseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="6" y1="18" x2="18" y2="6" />
+    </Icon>
+  );
+}
+
+/**
+ * AI actions — a spark. Replaces the ✨ emoji on every AI button (compose,
+ * generate, admin copy). The sparkle-emoji is the most worn "AI toy" tell;
+ * a drawn two-point spark reads as "generated" while staying in the palette
+ * and taking the accent when a button wants it.
+ */
+export function SparkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4 L13.4 9.6 L19 11 L13.4 12.4 L12 18 L10.6 12.4 L5 11 L10.6 9.6 Z" />
+      <path d="M18.5 4 L19 6 L21 6.5 L19 7 L18.5 9 L18 7 L16 6.5 L18 6 Z" />
+    </Icon>
+  );
+}
+
+/** Empty "no beats" mark — four pattern blocks. */
+export function BlocksIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4" y="4" width="7" height="7" rx="1.5" />
+      <rect x="13" y="4" width="7" height="7" rx="1.5" />
+      <rect x="4" y="13" width="7" height="7" rx="1.5" />
+      <rect x="13" y="13" width="7" height="7" rx="1.5" />
+    </Icon>
+  );
+}
+
 /**
  * The empty-timeline mark: three bars in a box, middle one lit.
  *

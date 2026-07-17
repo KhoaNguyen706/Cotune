@@ -10,7 +10,7 @@ import {
   type ArrangementSources,
 } from "../audio/engine";
 import { createInstrument, type TrackInstrument } from "../audio/instruments";
-import { Card, Chip, ErrorBanner, Skeleton } from "../ui/kit";
+import { Card, Chip, ErrorBanner, Skeleton, Wordmark } from "../ui/kit";
 import type { ListenSong, Step } from "../types";
 
 /**
@@ -208,14 +208,9 @@ export function ListenPage() {
       <div className="w-full max-w-md">
         <Link
           to="/"
-          className="mb-6 flex items-center justify-center gap-2 text-3xl font-extrabold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded-lg"
+          className="mb-6 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded-lg"
         >
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-2 text-xl text-bg shadow-glow">
-            ♪
-          </span>
-          <span className="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-transparent">
-            Cotune
-          </span>
+          <Wordmark size="lg" />
         </Link>
 
         <Card>

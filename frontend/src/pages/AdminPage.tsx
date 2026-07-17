@@ -109,7 +109,7 @@ export function AdminPage() {
             <div className="mb-8">
               <h1 className="text-3xl font-extrabold tracking-tight">Admin</h1>
               <p className="mt-1 text-sm text-muted">
-                Invite people to the AI features — the @ai chat advisor and ✨ pattern generation.
+                Invite people to the AI features — the @ai chat advisor and pattern generation.
                 Admins always have access; everyone else needs an invite here.
               </p>
             </div>

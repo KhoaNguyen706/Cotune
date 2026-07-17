@@ -1,6 +1,7 @@
 import type { SongEvent } from "../types";
 import { Button, EmptyState, ErrorBanner, Skeleton } from "../ui/kit";
 import { Modal } from "../ui/shell";
+import { ClockIcon } from "../ui/icons";
 
 interface HistoryPanelProps {
   /** null = still loading. */
@@ -41,7 +42,7 @@ export function HistoryPanel({
         </div>
       ) : entries.length === 0 ? (
         <EmptyState
-          icon="🕘"
+          icon={<ClockIcon className="h-9 w-9 text-muted" />}
           title="No history yet"
           hint="Every note added, moved or removed lands here — with who did it and when."
         />

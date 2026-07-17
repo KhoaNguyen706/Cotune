@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { CloseIcon } from "./icons";
 
 /**
  * The APP SHELL: the layout vocabulary of a workstation, not a document.
@@ -281,7 +282,7 @@ export function Modal({
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-lg font-bold tracking-tight">{title}</h2>
           <IconButton onClick={onClose} aria-label="Close">
-            ✕
+            <CloseIcon className="h-[18px] w-[18px]" />
           </IconButton>
         </div>
         {children}

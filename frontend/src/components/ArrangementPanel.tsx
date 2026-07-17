@@ -3,7 +3,7 @@ import { ApiError, fetchBinary, gql, rest } from "../api/client";
 import { downloadBlob, evictAudioBuffer, secondsPerStep, STEPS_PER_BAR, uploadAudioFile } from "../audio/engine";
 import { beatColor, colorFor } from "../ui/trackColors";
 import { EmptyState } from "../ui/kit";
-import { TimelineMark } from "../ui/icons";
+import { CloseIcon, DownloadIcon, HeadphonesIcon, TimelineMark } from "../ui/icons";
 import { IconButton, SidebarSection } from "../ui/shell";
 import type { AudioFile, Beat, Clip } from "../types";
 
@@ -257,32 +257,32 @@ export function ArrangementPalette({
                     : undefined
                 }
               >
-                <span aria-hidden>🎧</span>
+                <HeadphonesIcon className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{file.filename}</span>
                   <span className="block">{file.durationSeconds.toFixed(1)}s</span>
                 </span>
                 <button
-                  className="rounded px-1 text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                  className="rounded p-1 text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                   title="Download"
                   onClick={(e) => {
                     e.stopPropagation();
                     void downloadAudio(file);
                   }}
                 >
-                  ⬇
+                  <DownloadIcon className="h-4 w-4" />
                 </button>
                 {/* Download stays: reading bytes is what a viewer is FOR. */}
                 {canEdit && (
                   <button
-                    className="rounded px-1 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                    className="rounded p-1 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                     title="Delete (removes its clips)"
                     onClick={(e) => {
                       e.stopPropagation();
                       void deleteAudio(file);
                     }}
                   >
-                    ×
+                    <CloseIcon className="h-4 w-4" />
                   </button>
                 )}
               </div>
