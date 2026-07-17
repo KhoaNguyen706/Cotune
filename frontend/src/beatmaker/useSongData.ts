@@ -1,10 +1,11 @@
 import { useCallback, useRef, useState } from "react";
 import * as Tone from "tone";
 import { ApiError, gql, rest } from "../api/client";
-import type { AudioFile, Beat, Clip, Song, SongEvent, Step } from "../types";
+import type { AiAction, AudioFile, Beat, Clip, Song, SongEvent, Step } from "../types";
 import {
   ADD_BEAT,
   ADD_TRACK,
+  COMPOSE_BEAT,
   DELETE_BEAT,
   DELETE_TRACK,
   GENERATE_PATTERN,
@@ -50,6 +51,21 @@ export interface SongData {
    *  failure (unlike the mutate() family): the generate dialog needs the
    *  error to stay open and show it. */
   generatePattern: (trackId: string, prompt: string) => Promise<Step[]>;
+
+  /** Ask the AI for a whole-BEAT plan — retempo, lanes, patterns. Like
+   *  generatePattern it returns server-validated actions and applies
+   *  nothing; unlike it, the actions are not all notes, so the caller has
+   *  to apply them in the right order (see composeInto). THROWS. */
+  composeBeat: (beatId: string, prompt: string) => Promise<AiAction[]>;
+
+  /** Add several lanes, then reload ONCE.
+   *
+   *  addTrack() reloads per call, which a plan's 3-5 lanes would turn into
+   *  3-5 full song fetches — but the real problem is that load() resets
+   *  history and drops unsaved edits, so reloading BETWEEN a plan's lanes
+   *  would throw away the patterns the same plan just landed. One reload,
+   *  at the end, before any notes are placed. THROWS. */
+  addLanes: (beatId: string, lanes: { name: string; instrument: string }[]) => Promise<void>;
 
   /** The song's edit log, newest first. THROWS — the history panel shows
    *  its own loading/error states. */
@@ -236,6 +252,23 @@ export function useSongData(params: {
         prompt,
       });
       return data.generateTrackPattern;
+    },
+
+    composeBeat: async (beatId, prompt) => {
+      const data = await gql<{ composeBeat: AiAction[] }>(COMPOSE_BEAT, { beatId, prompt });
+      return data.composeBeat;
+    },
+
+    addLanes: async (beatId, lanes) => {
+      // Sequential, not Promise.all: position is assigned server-side as
+      // max+1, so concurrent adds race for the same slot. A plan is 3-5
+      // lanes — the round trips are cheap, a scrambled lane order is not.
+      for (const lane of lanes) {
+        await gql(ADD_TRACK, {
+          input: { beatId, name: lane.name, instrument: lane.instrument },
+        });
+      }
+      await load();
     },
 
     fetchHistory: async () => {

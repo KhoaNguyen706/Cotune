@@ -62,6 +62,22 @@ export const GENERATE_PATTERN = `
   }
 `;
 
+// A union, so the selection is inline fragments — and __typename is NOT
+// decoration here: it is the only thing that tells ClearLane ({lane}) apart
+// from SetLanePattern ({lane, notes}) once this is JSON. Dropping it would
+// make "empty the lane" and "fill the lane" indistinguishable.
+export const COMPOSE_BEAT = `
+  mutation ComposeBeat($beatId: ID!, $prompt: String!) {
+    composeBeat(beatId: $beatId, prompt: $prompt) {
+      __typename
+      ... on SetBpm { bpm }
+      ... on AddLane { lane instrument }
+      ... on SetLanePattern { lane notes { step pitch velocity length } }
+      ... on ClearLane { lane }
+    }
+  }
+`;
+
 export const SAVE_PATTERN = `
   mutation SavePattern($id: ID!, $pattern: [StepInput!]!, $expectedVersion: Int) {
     updateTrackPattern(id: $id, pattern: $pattern, expectedVersion: $expectedVersion) { id version }

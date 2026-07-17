@@ -107,6 +107,24 @@ type Mutation {
     # aiAccess) plus canEdit, since these notes are headed for the song.
     generateTrackPattern(trackId: ID!, prompt: String!): [Step!]!
 
+    # "Make me a sad lofi beat" -> a PLAN for the whole beat, not one lane.
+    #
+    # Same trust model and same gates as generateTrackPattern, one step up:
+    # generateTrackPattern answers "what notes go in THIS lane?", where the
+    # shape of the answer is fixed before the call. Here the model chooses
+    # WHAT TO DO — retempo, add lanes, write them — because a sad beat is
+    # 70 BPM and a minor figure and brushed drums, which no single lane can
+    # express.
+    #
+    # Returns actions, applies NOTHING. Every action is rebuilt server-side
+    # through the same domain rules a human's edit meets (the Instrument
+    # enum, Song's BPM bounds, the Step constructor) and dropped if it
+    # doesn't survive; the client then applies the survivors as ordinary
+    # local edits, so undo and the delta broadcast carry them without
+    # knowing an AI was involved. The tool list the model sees is not the
+    # security boundary — that validation is.
+    composeBeat(beatId: ID!, prompt: String!): [AiAction!]!
+
     # ---- public listen link (owner only) ----
     #
     # Enabling returns the token (idempotent — an existing link is returned,
@@ -215,6 +233,45 @@ input StepInput {
     # Schema-level default: clients that predate note lengths keep working
     # without resending anything — additive evolution, no breaking change.
     length: Int! = 1
+}
+
+# ---- the AI's proposed edits (composeBeat) --------------------------------
+#
+# A union, not one type with a `kind` enum and nullable fields: each member
+# carries exactly the fields that action HAS, all non-null. The flat shape
+# would let the schema describe impossible things — SET_BPM carrying notes,
+# ADD_LANE with a null instrument — and push the job of ruling them out onto
+# every client. Here `... on AddLane { lane instrument }` either matches and
+# gives you both, or doesn't match.
+#
+# Member names must match the Java record simple names in AiActionDto —
+# Spring resolves the concrete type by class name at RUNTIME, so a rename on
+# one side breaks that branch only, and only when it is first returned.
+union AiAction = SetBpm | AddLane | SetLanePattern | ClearLane
+
+# Retempo the song. Already checked against Song's real bounds (20-400).
+type SetBpm {
+    bpm: Int!
+}
+
+# Create a lane the beat doesn't have. The name is the model's; the
+# instrument survived Instrument.valueOf, so it is a real constant.
+type AddLane {
+    lane: String!
+    instrument: Instrument!
+}
+
+# REPLACE a lane's contents with these notes — not merge. The model was
+# shown what the lane holds and answered with what it should hold, so
+# appending would double every note it chose to keep.
+type SetLanePattern {
+    lane: String!
+    notes: [Step!]!
+}
+
+# Empty a lane without removing it.
+type ClearLane {
+    lane: String!
 }
 
 # Type-checked at the edge: a typo'd instrument never reaches Java code.

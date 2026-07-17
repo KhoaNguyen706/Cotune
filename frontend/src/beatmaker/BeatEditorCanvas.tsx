@@ -33,6 +33,7 @@ interface BeatEditorCanvasProps {
   onOctaveChange: (octave: number) => void;
   onRequestClear: (scope: ClearScope) => void;
   onRequestGenerate: () => void;
+  onRequestCompose: () => void;
   /** Mid-drag: local state + live audio, no server traffic. */
   onMixChange: (mix: { volume?: number; pan?: number }) => void;
   /** Pointer-up: persist the final values — one PATCH per drag. */
@@ -74,6 +75,7 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
     onOctaveChange,
     onRequestClear,
     onRequestGenerate,
+    onRequestCompose,
     onMixChange,
     onMixCommit,
     onRecordHistory,
@@ -182,6 +184,18 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
                 />
               </label>
             </ToolGroup>
+          )}
+          {/* Beat-level, so it does NOT require a selected lane — an empty
+              beat has none, and "compose me a beat" is exactly what you want
+              there. The per-lane Generate below needs a target and hides
+              without one. */}
+          {selectedBeat && canEdit && aiEnabled && (
+            <IconButton
+              title={`Describe a beat and the AI writes ${selectedBeat.name} — tempo, lanes and all`}
+              onClick={onRequestCompose}
+            >
+              ✨ Compose beat
+            </IconButton>
           )}
           {selectedTrack && canEdit && aiEnabled && (
             <IconButton

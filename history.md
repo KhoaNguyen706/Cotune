@@ -1,7 +1,7 @@
 # Cotune — Session History
 
 A compacted record of every Claude Code session on this project, from the first commit
-(July 9, 2026) to today (July 15, 2026). Dates are local time and match `git log`.
+(July 9, 2026) to today (July 16, 2026). Dates are local time and match `git log`.
 Commit hashes refer to `main`.
 
 **What Cotune is:** a web-based collaborative beat maker / music editor — Spring Boot +
@@ -344,6 +344,122 @@ email" — a frontend surface for the existing admin-only invite mutations.
 Verified: frontend builds clean (tsc strict); the mutations behind it are
 already covered by AiAccessIntegrationTest over real HTTP (part of 153/153)
 — non-admin FORBIDDEN, grant/revoke round-trip, unknown-email 404.
+
+---
+
+## July 16 — The beat composer's backend, + a handbook tab ("continue")
+
+**Picked up mid-flight:** an uncommitted `BeatComposer.java` and a
+`GeminiClient.generateToolCalls` — the third call shape, and the first where
+the model decides WHAT HAPPENS (tool calls) rather than what is said. It did
+not compile: `AiAction`, the type the whole design returns, had never been
+written.
+
+**Shipped (backend):**
+- `AiAction` — a **sealed** interface (SetBpm / AddLane / SetLanePattern /
+  ClearLane) with static factories. Sealed on purpose: it makes the mapping
+  switch exhaustive, so a fifth tool cannot compile until it is mapped.
+  Crossing `FunctionCall` → `AiAction` IS the trust boundary.
+- Fixed `beatContext` — it called `beat.getTracks()`, which does not exist
+  and shouldn't: entities here never hold child collections. Reused
+  `findByBeatIdInOrderByPositionAsc` instead, which also gets ORDER BY
+  position for free.
+- `composeBeat(beatId, prompt): [AiAction!]!` over GraphQL as a **union**
+  (user's call, over a flat `kind` enum + nullable fields): each member
+  carries only its own fields, so the schema cannot describe an impossible
+  action. First union in the schema.
+- Renamed `PatternGraphqlController` → `AiGraphqlController` and put both AI
+  mutations behind **one shared gate** (`spendAiTurn`): invite list +
+  cooldown are about the PERSON, not the resource. Two controllers would have
+  meant two copies of an authorization rule and a cooldown a caller could
+  drain at double rate by alternating.
+
+**Found and fixed a latent prod bug:** `/admin` (the July 15 tab) was never
+registered in `SpaForwardingController` **or** `SecurityConfig`, so
+navigating to it worked while **refreshing it 403'd** in production. Both
+lists now carry `/admin` and `/handbook`.
+
+**Shipped (frontend):** `/handbook` — a beat-making reference (grid, tempo
+ranges by feel, instrument octaves, velocity/length, what reads as sad, and
+the rules the server actually enforces). It is the same knowledge in
+`BeatComposer.SYSTEM_PROMPT`, surfaced so a human can read what the AI was
+told. Nav item on Songs + Admin, `BookIcon` added to the icon set.
+
+**Verified:** suite **181/181 green**. `validate()` has 12 unit tests over the
+calls a model really emits (BPM 900, "SAD" as an instrument, "Kick" then
+"kick", a pattern for a lane nobody created). The union's member names are
+matched to Java classes at RUNTIME by Spring, so two integration tests assert
+the schema/record agreement in both directions — javac cannot. Drove
+`/handbook` in a real browser (Playwright, registered through the real REST
+endpoint): renders, no console errors; **measured** the ASCII grid rows at
+120px each to prove the em-dash columns align rather than trusting my eye.
+Probe users swept from the local DB.
+
+**Same session, continued — the frontend half + live proof ("complete missing
+part"):**
+- `types.ts` adds the `AiAction` union **with `__typename`**. Codegen runs
+  `skipTypename`, so the generated union is four members with nothing to tell
+  them apart — and `ClearLane` ({lane}) is a structural SUBSET of
+  `SetLanePattern` ({lane, notes}), so TS would narrow structurally and
+  "empty this lane" could pass for "fill it". The discriminant is added in
+  types.ts rather than by flipping the global config; fields still derive
+  from the generated file.
+- `composeInto()` in BeatMakerPage — the apply, and the ORDER IS FORCED:
+  structure first (bpm via patchSong, lanes via a new `addLanes` that reloads
+  **once**), THEN one `recordHistory()`, THEN all patterns in one setNotes.
+  Reason: `load()` resets history and drops unsaved edits, so any notes
+  landed before the lane-add would be destroyed by it. One record() for the
+  whole plan = one Ctrl+Z, because a snapshot is the entire grid.
+- `ComposeBeatDialog` + a beat-level "✨ Compose beat" button that, unlike
+  "✨ Generate", does **not** require a selected lane — an empty beat has
+  none, which is exactly when you want it.
+
+**Verified LIVE against real Gemini** (local DB + real key): "a sad lofi beat
+with brushed drums and a late bass" → `SetBpm 75`, three lanes, kick C2 on
+0/8, snare on 4/12, ghost hats alternating 0.2/0.25 velocity, bass starting
+on step **1** (late, as asked), pads on C-minor then G-minor triads. Then
+drove the whole thing in a browser: BPM 120→75, lanes created, notes landed
+**and saved** (read back from the server), no console errors. This was the
+first time the union's RUNTIME type resolution had ever been exercised — the
+integration tests can only assert the names match.
+
+**Mistake worth recording:** sourcing `.env` to get the key also exports
+`SPRING_DATASOURCE_*`, which points the host-run app at **Supabase (prod)** —
+a probe user got registered there and had to be deleted. Export
+`GEMINI_API_KEY` alone; see the two-databases standing decision below. It
+also masked itself: `UPDATE 0` on the local DB was the only clue.
+
+**Same session, continued — the plan preview + a test seam:**
+
+Asked "is everything implemented?" — checked the ROADMAP against the code:
+**Phases 1, 3 and 4 are all done** (rate limiting, actuator health, 12h JWT
+decision, the timeline canEdit gate and the CI smoke test; version history,
+listen links, mixer persistence; AI generation — `composeBeat` exceeds what
+Phase 4 scoped). Phase 2 is deliberately "as traffic demands" with the k6
+baseline already taken. There is no backlog.
+
+Two things were worth doing anyway:
+- **`plan.ts` — the plan-reading rules, extracted and pure.** The preview must
+  TELL you what a plan does; the apply must DO it. Two readings of one plan is
+  how a preview becomes a lie, so there is now one (`bpmOf`, `lanesToAdd`,
+  `notesByLaneId`, `planSummary`, `hasIrreversible`). It is also the only way
+  this logic gets tested: `composeInto` is welded to a live-key network call,
+  so the decisions moved somewhere a keyless test can reach. **vitest added**
+  (15 tests, 160ms) + a CI step — the first frontend unit tests, justified by
+  this being the one place a wrong answer is silent AND destructive.
+- **The preview.** `composeBeat` was designed "the model proposes, it does not
+  execute" — but the client applied the proposal instantly, so the user got
+  none of that. Now: prompt → plan → Apply/Discard. It matters because of the
+  asymmetry: notes are undoable, the **tempo change and new lanes are not**, so
+  the part you cannot take back was also the part you never saw. The warning
+  renders only when `hasIrreversible` is true — a notes-only plan really is
+  fully undoable, and crying wolf trains the warning away.
+
+**Verified live again:** the preview listed "Set the tempo to 75 BPM · Add a
+drums lane · Write 10 notes · Add a bass lane · Write 4 notes", and while it
+was on screen a server query answered **bpm 120, lanes 0** — "nothing has
+changed yet" proved literally true, not just copy. Apply → bpm 75, both lanes
+created, notes saved. No console errors. Probes swept.
 
 ---
 

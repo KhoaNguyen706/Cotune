@@ -47,6 +47,13 @@ jobs:
       - run: npm ci
       # tsc --noEmit + vite build: the frontend's whole compile gate.
       - run: npm run build
+      # The AI plan-reading rules (plan.ts). Unit tests exist for exactly one
+      # module, because it is the one place a wrong answer is both silent and
+      # destructive: composeInto applies a plan in an order that depends on
+      # these, and getting it wrong throws away unsaved work. The code that
+      # CALLS them needs a live Gemini key and a browser, so the decisions
+      # were moved somewhere a keyless test can reach them.
+      - run: npm test
 
   # One real browser through the one path everything depends on: register →
   # song → socket → note, zero console errors. Exists because the hooks

@@ -111,17 +111,84 @@ public class GeminiClient {
         }
     }
 
-    private String call(String systemPrompt, String userMessage, Map<String, Object> generationConfig) {
-        // systemInstruction is Gemini's system prompt: byte-stable per
-        // caller, which keeps the implicit prefix cache warm and — more
-        // importantly — keeps prompt behavior reviewable in one constant.
-        Map<String, Object> body = Map.of(
+    /**
+     * One question, a list of TOOL CALLS — the model picks which of
+     * {@code functionDeclarations} to invoke, and with what arguments.
+     *
+     * The third call shape, and the first where the model decides what
+     * HAPPENS rather than what is said. Two things make that safe to offer:
+     *
+     *   mode=ANY forces a function call, so "the model answered in prose
+     *   instead of doing the thing" stops being a failure mode. (mode=AUTO
+     *   lets it chat back, which for a button labelled "compose" is just a
+     *   silent no-op.)
+     *
+     *   allowedFunctionNames pins it to the tools we declared. Belt and
+     *   braces against a hallucinated tool name — but note it is NOT the
+     *   security boundary. Nothing here executes anything: this returns a
+     *   PROPOSAL, and BeatComposer re-validates every argument against the
+     *   domain before any of it becomes an edit. A model is an untrusted
+     *   input source that happens to be good at music.
+     */
+    public List<FunctionCall> generateToolCalls(String systemPrompt, String userMessage,
+                                                List<Map<String, Object>> functionDeclarations) {
+        List<String> names = functionDeclarations.stream()
+                .map(declaration -> String.valueOf(declaration.get("name")))
+                .toList();
+        Candidate candidate = callRaw(Map.of(
                 "systemInstruction", Map.of("parts", List.of(Map.of("text", systemPrompt))),
                 "contents", List.of(Map.of(
                         "role", "user",
                         "parts", List.of(Map.of("text", userMessage)))),
-                "generationConfig", generationConfig);
+                "tools", List.of(Map.of("functionDeclarations", functionDeclarations)),
+                "toolConfig", Map.of("functionCallingConfig", Map.of(
+                        "mode", "ANY",
+                        "allowedFunctionNames", names)),
+                "generationConfig", Map.of("maxOutputTokens", MAX_OUTPUT_TOKENS)));
 
+        List<FunctionCall> calls = parts(candidate).stream()
+                .map(Part::functionCall)
+                .filter(Objects::nonNull)
+                .toList();
+        if (calls.isEmpty()) {
+            // Forced mode and still nothing: a refusal, or the thinking
+            // budget ate the whole response before a call was emitted.
+            throw new UnusableResponseException(
+                    "no function calls (finishReason=" + candidate.finishReason() + ")", null);
+        }
+        return calls;
+    }
+
+    private String call(String systemPrompt, String userMessage, Map<String, Object> generationConfig) {
+        // systemInstruction is Gemini's system prompt: byte-stable per
+        // caller, which keeps the implicit prefix cache warm and — more
+        // importantly — keeps prompt behavior reviewable in one constant.
+        Candidate first = callRaw(Map.of(
+                "systemInstruction", Map.of("parts", List.of(Map.of("text", systemPrompt))),
+                "contents", List.of(Map.of(
+                        "role", "user",
+                        "parts", List.of(Map.of("text", userMessage)))),
+                "generationConfig", generationConfig));
+
+        String text = parts(first).stream()
+                // Thought parts only appear when explicitly requested,
+                // but a summary leaking into a chat reply would be
+                // bizarre enough to guard against anyway.
+                .filter(part -> !Boolean.TRUE.equals(part.thought()))
+                .map(Part::text)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining("\n"))
+                .strip();
+        if (text.isEmpty()) {
+            throw new UnusableResponseException(
+                    "empty answer (finishReason=" + first.finishReason() + ")", null);
+        }
+        return text;
+    }
+
+    /** POST, and hand back the first candidate. Everything above differs only
+     *  in what it asks for and what it reads out. */
+    private Candidate callRaw(Map<String, Object> body) {
         GenerateContentResponse response;
         try {
             response = http.post()
@@ -145,22 +212,12 @@ public class GeminiClient {
             // no candidates — an answer-shaped nothing.
             throw new UnusableResponseException("no candidates in the response", null);
         }
-        Candidate first = response.candidates().getFirst();
-        String text = first.content() == null || first.content().parts() == null ? "" :
-                first.content().parts().stream()
-                        // Thought parts only appear when explicitly requested,
-                        // but a summary leaking into a chat reply would be
-                        // bizarre enough to guard against anyway.
-                        .filter(part -> !Boolean.TRUE.equals(part.thought()))
-                        .map(Part::text)
-                        .filter(Objects::nonNull)
-                        .collect(Collectors.joining("\n"))
-                        .strip();
-        if (text.isEmpty()) {
-            throw new UnusableResponseException(
-                    "empty answer (finishReason=" + first.finishReason() + ")", null);
-        }
-        return text;
+        return response.candidates().getFirst();
+    }
+
+    private static List<Part> parts(Candidate candidate) {
+        return candidate.content() == null || candidate.content().parts() == null
+                ? List.of() : candidate.content().parts();
     }
 
     // ---- the slice of the generateContent response we read ----------------
@@ -178,7 +235,17 @@ public class GeminiClient {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record Part(String text, Boolean thought) {
+    record Part(String text, Boolean thought, FunctionCall functionCall) {
+    }
+
+    /**
+     * A tool the model wants invoked. `args` is deliberately an untyped map:
+     * it is JSON a language model produced, and giving it a typed shape here
+     * would imply a guarantee nobody made. The consumer reads each argument
+     * defensively and throws it away if it doesn't fit the domain.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record FunctionCall(String name, Map<String, Object> args) {
     }
 
     // ---- typed failures — callers pick the user-facing words ---------------

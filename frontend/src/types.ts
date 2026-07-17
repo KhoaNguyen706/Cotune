@@ -29,6 +29,33 @@ export interface AuthPayload {
 
 export type Step = Pick<gql.Step, "step" | "pitch" | "velocity" | "length">;
 
+/**
+ * One edit the AI proposes (composeBeat) — the client half of the server's
+ * `union AiAction`.
+ *
+ * WHY THIS ISN'T JUST `gql.AiAction`: codegen runs with `skipTypename`, so
+ * the generated union is `AddLane | ClearLane | SetBpm | SetLanePattern`
+ * with nothing to tell them apart. TypeScript would then narrow
+ * STRUCTURALLY — and `ClearLane` ({lane}) is a structural subset of
+ * `SetLanePattern` ({lane, notes}), so "does it have a lane?" cannot
+ * distinguish "empty this lane" from "fill it". Getting that backwards
+ * silently erases a lane the AI meant to write.
+ *
+ * `__typename` is what a GraphQL union is discriminated by, and the query
+ * asks for it, so it is added back HERE rather than by flipping skipTypename
+ * for every type in the schema. The FIELDS still come from the generated
+ * file, so a server-side rename still breaks this file at compile time —
+ * which is the whole point of this module.
+ *
+ * The `__typename` strings must match the schema's type names; the server
+ * pins the same agreement from its side (BeatCompositionIntegrationTest).
+ */
+export type AiAction =
+  | ({ __typename: "SetBpm" } & Pick<gql.SetBpm, "bpm">)
+  | ({ __typename: "AddLane" } & Pick<gql.AddLane, "lane" | "instrument">)
+  | ({ __typename: "SetLanePattern" } & Pick<gql.SetLanePattern, "lane"> & { notes: Step[] })
+  | ({ __typename: "ClearLane" } & Pick<gql.ClearLane, "lane">);
+
 /** One instrument LANE inside a beat (kick lane, bass lane, ...). */
 export interface Track
   extends Pick<

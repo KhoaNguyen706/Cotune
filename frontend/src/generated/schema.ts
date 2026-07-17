@@ -24,11 +24,18 @@ export type AddClipInput = {
   startStep: Scalars['Int']['input'];
 };
 
+export type AddLane = {
+  instrument: Instrument;
+  lane: Scalars['String']['output'];
+};
+
 export type AddTrackInput = {
   beatId: Scalars['ID']['input'];
   instrument: Instrument;
   name: Scalars['String']['input'];
 };
+
+export type AiAction = AddLane | ClearLane | SetBpm | SetLanePattern;
 
 export type AudioFile = {
   contentType: Scalars['String']['output'];
@@ -59,6 +66,10 @@ export type ChatMessage = {
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
   songId: Scalars['ID']['output'];
+};
+
+export type ClearLane = {
+  lane: Scalars['String']['output'];
 };
 
 export type Clip = {
@@ -152,6 +163,7 @@ export type Mutation = {
   addBeat: Beat;
   addClip: Clip;
   addTrack: Track;
+  composeBeat: Array<AiAction>;
   createSong: Song;
   deleteBeat: Scalars['Boolean']['output'];
   deleteClip: Scalars['Boolean']['output'];
@@ -183,6 +195,12 @@ export type MutationAddClipArgs = {
 
 export type MutationAddTrackArgs = {
   input: AddTrackInput;
+};
+
+
+export type MutationComposeBeatArgs = {
+  beatId: Scalars['ID']['input'];
+  prompt: Scalars['String']['input'];
 };
 
 
@@ -306,6 +324,15 @@ export type QuerySongHistoryArgs = {
 export type QueryTrackPatternAtArgs = {
   eventId: Scalars['ID']['input'];
   trackId: Scalars['ID']['input'];
+};
+
+export type SetBpm = {
+  bpm: Scalars['Int']['output'];
+};
+
+export type SetLanePattern = {
+  lane: Scalars['String']['output'];
+  notes: Array<Step>;
 };
 
 export type ShareSongInput = {

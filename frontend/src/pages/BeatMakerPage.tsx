@@ -9,15 +9,17 @@ import { SettingsModal } from "../ui/SettingsModal";
 import { ErrorBanner, Skeleton } from "../ui/kit";
 import { AppShell, Canvas, Sidebar, TopBar, Workspace } from "../ui/shell";
 import { canEditSong } from "../types";
-import type { Beat, SongEvent } from "../types";
+import type { AiAction, Beat, SongEvent } from "../types";
 
 import { CELL_H, CELL_W, PITCH_ROWS, STEPS } from "../beatmaker/constants";
 import { BeatBrowserSidebar } from "../beatmaker/BeatBrowserSidebar";
 import { BeatEditorCanvas } from "../beatmaker/BeatEditorCanvas";
 import { ClearNotesDialog, type ClearScope } from "../beatmaker/ClearNotesDialog";
+import { ComposeBeatDialog } from "../beatmaker/ComposeBeatDialog";
 import { GeneratePatternDialog } from "../beatmaker/GeneratePatternDialog";
 import { HistoryPanel } from "../beatmaker/HistoryPanel";
 import { BeatMakerTopBar, type EditorMode } from "../beatmaker/BeatMakerTopBar";
+import { bpmOf, lanesToAdd, notesByLaneId } from "../beatmaker/plan";
 import { useAutoSave } from "../beatmaker/useAutoSave";
 import { useHistory } from "../beatmaker/useHistory";
 import { useInstruments } from "../beatmaker/useInstruments";
@@ -89,6 +91,16 @@ export function BeatMakerPage() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  /** The AI compose-beat dialog — same three-piece state as generate above,
+   *  kept separate because both can be open over different targets (a lane
+   *  vs. the beat) and sharing one "busy" would lock the wrong one. */
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const [composeError, setComposeError] = useState<string | null>(null);
+  /** The proposed plan, held between "the AI answered" and "the user said
+   *  yes". Non-null IS the preview phase — the server has proposed and
+   *  nothing has been applied. */
+  const [composePlan_, setComposePlan_] = useState<AiAction[] | null>(null);
   /** The history panel: open?, its entries (null = loading), its error,
    *  and which entry's restore is in flight. */
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -303,6 +315,90 @@ export function BeatMakerPage() {
     } finally {
       setGenerating(false);
     }
+  }
+
+  /**
+   * Ask for a plan. Changes NOTHING — the server proposes, and the dialog
+   * shows it so the person decides. Splitting this from the apply is the
+   * whole point of the preview: between these two functions is the moment
+   * the user gets to say no.
+   */
+  async function composePlan(prompt: string) {
+    if (!selectedBeatId) return;
+    setComposing(true);
+    setComposeError(null);
+    try {
+      setComposePlan_(await data.composeBeat(selectedBeatId, prompt));
+    } catch (e) {
+      // Stays in the dialog: the fix is rewording the prompt, right there.
+      setComposeError(e instanceof Error ? e.message : "Composing failed — try again.");
+    } finally {
+      setComposing(false);
+    }
+  }
+
+  /**
+   * The accepted plan, applied.
+   *
+   * generateInto lands one lane's notes; this lands a PLAN — which may
+   * retempo the song, add lanes, and write several of them. THE ORDER IS
+   * FORCED:
+   *
+   *   1. STRUCTURE FIRST (bpm, new lanes). These are server calls, and
+   *      addLanes ends in a load() — which resets history and drops unsaved
+   *      edits. Any notes landed before it would be thrown away by it.
+   *   2. THEN one history snapshot. After the reload, so Ctrl+Z has a
+   *      target that still exists. One record() for the whole plan, not one
+   *      per lane: a snapshot is the ENTIRE grid, so "undo the beat the AI
+   *      made" is one keystroke instead of five.
+   *   3. THEN the patterns, all at once — one setNotes, one setDirty. The
+   *      existing flush turns them into per-note deltas collaborators watch
+   *      arrive, exactly like notes drawn by hand.
+   *
+   * The plan is READ by plan.ts, not here, because the preview reads it the
+   * same way — one reading used twice, or the preview is a lie. Step 3 asks
+   * for lane ids only AFTER step 1 created them.
+   */
+  async function applyPlan() {
+    const beatId = selectedBeatId;
+    const plan = composePlan_;
+    if (!beatId || !plan) return;
+    setComposing(true);
+    setComposeError(null);
+    try {
+      // --- 1. structure -------------------------------------------------
+      const bpm = bpmOf(plan);
+      if (bpm !== null) await patchSong({ bpm });
+      const newLanes = lanesToAdd(plan);
+      if (newLanes.length > 0) await data.addLanes(beatId, newLanes);
+
+      // --- 2. the undo point --------------------------------------------
+      recordHistory();
+
+      // --- 3. the notes -------------------------------------------------
+      const beat = data.beatsRef.current.find((b) => b.id === beatId);
+      const landed = notesByLaneId(plan, beat?.tracks ?? []);
+      const laneIds = Object.keys(landed);
+      if (laneIds.length > 0) {
+        data.setNotes((prev) => ({ ...prev, ...landed }));
+        data.setDirty((prev) => new Set([...prev, ...laneIds]));
+        setSelectedNote(null); // old indices don't exist in the new patterns
+        // Select a lane the plan actually wrote, so the result is LOOKED AT
+        // rather than taken on faith — same instinct as restoreFrom.
+        setSelectedId(laneIds[0]);
+      }
+      closeCompose();
+    } catch (e) {
+      setComposeError(e instanceof Error ? e.message : "Applying the plan failed — try again.");
+    } finally {
+      setComposing(false);
+    }
+  }
+
+  function closeCompose() {
+    setComposeOpen(false);
+    setComposePlan_(null);
+    setComposeError(null);
   }
 
   /** Open the panel and fetch fresh — history grows every edit, so a
@@ -526,6 +622,24 @@ export function BeatMakerPage() {
         />
       )}
 
+      {composeOpen && selectedBeat && (
+        <ComposeBeatDialog
+          beat={selectedBeat}
+          plan={composePlan_}
+          busy={composing}
+          error={composeError}
+          onCancel={closeCompose}
+          onCompose={(prompt) => void composePlan(prompt)}
+          onApply={() => void applyPlan()}
+          // Back to the prompt, keeping the dialog open: a bad plan should
+          // cost a reword, not an undo.
+          onDiscard={() => {
+            setComposePlan_(null);
+            setComposeError(null);
+          }}
+        />
+      )}
+
       {/* A confirm, even though Ctrl+Z would undo it. Undo protects YOU; it
           does not protect the collaborator who is watching notes vanish out of
           a beat they were working in, and who has no idea it was deliberate.
@@ -655,6 +769,7 @@ export function BeatMakerPage() {
             }}
             onRequestClear={setClearing}
             onRequestGenerate={() => setGenerateOpen(true)}
+            onRequestCompose={() => setComposeOpen(true)}
             onMixChange={(mix) => {
               if (!selectedId) return;
               // State and audio move together mid-drag; the server waits
