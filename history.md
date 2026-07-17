@@ -461,6 +461,28 @@ was on screen a server query answered **bpm 120, lanes 0** — "nothing has
 changed yet" proved literally true, not just copy. Apply → bpm 75, both lanes
 created, notes saved. No console errors. Probes swept.
 
+**Two real bugs found by asking "what's still wrong?", both in the apply:**
+- **A failed tempo change was silent.** `mutate()` catches and does not
+  rethrow (right for a lone control — the banner plus an unchanged field IS
+  the answer), and `patchSong` uses it. So inside applyPlan a failed set_bpm
+  showed a banner and the plan CARRIED ON, composing the beat at the old
+  tempo after a preview that promised the new one — the exact lie the preview
+  exists to prevent. `mutate` now returns whether it worked (the whole
+  mutate-backed family does; callers that don't care ignore it), and applyPlan
+  stops before touching anything else.
+- **A half-applied plan duplicated lanes on retry.** If addLanes died after
+  lane 2 of 3, the dialog kept the plan AND its Apply button, so the retry
+  re-added lanes 1-2 — two lanes named "drums" and a pattern landing in a
+  coin-flip one of them, which is precisely what BeatComposer.validate refuses
+  to do server-side. `lanesToAdd(plan, existingNames)` now filters against
+  what the beat holds RIGHT NOW, not what it held when the plan was made.
+  Pure, so both are pinned by tests (19 now).
+
+**Not a bug, worth knowing:** previewing spends the 10s cooldown, because
+fetching the plan IS the Gemini call. Discard + re-prompt inside the window
+gets "One generation at a time". Correct — the cost is already sunk — but the
+preview is what makes a discard likely in the first place.
+
 ---
 
 ## Standing decisions (the ones that keep mattering)

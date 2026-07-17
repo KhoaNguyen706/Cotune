@@ -30,11 +30,38 @@ export function bpmOf(plan: AiAction[]): number | null {
   return action ? action.bpm : null;
 }
 
-/** The lanes the plan will CREATE, in the order it asked for them. */
-export function lanesToAdd(plan: AiAction[]): { name: string; instrument: string }[] {
-  return plan
-    .filter((a) => a.__typename === "AddLane")
-    .map((a) => ({ name: a.lane, instrument: a.instrument }));
+/**
+ * The lanes the plan will CREATE, in the order it asked for them, minus any
+ * that are already there.
+ *
+ * `existingLaneNames` is what the beat holds RIGHT NOW, and filtering
+ * against it is not belt-and-braces — it is the retry story. The server
+ * dropped add_lane for lanes that existed when the plan was MADE, but if
+ * applying it half-fails (three lanes asked for, the network dies after the
+ * second) the plan is still on screen with its Apply button, and the user
+ * will press it again. Without this, the retry adds the first two a second
+ * time: two lanes called "drums" and a pattern that lands in a coin-flip
+ * one of them — the exact thing BeatComposer.validate refuses to do
+ * server-side.
+ *
+ * Case-insensitive, and it also won't emit the same name twice from one
+ * plan, for the same reason: "Kick" and "kick" are one lane to everybody
+ * except a string comparison.
+ */
+export function lanesToAdd(
+  plan: AiAction[],
+  existingLaneNames: string[] = [],
+): { name: string; instrument: string }[] {
+  const have = new Set(existingLaneNames.map((name) => name.toLowerCase()));
+  const toAdd: { name: string; instrument: string }[] = [];
+  for (const action of plan) {
+    if (action.__typename !== "AddLane") continue;
+    const key = action.lane.toLowerCase();
+    if (have.has(key)) continue;
+    have.add(key);
+    toAdd.push({ name: action.lane, instrument: action.instrument });
+  }
+  return toAdd;
 }
 
 /**

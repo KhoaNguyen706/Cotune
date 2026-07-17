@@ -74,21 +74,31 @@ export interface SongData {
    *  The caller lands it exactly like a generated pattern. */
   patternAt: (trackId: string, eventId: string) => Promise<Step[]>;
 
+  // The mutate()-backed family below all resolve to WHETHER IT WORKED, and
+  // report the failure in the page banner themselves. Most callers are a
+  // single control and ignore the boolean — the banner plus the unchanged UI
+  // is the whole answer. It exists for callers running several in sequence,
+  // where a swallowed failure would let the next step run as though the last
+  // one succeeded (see composeInto).
+
   /** Resolves to the new beat's id, so the caller can select it. */
   addBeat: () => Promise<string | null>;
-  removeBeat: (beatId: string) => Promise<void>;
-  patchBeat: (beatId: string, body: { name?: string; bars?: number }) => Promise<void>;
-  addTrack: (beatId: string, name: string, instrument: string) => Promise<void>;
-  removeTrack: (trackId: string) => Promise<void>;
-  renameTrack: (trackId: string, name: string) => Promise<void>;
+  removeBeat: (beatId: string) => Promise<boolean>;
+  patchBeat: (beatId: string, body: { name?: string; bars?: number }) => Promise<boolean>;
+  addTrack: (beatId: string, name: string, instrument: string) => Promise<boolean>;
+  removeTrack: (trackId: string) => Promise<boolean>;
+  renameTrack: (trackId: string, name: string) => Promise<boolean>;
   /** Local-only mix update — what a slider calls MID-DRAG, possibly dozens
    *  of times a second. State only; the caller pushes the same values into
    *  the audio graph, and nothing touches the server. */
   setTrackMixLocal: (trackId: string, mix: { volume?: number; pan?: number }) => void;
   /** Persist the mix at gesture end (pointer-up): ONE PATCH per drag, the
    *  same REST pattern as renames. */
-  saveTrackMix: (trackId: string, mix: { volume?: number; pan?: number }) => Promise<void>;
-  patchSong: (patch: { title?: string; bpm?: number; timeSignature?: string }) => Promise<void>;
+  saveTrackMix: (trackId: string, mix: { volume?: number; pan?: number }) => Promise<boolean>;
+  /** Resolves to whether the change actually landed. A lone control can
+   *  ignore that (the banner already said so); a caller applying an AI plan
+   *  cannot — see composeInto. */
+  patchSong: (patch: { title?: string; bpm?: number; timeSignature?: string }) => Promise<boolean>;
 }
 
 /**
@@ -216,13 +226,23 @@ export function useSongData(params: {
     }
   }
 
-  /** Every structural mutation follows the same shape: call the server, then
-   *  reload. Wrapping it kills seven identical try/catch blocks. */
-  async function mutate(what: string, run: () => Promise<void>) {
+  /**
+   * Every structural mutation follows the same shape: call the server, then
+   * reload. Wrapping it kills seven identical try/catch blocks.
+   *
+   * Returns whether it WORKED. The banner is the whole answer for a control
+   * the user just poked — they can see the field didn't change. It is not
+   * the answer for a caller doing several of these in sequence: swallowing
+   * the failure silently lets step 2 run as though step 1 succeeded. Callers
+   * that don't care ignore the boolean, exactly as before.
+   */
+  async function mutate(what: string, run: () => Promise<void>): Promise<boolean> {
     try {
       await run();
+      return true;
     } catch (e) {
       onError(e instanceof ApiError ? e.message : what);
+      return false;
     }
   }
 

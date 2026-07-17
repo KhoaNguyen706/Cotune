@@ -367,9 +367,21 @@ export function BeatMakerPage() {
     setComposeError(null);
     try {
       // --- 1. structure -------------------------------------------------
+      // The tempo goes first, and a failure here STOPS the plan. patchSong
+      // reports rather than throws (its banner is answer enough for the BPM
+      // field), so without this check the plan would carry on and compose
+      // the beat at the old tempo — after a preview that promised the new
+      // one. Nothing else has been applied at this point, so stopping here
+      // leaves the song exactly as it was.
       const bpm = bpmOf(plan);
-      if (bpm !== null) await patchSong({ bpm });
-      const newLanes = lanesToAdd(plan);
+      if (bpm !== null && !(await patchSong({ bpm }))) {
+        throw new Error(`Couldn't set the tempo to ${bpm} BPM — nothing else was applied.`);
+      }
+      // Against the lanes that exist RIGHT NOW, not the ones that existed
+      // when the plan was made: a half-applied plan that gets retried must
+      // not create its first lanes twice.
+      const existing = data.beatsRef.current.find((b) => b.id === beatId)?.tracks ?? [];
+      const newLanes = lanesToAdd(plan, existing.map((t) => t.name));
       if (newLanes.length > 0) await data.addLanes(beatId, newLanes);
 
       // --- 2. the undo point --------------------------------------------

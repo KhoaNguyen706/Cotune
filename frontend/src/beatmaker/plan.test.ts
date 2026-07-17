@@ -45,6 +45,35 @@ describe("lanesToAdd", () => {
       { name: "bass", instrument: "BASS" },
     ]);
   });
+
+  it("skips a lane the beat already has — the retry after a half-applied plan", () => {
+    // Three lanes asked for, the network died after "drums". The plan is
+    // still on screen with its Apply button and the user presses it again;
+    // "drums" must not be created twice.
+    const plan: AiAction[] = [
+      { __typename: "AddLane", lane: "drums", instrument: "DRUMS" },
+      { __typename: "AddLane", lane: "bass", instrument: "BASS" },
+    ];
+    expect(lanesToAdd(plan, ["drums"])).toEqual([{ name: "bass", instrument: "BASS" }]);
+  });
+
+  it("compares against existing lanes case-insensitively", () => {
+    const plan: AiAction[] = [{ __typename: "AddLane", lane: "Kick", instrument: "DRUMS" }];
+    expect(lanesToAdd(plan, ["kick"])).toEqual([]);
+  });
+
+  it("won't emit the same name twice from one plan", () => {
+    const plan: AiAction[] = [
+      { __typename: "AddLane", lane: "kick", instrument: "DRUMS" },
+      { __typename: "AddLane", lane: "KICK", instrument: "SYNTH" },
+    ];
+    expect(lanesToAdd(plan, [])).toEqual([{ name: "kick", instrument: "DRUMS" }]);
+  });
+
+  it("adds everything when the beat is empty", () => {
+    const plan: AiAction[] = [{ __typename: "AddLane", lane: "drums", instrument: "DRUMS" }];
+    expect(lanesToAdd(plan, [])).toEqual([{ name: "drums", instrument: "DRUMS" }]);
+  });
 });
 
 describe("notesByLaneId", () => {
