@@ -31,7 +31,16 @@ public class SpaForwardingController {
     // match the empty path. Miss it and the app works perfectly until someone
     // refreshes their own library page in production, which is the one place
     // nobody tests.
-    @GetMapping({"/", "/login", "/register", "/songs", "/songs/{id}", "/listen/{token}"})
+    //
+    // "/admin" was exactly that miss: the tab shipped on July 15 without an
+    // entry here or in SecurityConfig, so navigating to it worked (React
+    // Router never asks the server) while REFRESHING it died — a 403 from
+    // SecurityConfig's deny-by-default, before this controller was even
+    // reached. That is the failure mode this list exists to prevent, and it
+    // still got through, because the only way to trigger it is a hard
+    // refresh on a page you already have open.
+    @GetMapping({"/", "/login", "/register", "/songs", "/songs/{id}",
+            "/listen/{token}", "/admin"})
     public String forwardToSpa() {
         return "forward:/index.html";
     }

@@ -313,8 +313,18 @@ Pushes to `main` additionally publish the production image to
 The production image is **self-contained**: a Node stage builds the React app
 and bakes it into the jar's `classpath:/static`, so one container serves
 frontend + API from one origin (no CORS, no separate static host).
-`SpaForwardingController` handles deep-link refreshes — **new frontend routes
-must be added there**, or hard refreshes on them 404.
+`SpaForwardingController` handles deep-link refreshes — **a new frontend route
+must be added in TWO places**, or hard refreshes on it break:
+
+1. `SpaForwardingController`'s `@GetMapping` list — without it, the server has
+   no such resource and the refresh **404s**.
+2. `SecurityConfig`'s static-shell `permitAll` list — without it, the request
+   dies earlier still, on the deny-by-default rule, and the refresh **403s**.
+
+Both serve the HTML shell only; the data behind the page keeps its own rules.
+This is not hypothetical: `/admin` shipped missing from both and nobody
+noticed, because navigating to a route (React Router, no server round trip)
+works fine while refreshing it does not.
 
 To deploy (e.g. [Render](https://render.com) free tier — Railway/Fly work the
 same way):

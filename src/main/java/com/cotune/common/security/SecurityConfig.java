@@ -115,9 +115,20 @@ public class SecurityConfig {
                         // These serve the HTML SHELL only — being able to fetch
                         // the page is not being able to fetch anybody's songs,
                         // which still goes through /graphql with its own rules.
+                        //
+                        // "/admin" is permitAll for the same reason and with the
+                        // same limit: this serves the HTML shell, nothing more.
+                        // An anonymous GET /admin gets the React bundle and then
+                        // a login redirect from ProtectedRoute; the invite
+                        // mutations behind that page are hasRole('ADMIN')
+                        // server-side regardless of who fetched the HTML.
+                        // Serving the shell is not serving the data — the same
+                        // split as /songs. Without this entry a refresh of
+                        // /admin 403s here, before SpaForwardingController runs.
                         .requestMatchers(HttpMethod.GET,
                                 "/", "/index.html", "/assets/**", "/favicon.ico",
-                                "/login", "/register", "/songs", "/songs/*", "/listen/*").permitAll()
+                                "/login", "/register", "/songs", "/songs/*", "/listen/*",
+                                "/admin").permitAll()
                         // Health is public ON PURPOSE: a monitor that must
                         // authenticate is a monitor that silently stops
                         // working when its token expires. Safe because the
