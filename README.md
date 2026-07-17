@@ -316,15 +316,32 @@ frontend + API from one origin (no CORS, no separate static host).
 `SpaForwardingController` handles deep-link refreshes — **a new frontend route
 must be added in TWO places**, or hard refreshes on it break:
 
-1. `SpaForwardingController`'s `@GetMapping` list — without it, the server has
+1. `SecurityConfig`'s static-shell `permitAll` list — the request hits this
+   FIRST, and without an entry it dies here on the deny-by-default rule.
+2. `SpaForwardingController`'s `@GetMapping` list — without it, the server has
    no such resource and the refresh **404s**.
-2. `SecurityConfig`'s static-shell `permitAll` list — without it, the request
-   dies earlier still, on the deny-by-default rule, and the refresh **403s**.
 
 Both serve the HTML shell only; the data behind the page keeps its own rules.
+
+**Miss the security list and the refresh 401s** — not 403, and the difference
+is worth understanding. The JWT lives in localStorage, so a page NAVIGATION
+never carries it: every refresh reaches the server anonymous. Spring hands an
+anonymous denial to the AuthenticationEntryPoint rather than the access-denied
+handler, so the answer is 401 "who are you?", regardless of whether the person
+is signed in. An unregistered route is therefore indistinguishable from a
+nonexistent one.
+
 This is not hypothetical: `/admin` shipped missing from both and nobody
 noticed, because navigating to a route (React Router, no server round trip)
-works fine while refreshing it does not.
+works fine while refreshing it does not. Measured against production on
+2026-07-16, before the fix shipped:
+
+```
+200  /            200  /songs      200  /login    200  /listen/abc
+401  /admin       401  /nonsense
+```
+
+`/admin` answered exactly like a URL that does not exist.
 
 To deploy (e.g. [Render](https://render.com) free tier — Railway/Fly work the
 same way):

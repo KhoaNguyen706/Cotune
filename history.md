@@ -376,8 +376,15 @@ written.
 
 **Found and fixed a latent prod bug:** `/admin` (the July 15 tab) was never
 registered in `SpaForwardingController` **or** `SecurityConfig`, so
-navigating to it worked while **refreshing it 403'd** in production. Both
+navigating to it worked while **refreshing it died** in production. Both
 lists now carry `/admin` and `/handbook`.
+
+(Corrected later the same session: the symptom is **401, not the 403** first
+claimed. Probed against live prod: `/` `/songs` `/login` `/listen/abc` → 200,
+while `/admin` → 401, byte-identical to `/nonsense`. It is 401 because the
+JWT lives in localStorage — a page navigation never carries it, so every
+refresh reaches the server anonymous and Spring hands anonymous denials to
+the AuthenticationEntryPoint. Being signed in never mattered.)
 
 **Shipped (frontend):** `/handbook` — a beat-making reference (grid, tempo
 ranges by feel, instrument octaves, velocity/length, what reads as sad, and

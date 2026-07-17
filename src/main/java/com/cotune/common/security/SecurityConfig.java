@@ -123,8 +123,12 @@ public class SecurityConfig {
                         // mutations behind that page are hasRole('ADMIN')
                         // server-side regardless of who fetched the HTML.
                         // Serving the shell is not serving the data — the same
-                        // split as /songs. Without this entry a refresh of
-                        // /admin 403s here, before SpaForwardingController runs.
+                        // split as /songs. Without an entry here a refresh of
+                        // the route 401s at this line, before
+                        // SpaForwardingController ever runs — 401 and not 403
+                        // because the JWT is in localStorage, so a page
+                        // navigation arrives anonymous and Spring answers
+                        // "who are you?" rather than "not allowed".
                         .requestMatchers(HttpMethod.GET,
                                 "/", "/index.html", "/assets/**", "/favicon.ico",
                                 "/login", "/register", "/songs", "/songs/*", "/listen/*",

@@ -34,11 +34,19 @@ public class SpaForwardingController {
     //
     // "/admin" was exactly that miss: the tab shipped on July 15 without an
     // entry here or in SecurityConfig, so navigating to it worked (React
-    // Router never asks the server) while REFRESHING it died — a 403 from
+    // Router never asks the server) while REFRESHING it died — a 401 from
     // SecurityConfig's deny-by-default, before this controller was even
-    // reached. That is the failure mode this list exists to prevent, and it
-    // still got through, because the only way to trigger it is a hard
-    // refresh on a page you already have open.
+    // reached. Measured against production on 2026-07-16: /admin answered
+    // 401, byte-identical to /nonsense, while /songs answered 200.
+    //
+    // 401 and not 403 because the JWT lives in localStorage: a page
+    // navigation never carries it, so every refresh arrives anonymous, and
+    // Spring routes an anonymous denial to the AuthenticationEntryPoint.
+    // Being signed in does not change the answer.
+    //
+    // That is the failure mode this list exists to prevent, and it still got
+    // through, because the only way to trigger it is a hard refresh on a
+    // page you already have open.
     @GetMapping({"/", "/login", "/register", "/songs", "/songs/{id}",
             "/listen/{token}", "/admin", "/handbook"})
     public String forwardToSpa() {
