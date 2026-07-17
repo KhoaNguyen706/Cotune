@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError, gql } from "../api/client";
 import { Button, Card, Field, TextInput, Wordmark } from "../ui/kit";
-import { ListIcon, ShieldIcon } from "../ui/icons";
+import { BookIcon, ListIcon, ShieldIcon } from "../ui/icons";
 import { AppShell, Canvas, NavItem, NavRail, Workspace } from "../ui/shell";
 
 // The two ADMIN-gated mutations already exist server-side (AiAccessGraphql
@@ -95,6 +95,11 @@ export function AdminPage() {
             icon={<ListIcon className="h-[17px] w-[17px]" />}
             label="My songs"
             onClick={() => navigate("/songs")}
+          />
+          <NavItem
+            icon={<BookIcon className="h-[17px] w-[17px]" />}
+            label="Handbook"
+            onClick={() => navigate("/handbook")}
           />
           <NavItem icon={<ShieldIcon className="h-[17px] w-[17px]" />} label="Admin" active />
         </NavRail>

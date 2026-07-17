@@ -40,7 +40,7 @@ public class SpaForwardingController {
     // still got through, because the only way to trigger it is a hard
     // refresh on a page you already have open.
     @GetMapping({"/", "/login", "/register", "/songs", "/songs/{id}",
-            "/listen/{token}", "/admin"})
+            "/listen/{token}", "/admin", "/handbook"})
     public String forwardToSpa() {
         return "forward:/index.html";
     }

@@ -3,6 +3,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AdminPage } from "./pages/AdminPage";
 import { BeatMakerPage } from "./pages/BeatMakerPage";
+import { HandbookPage } from "./pages/HandbookPage";
 import { HomePage } from "./pages/HomePage";
 import { ListenPage } from "./pages/ListenPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -61,6 +62,16 @@ export function App() {
             element={
               <ProtectedRoute>
                 <BeatMakerPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Signed-in only, but not admin-gated: it's a reference, and the
+              nav rail it renders needs a user to show. */}
+          <Route
+            path="/handbook"
+            element={
+              <ProtectedRoute>
+                <HandbookPage />
               </ProtectedRoute>
             }
           />

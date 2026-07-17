@@ -5,7 +5,15 @@ import { ApiError, gql, rest } from "../api/client";
 import { beatColor } from "../ui/trackColors";
 import { coverFor } from "../ui/cover";
 import { Button, EditableName, ErrorBanner, Field, Skeleton, TextInput, Wordmark } from "../ui/kit";
-import { LibraryIcon, ListIcon, SearchIcon, ShareIcon, ShieldIcon, SlidersIcon } from "../ui/icons";
+import {
+  BookIcon,
+  LibraryIcon,
+  ListIcon,
+  SearchIcon,
+  ShareIcon,
+  ShieldIcon,
+  SlidersIcon,
+} from "../ui/icons";
 import { AppShell, Canvas, Modal, NavItem, NavRail, Workspace } from "../ui/shell";
 import { SettingsModal } from "../ui/SettingsModal";
 import { ShareModal } from "../ui/ShareModal";
@@ -223,6 +231,13 @@ export function SongsPage() {
             onClick={() => setView("shared")}
           />
           <NavItem icon={<LibraryIcon className="h-[17px] w-[17px]" />} label="Library" soon />
+          {/* The beat-making reference — what the grid's numbers mean, and
+              what the AI was told before it writes a pattern. */}
+          <NavItem
+            icon={<BookIcon className="h-[17px] w-[17px]" />}
+            label="Handbook"
+            onClick={() => navigate("/handbook")}
+          />
           {/* Admins get one extra destination: the AI-invite console. Gated
               on role here for the affordance; the /admin route and the
               mutations behind it enforce it server-side regardless. */}

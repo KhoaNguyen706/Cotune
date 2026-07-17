@@ -73,6 +73,16 @@ export function LibraryIcon(props: IconProps) {
   );
 }
 
+/** Handbook — an open book. */
+export function BookIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 6.5 C10 5 7.5 4.5 4 4.5 V17.5 C7.5 17.5 10 18 12 19.5" />
+      <path d="M12 6.5 C14 5 16.5 4.5 20 4.5 V17.5 C16.5 17.5 14 18 12 19.5" />
+    </Icon>
+  );
+}
+
 /** Admin — a shield. */
 export function ShieldIcon(props: IconProps) {
   return (

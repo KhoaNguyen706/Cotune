@@ -128,7 +128,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,
                                 "/", "/index.html", "/assets/**", "/favicon.ico",
                                 "/login", "/register", "/songs", "/songs/*", "/listen/*",
-                                "/admin").permitAll()
+                                "/admin", "/handbook").permitAll()
                         // Health is public ON PURPOSE: a monitor that must
                         // authenticate is a monitor that silently stops
                         // working when its token expires. Safe because the
