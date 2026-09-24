@@ -41,11 +41,27 @@
         <!-- Operational endpoints (session 21 hardening). Without this the
              platform can only TCP-probe the dyno: "the port is open" and "the
              app can reach its database" are very different kinds of alive.
-             Only /actuator/health is exposed — see the management block in
-             application.yml for what stays off and why. -->
+             Only /actuator/health and /actuator/prometheus are exposed — see
+             the management block in application.yml for what stays off and why. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- Metrics in Prometheus' text format. Actuator ships Micrometer's
+             FACADE (the MeterRegistry that CotuneMetrics and every Boot
+             auto-configuration write to); it ships no BACKEND, so without this
+             artifact every meter is recorded into a no-op registry and there is
+             nothing to scrape. Adding a registry to the classpath is the whole
+             wiring step — Boot detects it and exposes the endpoint.
+
+             `runtime` scope, not `compile`, and that is the point of the
+             facade: application code imports io.micrometer.core (the API) and
+             never names Prometheus. Swapping to Datadog/OTLP later is a change
+             to this dependency and nothing else. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>

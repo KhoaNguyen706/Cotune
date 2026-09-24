@@ -172,13 +172,19 @@ management:
   endpoints:
     web:
       exposure:
-        # health and NOTHING else. Actuator ships dozens of endpoints
-        # (/env dumps config including secrets' shapes, /heapdump hands out
-        # the whole JVM). This is Boot's default, restated so nobody
-        # "temporarily" widens it without reading this. SecurityConfig
-        # additionally denies everything under /actuator except health —
-        # two independent layers have to be wrong before /env is public.
-        include: health
+        # health, prometheus, and NOTHING else. Actuator ships dozens of
+        # endpoints (/env dumps config including secrets' shapes, /heapdump
+        # hands out the whole JVM). This list is an ALLOWLIST, restated
+        # explicitly so nobody "temporarily" widens it without reading this.
+        # SecurityConfig additionally names each exposed endpoint and denies
+        # the rest — two independent layers have to be wrong before /env is
+        # public.
+        #
+        # The two entries are exposed on very different terms: health is
+        # public and information-free, prometheus is ADMIN-only. See
+        # SecurityConfig for why a metrics dump is not something to leave
+        # open.
+        include: health,prometheus
   endpoint:
     health:
       # Component breakdown (db up? disk?) visible in dev, where it is a
@@ -195,6 +201,25 @@ management:
       # sets REALTIME_RELAY=redis — from that day on, "Redis unreachable"
       # really does mean "collaboration is broken".
       enabled: false
+  metrics:
+    tags:
+      # Stamped on EVERY meter this app emits. One instance today makes this
+      # look pointless; it is what stops the metrics being useless on the day
+      # there are three. Prometheus already tags by scrape target, but a
+      # target is a dyno address — it changes on every restart — so it cannot
+      # answer "is this Cotune or the other service in the same project".
+      application: cotune
+  distribution:
+    percentiles-histogram:
+      # Ship BUCKETS for HTTP latency, not just a count and a mean. A mean
+      # latency is close to worthless for judging whether the app is healthy:
+      # it hides the tail, and the tail is what a user actually experiences.
+      # Buckets let Prometheus compute p95/p99 at query time, which is the
+      # number worth comparing against the k6 baseline.
+      #
+      # The cost is cardinality (one time series per bucket per endpoint), so
+      # this is on for HTTP requests specifically rather than globally.
+      http.server.requests: true
 
 logging:
   level:

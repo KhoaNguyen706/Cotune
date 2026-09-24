@@ -4,6 +4,7 @@ import com.cotune.ai.PatternGenerator;
 import com.cotune.common.exception.ResourceNotFoundException;
 import com.cotune.common.exception.StaleAccountException;
 import com.cotune.common.exception.StaleVersionException;
+import com.cotune.common.metrics.CotuneMetrics;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
@@ -22,6 +23,12 @@ import java.util.stream.Collectors;
  */
 @Component
 public class GraphqlExceptionResolver extends DataFetcherExceptionResolverAdapter {
+
+    private final CotuneMetrics metrics;
+
+    public GraphqlExceptionResolver(CotuneMetrics metrics) {
+        this.metrics = metrics;
+    }
 
     @Override
     protected GraphQLError resolveToSingleError(Throwable ex, DataFetchingEnvironment env) {
@@ -62,6 +69,11 @@ public class GraphqlExceptionResolver extends DataFetcherExceptionResolverAdapte
         // a server fault — a third category ("someone got there first"),
         // hence its own classification instead of BAD_REQUEST.
         if (ex instanceof StaleVersionException stale) {
+            // Counted here rather than at each throw site, for the same reason
+            // this class exists: the conflict is raised from several services
+            // (song, beat, clip) and this is the one place they all converge.
+            // A counter per service would be three chances to forget one.
+            metrics.staleVersionConflict();
             return GraphqlErrorBuilder.newError(env)
                     .errorType(CotuneErrorType.CONFLICT)
                     .message(stale.getMessage())

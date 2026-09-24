@@ -138,10 +138,40 @@ public class SecurityConfig {
                         // working when its token expires. Safe because the
                         // prod body is information-free (show-details:
                         // never) — and note this matches /actuator/health
-                        // EXACTLY: every other actuator endpoint falls
-                        // through to denyAll below, so even a config slip
-                        // that widened the exposure list would not open one.
+                        // EXACTLY, not /actuator/**: an endpoint nobody
+                        // listed here still falls through to denyAll below,
+                        // so a config slip that widened the exposure list
+                        // does not open one.
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        // Metrics are ADMIN-only, and the contrast with the
+                        // line above is the whole decision. Health answers
+                        // one bit ("up"). /actuator/prometheus dumps the
+                        // app's interior: every URI template (a free map of
+                        // the API surface), request counts and latencies per
+                        // endpoint, JVM and pool internals, and this app's
+                        // own counters — how many people are editing, how
+                        // often the AI is called. None of that is a
+                        // credential and all of it is reconnaissance, and
+                        // traffic volumes are business information besides.
+                        //
+                        // The default posture in most tutorials is to leave
+                        // this open because "it's just metrics" and the
+                        // scraper lives on a private network. Heroku gives
+                        // us no private network — a dyno is on the public
+                        // internet and nothing else — so "internal endpoint"
+                        // would be a description of intent, not of reality.
+                        //
+                        // hasRole('ADMIN') rather than a new scrape secret:
+                        // the app already has exactly one notion of elevated
+                        // access, and a second credential type would be a
+                        // second thing to rotate and forget. A real
+                        // Prometheus can send `Authorization: Bearer <jwt>`
+                        // from its scrape config — but note our JWTs expire
+                        // in 12h (see application.yml), so wiring a
+                        // long-running scraper means giving it a service
+                        // account and refreshing the token, not pasting one
+                        // in. Until then this is for humans reading numbers.
+                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus").hasRole("ADMIN")
                         // Boot re-dispatches exceptions to /error internally;
                         // blocking it turns every error into a confusing 403.
                         .requestMatchers("/error").permitAll()

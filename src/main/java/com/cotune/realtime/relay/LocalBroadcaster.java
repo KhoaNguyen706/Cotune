@@ -1,5 +1,6 @@
 package com.cotune.realtime.relay;
 
+import com.cotune.common.metrics.CotuneMetrics;
 import com.cotune.realtime.dto.RealtimeEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,9 +24,11 @@ import org.springframework.stereotype.Component;
 public class LocalBroadcaster implements RealtimeBroadcaster {
 
     private final SimpMessagingTemplate broker;
+    private final CotuneMetrics metrics;
 
     @Override
     public void broadcast(String destination, RealtimeEvent event) {
+        metrics.broadcast(event);
         broker.convertAndSend(destination, event);
     }
 }

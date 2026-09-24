@@ -1,5 +1,6 @@
 package com.cotune.realtime.relay;
 
+import com.cotune.common.metrics.CotuneMetrics;
 import com.cotune.realtime.dto.RealtimeEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,7 @@ public class RelaySubscriber implements MessageListener {
 
     private final SimpMessagingTemplate broker;
     private final ObjectMapper json;
+    private final CotuneMetrics metrics;
 
     @Override
     public void onMessage(Message message, byte[] pattern) {
@@ -53,6 +55,12 @@ public class RelaySubscriber implements MessageListener {
             // The destination rode along in the envelope precisely so this line
             // could exist: Redis knows nothing about STOMP topics.
             broker.convertAndSend(envelope.destination(), event);
+
+            // AFTER the send, not before: this counts deliveries that happened,
+            // so it stays honest if convertAndSend throws. Paired with
+            // cotune.realtime.broadcast to show the fan-out working — see
+            // CotuneMetrics.relayDelivered for the ratio to expect.
+            metrics.relayDelivered();
 
         } catch (Exception e) {
             // A poison message must NOT kill the listener. This runs on the Redis

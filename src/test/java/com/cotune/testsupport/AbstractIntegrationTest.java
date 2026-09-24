@@ -84,6 +84,32 @@ public abstract class AbstractIntegrationTest {
         registry.add("cotune.security.rate-limit.general-per-minute", () -> 1_000_000);
     }
 
+    @DynamicPropertySource
+    static void keepMetricsExportOn(DynamicPropertyRegistry registry) {
+        // @SpringBootTest DISABLES metrics export by default — Boot installs a
+        // DisableObservabilityContextCustomizer that switches the registries
+        // off so unit tests don't ship telemetry. The visible symptom is
+        // /actuator/prometheus returning 404 in tests while working perfectly
+        // in production: the most misleading shape a test-only difference can
+        // take, because the endpoint is not "broken", it is absent.
+        //
+        // The documented cure is @AutoConfigureObservability on the test class.
+        // Not used here, deliberately: it is a context-configuration change, so
+        // it would fork a SECOND application context and — since the Postgres
+        // container is a per-context @Bean — a second database container, for
+        // one test class. See this class's comment on why that sameness is
+        // load-bearing.
+        //
+        // Setting it as a property instead keeps every subclass on one cached
+        // context, and has the better side effect anyway: every integration
+        // test now runs with the metrics stack live, so a meter that blows up
+        // on registration surfaces in whichever test touches that code path,
+        // not only in the one that scrapes. Values are constants, so context
+        // caching is preserved.
+        registry.add("management.defaults.metrics.export.enabled", () -> true);
+        registry.add("management.simple.metrics.export.enabled", () -> true);
+    }
+
     @LocalServerPort
     protected int port;
 

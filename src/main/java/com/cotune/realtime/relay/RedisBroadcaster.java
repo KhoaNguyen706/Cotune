@@ -1,5 +1,6 @@
 package com.cotune.realtime.relay;
 
+import com.cotune.common.metrics.CotuneMetrics;
 import com.cotune.realtime.dto.RealtimeEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,17 +48,24 @@ public class RedisBroadcaster implements RealtimeBroadcaster {
     private final StringRedisTemplate redis;
     private final ObjectMapper json;
     private final String channel;
+    private final CotuneMetrics metrics;
 
     public RedisBroadcaster(StringRedisTemplate redis,
                             ObjectMapper json,
-                            @Value("${cotune.realtime.channel}") String channel) {
+                            @Value("${cotune.realtime.channel}") String channel,
+                            CotuneMetrics metrics) {
         this.redis = redis;
         this.json = json;
         this.channel = channel;
+        this.metrics = metrics;
     }
 
     @Override
     public void broadcast(String destination, RealtimeEvent event) {
+        // Counted here — what was PUBLISHED. The matching "what came back off
+        // the channel" count lives in RelaySubscriber, and the gap between the
+        // two is the health of the fan-out; see CotuneMetrics.relayDelivered.
+        metrics.broadcast(event);
         RelayEnvelope envelope = RelayEnvelope.of(destination, event, json);
         try {
             // NAME COLLISION WORTH NOTICING: this convertAndSend is Redis PUBLISH.

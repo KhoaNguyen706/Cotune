@@ -14,10 +14,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The health endpoint's contract has two halves and they pull in opposite
- * directions: it must be reachable by an unauthenticated monitor, and it
- * must be the ONLY actuator endpoint reachable by anyone at all. Each test
- * takes one half. What "healthy" means (a real SELECT against the real
- * database) is Boot's code, not ours — we assert the wiring, not Boot.
+ * directions: it must be reachable by an unauthenticated monitor, and it must
+ * be the only actuator endpoint reachable ANONYMOUSLY. Each test takes one
+ * half. What "healthy" means (a real SELECT against the real database) is
+ * Boot's code, not ours — we assert the wiring, not Boot.
+ *
+ * "Anonymously" was "at all" until /actuator/prometheus was exposed. That one
+ * is reachable, but only by an ADMIN, and its own three-identity test lives in
+ * MetricsEndpointIntegrationTest — the distinction being that health is
+ * exposed because it says nothing, and metrics is protected because it says
+ * plenty.
  */
 class HealthEndpointIntegrationTest extends AbstractIntegrationTest {
 
