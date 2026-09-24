@@ -245,6 +245,48 @@ export function Skeleton({ className }: { className?: string }) {
   return <div className={cx("animate-pulse rounded-lg bg-surface-2", className)} aria-hidden />;
 }
 
+/**
+ * The one spinner. Used for in-flight work whose SHAPE we can't mirror with a
+ * skeleton — an AI request that returns we-don't-know-what yet. Inherits
+ * currentColor so it takes the color of whatever it sits in (a button's text,
+ * an accent panel). The track ring is faint; the head arc is solid, so the
+ * rotation reads even at 14px. `animate-spin` is neutralised by the global
+ * prefers-reduced-motion rule — the ring then sits static, still legible as a
+ * loading mark rather than strobing.
+ */
+export function Spinner({ className }: { className?: string }) {
+  return (
+    <svg className={cx("animate-spin", className)} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
+      <path
+        d="M21 12a9 9 0 0 0-9-9"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * The "the AI is working" panel for the compose/generate dialogs. Replacing
+ * the form with this while a Gemini call is in flight does two things a
+ * disabled input can't: it says plainly that the wait is expected (these
+ * calls take a few seconds), and it removes the dead-looking greyed field
+ * that reads as "frozen" on a demo recording.
+ */
+export function AiThinkingPanel({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-10 text-center" data-testid="ai-thinking">
+      <Spinner className="h-8 w-8 text-accent" />
+      <p className="text-sm font-semibold text-text">{label}</p>
+      <p className="max-w-xs text-xs text-muted">
+        The AI is reading your song — this usually takes a few seconds.
+      </p>
+    </div>
+  );
+}
+
 export function EmptyState({
   icon,
   title,

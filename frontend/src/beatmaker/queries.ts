@@ -71,9 +71,11 @@ export const COMPOSE_BEAT = `
     composeBeat(beatId: $beatId, prompt: $prompt) {
       __typename
       ... on SetBpm { bpm }
+      ... on SetTimeSignature { timeSignature }
       ... on AddLane { lane instrument }
       ... on SetLanePattern { lane notes { step pitch velocity length } }
       ... on ClearLane { lane }
+      ... on RemoveLane { lane }
     }
   }
 `;

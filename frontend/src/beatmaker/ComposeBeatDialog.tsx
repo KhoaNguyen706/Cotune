@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AiAction, Beat } from "../types";
-import { Button, ErrorBanner, TextInput } from "../ui/kit";
+import { AiThinkingPanel, Button, ErrorBanner, Spinner, TextInput } from "../ui/kit";
 import { Modal } from "../ui/shell";
 import { SparkIcon } from "../ui/icons";
 import { hasIrreversible, planSummary } from "./plan";
@@ -76,8 +76,8 @@ export function ComposeBeatDialog({
           // Only when it's true — a notes-only plan IS fully undoable, and
           // crying wolf on those would train the warning away.
           <p className="mt-4 rounded-lg border border-edge bg-surface-2/60 px-3 py-2 text-xs text-muted">
-            The tempo change and any new lanes save immediately and are{" "}
-            <strong className="text-text">not undoable</strong>. The notes are — Ctrl+Z brings the
+            Tempo, time signature, and adding or removing a lane save immediately and are{" "}
+            <strong className="text-text">not undoable</strong>. Note changes are — Ctrl+Z brings the
             old ones back.
           </p>
         )}
@@ -93,9 +93,25 @@ export function ComposeBeatDialog({
             Discard
           </Button>
           <Button type="button" onClick={onApply} disabled={busy}>
-            {busy ? "Applying…" : "Apply to beat"}
+            {busy ? (
+              <>
+                <Spinner className="h-4 w-4" />
+                Applying…
+              </>
+            ) : (
+              "Apply to beat"
+            )}
           </Button>
         </div>
+      </Modal>
+    );
+  }
+
+  // ---- phase 1, in flight: the AI is writing the plan --------------------
+  if (busy) {
+    return (
+      <Modal title={`Compose ${beat.name}`} onClose={() => {}}>
+        <AiThinkingPanel label="Composing your beat…" />
       </Modal>
     );
   }
@@ -141,14 +157,8 @@ export function ComposeBeatDialog({
             Cancel
           </Button>
           <Button type="submit" disabled={!ready}>
-            {busy ? (
-              "Composing…"
-            ) : (
-              <>
-                <SparkIcon className="h-4 w-4" />
-                Compose beat
-              </>
-            )}
+            <SparkIcon className="h-4 w-4" />
+            Compose beat
           </Button>
         </div>
       </form>

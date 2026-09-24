@@ -247,11 +247,17 @@ input StepInput {
 # Member names must match the Java record simple names in AiActionDto —
 # Spring resolves the concrete type by class name at RUNTIME, so a rename on
 # one side breaks that branch only, and only when it is first returned.
-union AiAction = SetBpm | AddLane | SetLanePattern | ClearLane
+union AiAction = SetBpm | SetTimeSignature | AddLane | SetLanePattern | ClearLane | RemoveLane
 
 # Retempo the song. Already checked against Song's real bounds (20-400).
 type SetBpm {
     bpm: Int!
+}
+
+# Change the song's time signature. Already checked against Song's own rule,
+# so the string is always a real one like "4/4" or "6/8".
+type SetTimeSignature {
+    timeSignature: String!
 }
 
 # Create a lane the beat doesn't have. The name is the model's; the
@@ -271,6 +277,12 @@ type SetLanePattern {
 
 # Empty a lane without removing it.
 type ClearLane {
+    lane: String!
+}
+
+# Delete a lane and everything in it. The destructive one: previewed and
+# flagged irreversible on the client before it is applied.
+type RemoveLane {
     lane: String!
 }
 

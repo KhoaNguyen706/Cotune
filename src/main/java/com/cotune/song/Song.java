@@ -45,6 +45,16 @@ public class Song {
     public static final int MIN_BPM = 20;
     public static final int MAX_BPM = 400;
 
+    // The only accepted time-signature shape, exposed so callers that must
+    // pre-check one (the AI plan validator) test against the entity's own
+    // rule rather than a copy of it — the same reason MIN_BPM/MAX_BPM are
+    // public. "4/4", "3/4", "6/8", "12/8": one or two digits either side.
+    public static final String TIME_SIGNATURE_PATTERN = "\\d{1,2}/\\d{1,2}";
+
+    public static boolean isValidTimeSignature(String value) {
+        return value != null && value.matches(TIME_SIGNATURE_PATTERN);
+    }
+
     @Id
     // UUIDs are generated app-side, not by a DB sequence. In a collaborative
     // system clients/servers can mint IDs without a round-trip to the DB,
@@ -120,7 +130,7 @@ public class Song {
     }
 
     public void changeTimeSignature(String newTimeSignature) {
-        if (newTimeSignature == null || !newTimeSignature.matches("\\d{1,2}/\\d{1,2}")) {
+        if (!isValidTimeSignature(newTimeSignature)) {
             throw new IllegalArgumentException(
                     "Time signature must look like 4/4, got: " + newTimeSignature);
         }

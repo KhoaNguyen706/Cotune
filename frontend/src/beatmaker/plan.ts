@@ -30,6 +30,36 @@ export function bpmOf(plan: AiAction[]): number | null {
   return action ? action.bpm : null;
 }
 
+/** The time signature the plan sets, or null if it left it alone. First
+ *  wins, for the same reason bpmOf's does. */
+export function timeSignatureOf(plan: AiAction[]): string | null {
+  const action = plan.find((a) => a.__typename === "SetTimeSignature");
+  return action ? action.timeSignature : null;
+}
+
+/**
+ * The lanes the plan will DELETE, in the order it asked, keeping only the ones
+ * that are actually there right now.
+ *
+ * Filtering against `existingLaneNames` is the retry story, the mirror of
+ * lanesToAdd's: if applying half-fails and the user presses Apply again, a
+ * remove for a lane that is already gone must become a no-op, not an error.
+ * Case-insensitive and de-duped — a name is all the model ever sees.
+ */
+export function lanesToRemove(plan: AiAction[], existingLaneNames: string[] = []): string[] {
+  const have = new Set(existingLaneNames.map((name) => name.toLowerCase()));
+  const seen = new Set<string>();
+  const toRemove: string[] = [];
+  for (const action of plan) {
+    if (action.__typename !== "RemoveLane") continue;
+    const key = action.lane.toLowerCase();
+    if (!have.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    toRemove.push(action.lane);
+  }
+  return toRemove;
+}
+
 /**
  * The lanes the plan will CREATE, in the order it asked for them, minus any
  * that are already there.
@@ -106,19 +136,30 @@ export function planSummary(plan: AiAction[]): string[] {
     switch (action.__typename) {
       case "SetBpm":
         return `Set the tempo to ${action.bpm} BPM`;
+      case "SetTimeSignature":
+        return `Set the time signature to ${action.timeSignature}`;
       case "AddLane":
         return `Add a ${action.instrument.toLowerCase()} lane called "${action.lane}"`;
       case "SetLanePattern":
         return `Write ${action.notes.length} note${action.notes.length === 1 ? "" : "s"} into "${action.lane}"`;
       case "ClearLane":
         return `Empty the "${action.lane}" lane`;
+      case "RemoveLane":
+        return `Remove the "${action.lane}" lane`;
     }
   });
 }
 
 /** Whether applying this plan changes anything that Ctrl+Z cannot take
- *  back. Undo covers PATTERNS only — a tempo change and a new lane save
- *  immediately — so the dialog says so only when it's actually true. */
+ *  back. Undo covers PATTERNS only — tempo, time signature, and adding or
+ *  removing a lane all save immediately — so the dialog warns only when it's
+ *  actually true. */
 export function hasIrreversible(plan: AiAction[]): boolean {
-  return plan.some((a) => a.__typename === "SetBpm" || a.__typename === "AddLane");
+  return plan.some(
+    (a) =>
+      a.__typename === "SetBpm" ||
+      a.__typename === "SetTimeSignature" ||
+      a.__typename === "AddLane" ||
+      a.__typename === "RemoveLane",
+  );
 }

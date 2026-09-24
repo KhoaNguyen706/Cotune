@@ -1,11 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { peerColor, type ChatMessage } from "../realtime/socket";
 import { IconButton } from "../ui/shell";
-import { TextInput } from "../ui/kit";
+import { Spinner, TextInput } from "../ui/kit";
+import { CloseIcon } from "../ui/icons";
 
 /** Same-author lines closer together than this render as one block —
  *  the grouping every chat UI does so a burst of thoughts reads as one. */
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
+/** Must match the server: ChatAiBridge.TRIGGER / AI_NAME. A line opening with
+ *  the trigger asks the AI; the answer arrives as a message from this name. */
+const AI_TRIGGER = "@ai";
+const AI_NAME = "Cotune AI";
 
 /**
  * The conversation, docked beside the canvas. Deliberately a dumb view:
@@ -44,6 +50,21 @@ export function ChatPanel({
   // the badge on the toggle already says something new arrived.
   const pinnedRef = useRef(true);
 
+  // "The AI is thinking" is DERIVED from the transcript, not a local flag: it
+  // is true exactly when the most recent line is an @ai prompt with no reply
+  // after it yet. That makes it correct for everyone in the room (not just the
+  // asker), and it clears itself the instant the AI's message lands — the
+  // bridge always posts one, even on cooldown or error, so it can't hang.
+  // Gated on `live` below, so a dropped socket doesn't strand it on screen.
+  const aiThinking = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.authorName === AI_NAME) return false; // already answered
+      if (message.body.trim().toLowerCase().startsWith(AI_TRIGGER)) return true;
+    }
+    return false;
+  }, [messages]);
+
   function onScroll() {
     const el = listRef.current;
     if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -52,7 +73,7 @@ export function ChatPanel({
   useEffect(() => {
     const el = listRef.current;
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  }, [messages, aiThinking]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,7 +93,7 @@ export function ChatPanel({
       <header className="flex h-11 shrink-0 items-center justify-between border-b border-edge px-3">
         <h2 className="text-xs font-bold uppercase tracking-wider text-muted">Chat</h2>
         <IconButton onClick={onClose} title="Close chat">
-          ×
+          <CloseIcon className="h-[18px] w-[18px]" />
         </IconButton>
       </header>
 
@@ -119,6 +140,18 @@ export function ChatPanel({
             </div>
           );
         })}
+
+        {aiThinking && live && (
+          <div className="mt-3" data-testid="ai-thinking">
+            <strong className="text-xs font-bold" style={{ color: peerColor(AI_NAME) }}>
+              {AI_NAME}
+            </strong>
+            <p className="mt-0.5 flex items-center gap-2 text-sm text-muted">
+              <Spinner className="h-3.5 w-3.5" />
+              thinking…
+            </p>
+          </div>
+        )}
       </div>
 
       <form onSubmit={submit} className="shrink-0 border-t border-edge p-2">

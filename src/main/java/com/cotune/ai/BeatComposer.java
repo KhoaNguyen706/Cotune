@@ -3,6 +3,7 @@ package com.cotune.ai;
 import com.cotune.beat.Beat;
 import com.cotune.beat.BeatRepository;
 import com.cotune.common.exception.ResourceNotFoundException;
+import com.cotune.common.metrics.CotuneMetrics;
 import com.cotune.song.Song;
 import com.cotune.track.Instrument;
 import com.cotune.track.Step;
@@ -74,16 +75,34 @@ public class BeatComposer {
             current beat — its lanes and their notes as text grids (x = hit, \
             — = held, . = silence) — and a request.
 
+            THE REQUEST LEADS. Do what THIS request asks before you do what a \
+            genre usually does. If it names an instrument, a tempo, a key, a \
+            mood or a section, honour that exactly; only fall back to the \
+            conventions below to fill in what the request left unsaid. A prompt \
+            for "just drums and a bassline at 96" is two lanes at 96, not a \
+            full arrangement.
+
             Build what was asked for by CALLING TOOLS. Think like someone \
             making the track, not like someone filling a form:
-            - Tempo carries mood. Call set_bpm when the request implies one \
-            (sad/lofi 60-85, hip-hop 85-100, house 120-128, dnb 170+). Leave \
-            it alone if the request says nothing about feel or speed.
+            - Tempo carries mood, and real genres sit at known tempos. Call \
+            set_bpm to match the request: lofi/boom-bap 70-90, hip-hop 85-100, \
+            trap 130-150 (half-time feel), house 120-128, techno 128-135, \
+            drum-and-bass 170-176, reggaeton ~95, ballad 60-80. Pick a value \
+            inside the named range; only leave the tempo alone when the \
+            request implies nothing about feel or speed.
+            - Meter, when it matters. Call set_time_signature for a request \
+            that implies one — a waltz or 3/4, a 6/8 shuffle, a 7/8 oddity. \
+            Most beats are 4/4; don't set it just to restate that.
             - A beat needs more than drums. Add the lanes the music needs \
             (add_lane) and write each one (set_lane_pattern). A typical beat \
             is 3-5 lanes.
             - Write into lanes that already exist rather than duplicating \
             them. Only add a lane when nothing suitable is there.
+            - Remove, don't just empty. If the request asks to drop an \
+            instrument, or wants a sparser beat that some existing lane is \
+            fighting, call remove_lane to delete it. Use clear_lane only when \
+            the lane should stay but start empty. Never remove a lane you \
+            just added.
             - Steps are 0-based and must stay below the beat's step count. \
             Pitch is scientific notation (C4, F#2): kicks and snares near C2, \
             bass C1-C3, chords and melodies C4-C6. Velocity 0.1-1.0 — vary it, \
@@ -113,11 +132,16 @@ public class BeatComposer {
     /**
      * The tools, and the whole surface the model can move.
      *
-     * Deliberately small. Every tool here is an edit a person can already
-     * make with the mouse and undo with Ctrl+Z — no deletes, no sharing, no
-     * tempo-of-someone-else's-song. The model's reach is a subset of the
-     * user's own, which is the property that makes "let the AI edit it"
-     * something other than alarming.
+     * Deliberately small, and every tool is an edit a person can already make
+     * by hand — set the tempo or meter, add a lane, write it, empty it,
+     * delete it. The model's reach is a SUBSET of the user's own powers, which
+     * is what makes "let the AI edit it" something other than alarming. That
+     * includes remove_lane: deleting a lane is destructive and NOT undoable
+     * (Ctrl+Z covers patterns only), but it is a power the user already has,
+     * and the plan is previewed and flagged irreversible before Apply — the
+     * model still only ever PROPOSES. What stays off the list is anything
+     * outside those powers: no sharing, no deleting the song, no touching
+     * someone else's.
      */
     static final List<Map<String, Object>> TOOLS = List.of(
             Map.of(
@@ -129,6 +153,16 @@ public class BeatComposer {
                                     "type", "INTEGER",
                                     "description", "Beats per minute, %d-%d".formatted(Song.MIN_BPM, Song.MAX_BPM))),
                             "required", List.of("bpm"))),
+            Map.of(
+                    "name", "set_time_signature",
+                    "description", "Set the song's time signature. Use only when the request implies a "
+                            + "meter other than common time; most beats are 4/4.",
+                    "parameters", Map.of(
+                            "type", "OBJECT",
+                            "properties", Map.of("timeSignature", Map.of(
+                                    "type", "STRING",
+                                    "description", "Like 4/4, 3/4 or 6/8 — digits, a slash, digits")),
+                            "required", List.of("timeSignature"))),
             Map.of(
                     "name", "add_lane",
                     "description", "Add a new instrument lane to the beat. Only when no suitable lane exists.",
@@ -157,7 +191,18 @@ public class BeatComposer {
                             "required", List.of("lane", "notes"))),
             Map.of(
                     "name", "clear_lane",
-                    "description", "Remove every note from a lane, leaving it empty.",
+                    "description", "Remove every note from a lane, leaving it empty. Use when the lane "
+                            + "should stay but start over — to delete the lane entirely, use remove_lane.",
+                    "parameters", Map.of(
+                            "type", "OBJECT",
+                            "properties", Map.of(
+                                    "lane", Map.of("type", "STRING", "description", "The lane's name")),
+                            "required", List.of("lane"))),
+            Map.of(
+                    "name", "remove_lane",
+                    "description", "Delete a lane and its notes entirely. Use when the request asks to "
+                            + "drop an instrument. Only for a lane that already exists — never one added "
+                            + "in this same plan.",
                     "parameters", Map.of(
                             "type", "OBJECT",
                             "properties", Map.of(
@@ -167,6 +212,7 @@ public class BeatComposer {
     private final GeminiClient gemini;
     private final BeatRepository beatRepository;
     private final TrackRepository trackRepository;
+    private final CotuneMetrics metrics;
 
     /**
      * The DB read, separated from the API call for the same reason as
@@ -245,10 +291,25 @@ public class BeatComposer {
         }
 
         List<AiAction> plan = validate(calls, beat);
+
+        // Recorded HERE and not inside validate(), for two reasons. validate()
+        // is the one piece of this class covered by a keyless unit test
+        // (BeatComposerValidateTest), and a metrics call in there would drag a
+        // MeterRegistry into every one of those cases to observe something the
+        // test does not assert on. And this is the only spot that sees both
+        // sides of the subtraction — what the model proposed and what survived.
+        metrics.aiPlanValidated(plan.size(), calls.size() - plan.size());
+
         if (plan.isEmpty()) {
+            // Deliberately BEFORE the throw's early exit: a plan validated down
+            // to nothing is the single most interesting event this metric can
+            // record, and counting it only on the happy path would hide exactly
+            // the failure the counter exists to reveal.
             throw new PatternGenerator.GenerationUnavailableException(
                     "The AI couldn't turn that into edits — try describing the beat differently.");
         }
+
+        metrics.aiPlanProposed();
         return plan;
     }
 
@@ -274,6 +335,11 @@ public class BeatComposer {
         Set<String> known = new HashSet<>();
         beat.laneNames().forEach(name -> known.add(name.toLowerCase(Locale.ROOT)));
         Set<String> patterned = new HashSet<>();
+        // Lanes created by add_lane in THIS plan — remove_lane refuses to
+        // delete one of them, because "add a lane then delete it" is a plan
+        // that spent two actions to do nothing, and far more likely a model
+        // confusing itself than an intent.
+        Set<String> addedInPlan = new HashSet<>();
 
         for (GeminiClient.FunctionCall call : calls) {
             if (plan.size() >= MAX_ACTIONS) {
@@ -291,6 +357,15 @@ public class BeatComposer {
                             plan.add(AiAction.setBpm(bpm));
                         }
                     }
+                    case "set_time_signature" -> {
+                        String signature = asString(args.get("timeSignature"));
+                        // Song's own rule, same reasoning as the BPM bounds: a
+                        // shape the mutation would reject ("seven") is dropped
+                        // here rather than carried to a failure downstream.
+                        if (Song.isValidTimeSignature(signature)) {
+                            plan.add(AiAction.setTimeSignature(signature));
+                        }
+                    }
                     case "add_lane" -> {
                         String lane = laneName(args.get("lane"));
                         Instrument instrument = instrument(args.get("instrument"));
@@ -300,7 +375,9 @@ public class BeatComposer {
                         // Adding a lane that already exists would give you two
                         // lanes called "kick" and a pattern that lands in a
                         // coin-flip one of them.
-                        if (known.add(lane.toLowerCase(Locale.ROOT))) {
+                        String key = lane.toLowerCase(Locale.ROOT);
+                        if (known.add(key)) {
+                            addedInPlan.add(key);
                             plan.add(AiAction.addLane(lane, instrument));
                         }
                     }
@@ -321,6 +398,22 @@ public class BeatComposer {
                         String lane = laneName(args.get("lane"));
                         if (lane != null && known.contains(lane.toLowerCase(Locale.ROOT))) {
                             plan.add(AiAction.clearLane(lane));
+                        }
+                    }
+                    case "remove_lane" -> {
+                        String lane = laneName(args.get("lane"));
+                        if (lane == null) {
+                            break;
+                        }
+                        String key = lane.toLowerCase(Locale.ROOT);
+                        // Only a lane that really exists and wasn't just added
+                        // by this plan. Removing it takes it out of `known`, so
+                        // any later pattern or clear aimed at it is dropped
+                        // rather than landing on a lane that is now gone.
+                        if (known.contains(key) && !addedInPlan.contains(key)) {
+                            known.remove(key);
+                            patterned.remove(key);
+                            plan.add(AiAction.removeLane(lane));
                         }
                     }
                     default -> log.warn("AI proposed an unknown tool: {}", call.name());
@@ -358,6 +451,16 @@ public class BeatComposer {
                     length == null ? 1 : length));
         }
         return PatternGenerator.sanitize(parsed, totalSteps);
+    }
+
+    /** A trimmed non-blank string, or null. Used for the time signature,
+     *  where blank and null are the same "the model didn't really answer". */
+    private static String asString(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        String value = String.valueOf(raw).strip();
+        return value.isBlank() ? null : value;
     }
 
     private static String laneName(Object raw) {

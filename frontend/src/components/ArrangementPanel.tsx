@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, fetchBinary, gql, rest } from "../api/client";
 import { downloadBlob, evictAudioBuffer, secondsPerStep, STEPS_PER_BAR, uploadAudioFile } from "../audio/engine";
 import { beatColor, colorFor } from "../ui/trackColors";
+import { INSTRUMENTS, instrumentLabel } from "../audio/instrumentList";
 import { EmptyState } from "../ui/kit";
 import { CloseIcon, DownloadIcon, HeadphonesIcon, TimelineMark } from "../ui/icons";
 import { IconButton, SidebarSection } from "../ui/shell";
@@ -97,6 +98,7 @@ export function ArrangementPalette({
   onArmedChange,
   onClipsChange,
   onAudioFilesChange,
+  onAddInstrument,
   onError,
   canEdit,
 }: {
@@ -107,6 +109,11 @@ export function ArrangementPalette({
   onArmedChange: (armed: Armed) => void;
   onClipsChange: (updater: (prev: Clip[]) => Clip[]) => void;
   onAudioFilesChange: (updater: (prev: AudioFile[]) => AudioFile[]) => void;
+  /** Create a fresh single-lane beat of this instrument and ARM it, ready to
+   *  drop on the timeline — the DAW "add an instrument track" gesture. The
+   *  page owns it because creating a beat + lane and arming spans the data
+   *  layer and the shared `armed` state. */
+  onAddInstrument: (instrument: string) => Promise<void>;
   onError: (message: string | null) => void;
   /** False for a VIEWER. The server already 403s every mutation a viewer
    *  attempts — this exists so they never see a control that promises one.
@@ -115,6 +122,7 @@ export function ArrangementPalette({
   canEdit: boolean;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [addingInstrument, setAddingInstrument] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -210,6 +218,46 @@ export function ArrangementPalette({
           })}
         </div>
       </SidebarSection>
+
+      {canEdit && (
+        <SidebarSection title="Instruments">
+          <div className="flex flex-col gap-2">
+            <p className="text-[0.68rem] leading-snug text-muted">
+              Add an instrument as a region, click a lane to drop it, then double-click it to write
+              its notes.
+            </p>
+            <div className="grid grid-cols-2 gap-1">
+              {INSTRUMENTS.map((value) => (
+                <button
+                  key={value}
+                  disabled={addingInstrument !== null}
+                  className={
+                    paletteItem +
+                    " justify-start border-edge bg-bg-soft text-muted hover:border-edge-strong hover:text-text disabled:cursor-default disabled:opacity-50"
+                  }
+                  title={`Add a ${instrumentLabel(value)} region to the arrangement`}
+                  onClick={async () => {
+                    setAddingInstrument(value);
+                    try {
+                      await onAddInstrument(value);
+                    } finally {
+                      setAddingInstrument(null);
+                    }
+                  }}
+                >
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: colorFor(value) }}
+                  />
+                  <span className="truncate font-semibold">
+                    {addingInstrument === value ? "Adding…" : instrumentLabel(value)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </SidebarSection>
+      )}
 
       <SidebarSection
         title="Audio"
@@ -670,7 +718,7 @@ export function ArrangementTimeline({
                   title="Empty timeline"
                   hint={
                     canEdit
-                      ? "Arm a beat in the left panel, then click a lane — same beat, as many placements as you like."
+                      ? "Add an instrument or arm a beat in the left panel, then click a lane to place it — as many times as you like."
                       : "Nothing arranged yet — you're viewing this song, so the timeline fills in as its editors work."
                   }
                 />

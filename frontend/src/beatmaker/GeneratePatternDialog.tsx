@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Track } from "../types";
-import { Button, ErrorBanner, TextInput } from "../ui/kit";
+import { AiThinkingPanel, Button, ErrorBanner, TextInput } from "../ui/kit";
 import { Modal } from "../ui/shell";
 import { SparkIcon } from "../ui/icons";
 
@@ -32,8 +32,16 @@ export function GeneratePatternDialog({
   const [prompt, setPrompt] = useState("");
   const ready = prompt.trim().length > 0 && !busy;
 
+  if (busy) {
+    return (
+      <Modal title={`Generate notes for ${track.name}`} onClose={() => {}}>
+        <AiThinkingPanel label={`Writing a ${track.instrument.toLowerCase()} pattern…`} />
+      </Modal>
+    );
+  }
+
   return (
-    <Modal title={`Generate notes for ${track.name}`} onClose={busy ? () => {} : onCancel}>
+    <Modal title={`Generate notes for ${track.name}`} onClose={onCancel}>
       <p className="text-sm text-muted">
         Describe the {track.instrument.toLowerCase()} pattern you want. The AI sees the whole
         song, writes into <strong className="text-text">{track.name}</strong> only, and replaces
@@ -64,14 +72,8 @@ export function GeneratePatternDialog({
             Cancel
           </Button>
           <Button type="submit" disabled={!ready}>
-            {busy ? (
-              "Composing…"
-            ) : (
-              <>
-                <SparkIcon className="h-4 w-4" />
-                Generate
-              </>
-            )}
+            <SparkIcon className="h-4 w-4" />
+            Generate
           </Button>
         </div>
       </form>

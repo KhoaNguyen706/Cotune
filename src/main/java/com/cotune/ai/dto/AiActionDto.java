@@ -35,6 +35,9 @@ public sealed interface AiActionDto {
     record SetBpm(int bpm) implements AiActionDto {
     }
 
+    record SetTimeSignature(String timeSignature) implements AiActionDto {
+    }
+
     record AddLane(String lane, Instrument instrument) implements AiActionDto {
     }
 
@@ -42,6 +45,9 @@ public sealed interface AiActionDto {
     }
 
     record ClearLane(String lane) implements AiActionDto {
+    }
+
+    record RemoveLane(String lane) implements AiActionDto {
     }
 
     /**
@@ -57,6 +63,8 @@ public sealed interface AiActionDto {
         return switch (action) {
             case AiAction.SetBpm(int bpm) ->
                     new SetBpm(bpm);
+            case AiAction.SetTimeSignature(String timeSignature) ->
+                    new SetTimeSignature(timeSignature);
             case AiAction.AddLane(String lane, Instrument instrument) ->
                     new AddLane(lane, instrument);
             case AiAction.SetLanePattern(String lane, var notes) ->
@@ -65,6 +73,8 @@ public sealed interface AiActionDto {
                             .toList());
             case AiAction.ClearLane(String lane) ->
                     new ClearLane(lane);
+            case AiAction.RemoveLane(String lane) ->
+                    new RemoveLane(lane);
         };
     }
 }

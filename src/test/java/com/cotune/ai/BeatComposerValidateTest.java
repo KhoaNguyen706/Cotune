@@ -42,9 +42,11 @@ class BeatComposerValidateTest {
                 List.of(lanes), new LinkedHashSet<>(List.of(lanes)));
     }
 
-    /** validate() needs no collaborators — the DB fields are never touched. */
+    /** validate() needs no collaborators — the DB fields are never touched,
+     *  and the metrics call lives in compose(), one level up, precisely so
+     *  these cases stay constructible without a MeterRegistry. */
     private static BeatComposer composer() {
-        return new BeatComposer(null, null, null);
+        return new BeatComposer(null, null, null, null);
     }
 
     private static FunctionCall call(String name, Map<String, Object> args) {
@@ -79,6 +81,53 @@ class BeatComposerValidateTest {
 
         // One bad call costs one action, never the whole request.
         assertThat(plan).containsExactly(new AiAction.AddLane("keys", Instrument.PIANO));
+    }
+
+    @Test
+    void aValidTimeSignatureSurvivesAndAGarbledOneIsDropped() {
+        List<AiAction> plan = composer().validate(List.of(
+                call("set_time_signature", Map.of("timeSignature", "6/8")),
+                call("set_time_signature", Map.of("timeSignature", "seven")),
+                call("set_time_signature", Map.of("timeSignature", "4-4"))),
+                emptyBeat());
+
+        // Only the one that matches Song's own rule gets through.
+        assertThat(plan).containsExactly(new AiAction.SetTimeSignature("6/8"));
+    }
+
+    @Test
+    void removeLaneDeletesAnExistingLaneAndDropsALaterPatternForIt() {
+        // Remove takes the lane out of the known set, so a pattern the model
+        // aims at it afterwards lands nowhere and is dropped.
+        List<AiAction> plan = composer().validate(List.of(
+                call("remove_lane", Map.of("lane", "Keys")),
+                call("set_lane_pattern", Map.of("lane", "keys", "notes", List.of(
+                        Map.of("step", 0, "pitch", "C4", "velocity", 0.8, "length", 2))))),
+                beatWithLanes("keys"));
+
+        assertThat(plan).containsExactly(new AiAction.RemoveLane("Keys"));
+    }
+
+    @Test
+    void removeLaneForALaneTheBeatDoesNotHaveIsDropped() {
+        List<AiAction> plan = composer().validate(List.of(
+                call("remove_lane", Map.of("lane", "ghost"))),
+                beatWithLanes("kick"));
+
+        assertThat(plan).isEmpty();
+    }
+
+    @Test
+    void removeLaneRefusesToDeleteALaneAddedInTheSamePlan() {
+        // "Add a lane then delete it" is two actions doing nothing — far more
+        // likely a confused model than an intent, so the remove is dropped
+        // and the lane it added stays.
+        List<AiAction> plan = composer().validate(List.of(
+                call("add_lane", Map.of("lane", "pad", "instrument", "SYNTH")),
+                call("remove_lane", Map.of("lane", "pad"))),
+                emptyBeat());
+
+        assertThat(plan).containsExactly(new AiAction.AddLane("pad", Instrument.SYNTH));
     }
 
     @Test

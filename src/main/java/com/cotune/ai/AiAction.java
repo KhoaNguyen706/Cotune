@@ -39,6 +39,11 @@ public sealed interface AiAction {
     record SetBpm(int bpm) implements AiAction {
     }
 
+    /** Change the song's time signature. Validated against Song's own rule
+     *  (Song.isValidTimeSignature), so "4/4" gets through and "seven" doesn't. */
+    record SetTimeSignature(String timeSignature) implements AiAction {
+    }
+
     /** Create a lane the beat doesn't have yet. */
     record AddLane(String lane, Instrument instrument) implements AiAction {
     }
@@ -57,6 +62,20 @@ public sealed interface AiAction {
     record ClearLane(String lane) implements AiAction {
     }
 
+    /**
+     * Delete a lane and everything in it.
+     *
+     * The one destructive action, and the reason the "no deletes" line in
+     * BeatComposer's class comment no longer holds: a user asked for it
+     * ("remove the instruments I don't want"). It stays inside the safety
+     * model — a person can already delete a lane by hand, so this is still a
+     * SUBSET of their own powers, and the plan is previewed and flagged
+     * irreversible before Apply, never executed sight-unseen. Distinct from
+     * ClearLane on purpose: empty keeps the lane, remove takes it away.
+     */
+    record RemoveLane(String lane) implements AiAction {
+    }
+
     // ---- factories -------------------------------------------------------
     // Named for the tools they come from (set_bpm -> setBpm), so a reader
     // comparing BeatComposer.validate against the tool list can match them
@@ -65,6 +84,10 @@ public sealed interface AiAction {
 
     static AiAction setBpm(int bpm) {
         return new SetBpm(bpm);
+    }
+
+    static AiAction setTimeSignature(String timeSignature) {
+        return new SetTimeSignature(timeSignature);
     }
 
     static AiAction addLane(String lane, Instrument instrument) {
@@ -80,5 +103,9 @@ public sealed interface AiAction {
 
     static AiAction clearLane(String lane) {
         return new ClearLane(lane);
+    }
+
+    static AiAction removeLane(String lane) {
+        return new RemoveLane(lane);
     }
 }

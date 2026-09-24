@@ -35,7 +35,7 @@ export type AddTrackInput = {
   name: Scalars['String']['input'];
 };
 
-export type AiAction = AddLane | ClearLane | SetBpm | SetLanePattern;
+export type AiAction = AddLane | ClearLane | RemoveLane | SetBpm | SetLanePattern | SetTimeSignature;
 
 export type AudioFile = {
   contentType: Scalars['String']['output'];
@@ -326,6 +326,10 @@ export type QueryTrackPatternAtArgs = {
   trackId: Scalars['ID']['input'];
 };
 
+export type RemoveLane = {
+  lane: Scalars['String']['output'];
+};
+
 export type SetBpm = {
   bpm: Scalars['Int']['output'];
 };
@@ -333,6 +337,10 @@ export type SetBpm = {
 export type SetLanePattern = {
   lane: Scalars['String']['output'];
   notes: Array<Step>;
+};
+
+export type SetTimeSignature = {
+  timeSignature: Scalars['String']['output'];
 };
 
 export type ShareSongInput = {

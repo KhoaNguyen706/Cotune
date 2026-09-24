@@ -29,6 +29,11 @@ export interface AuthPayload {
 
 export type Step = Pick<gql.Step, "step" | "pitch" | "velocity" | "length">;
 
+/** What a lane can be. Re-exported from the generated schema so a new
+ *  instrument on the server is a compile error here, not a runtime surprise
+ *  — the values themselves are listed in audio/instrumentList.ts. */
+export type Instrument = gql.Instrument;
+
 /**
  * One edit the AI proposes (composeBeat) — the client half of the server's
  * `union AiAction`.
@@ -52,9 +57,11 @@ export type Step = Pick<gql.Step, "step" | "pitch" | "velocity" | "length">;
  */
 export type AiAction =
   | ({ __typename: "SetBpm" } & Pick<gql.SetBpm, "bpm">)
+  | ({ __typename: "SetTimeSignature" } & Pick<gql.SetTimeSignature, "timeSignature">)
   | ({ __typename: "AddLane" } & Pick<gql.AddLane, "lane" | "instrument">)
   | ({ __typename: "SetLanePattern" } & Pick<gql.SetLanePattern, "lane"> & { notes: Step[] })
-  | ({ __typename: "ClearLane" } & Pick<gql.ClearLane, "lane">);
+  | ({ __typename: "ClearLane" } & Pick<gql.ClearLane, "lane">)
+  | ({ __typename: "RemoveLane" } & Pick<gql.RemoveLane, "lane">);
 
 /** One instrument LANE inside a beat (kick lane, bass lane, ...). */
 export interface Track

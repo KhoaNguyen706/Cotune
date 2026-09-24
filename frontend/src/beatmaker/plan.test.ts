@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AiAction, Step } from "../types";
-import { bpmOf, hasIrreversible, lanesToAdd, notesByLaneId, planSummary } from "./plan";
+import {
+  bpmOf,
+  hasIrreversible,
+  lanesToAdd,
+  lanesToRemove,
+  notesByLaneId,
+  planSummary,
+  timeSignatureOf,
+} from "./plan";
 
 /**
  * The plan-reading rules, pinned.
@@ -30,6 +38,45 @@ describe("bpmOf", () => {
     // The prompt said nothing about feel or speed — a plan with no set_bpm
     // must not be read as "set it to 0".
     expect(bpmOf([{ __typename: "ClearLane", lane: "kick" }])).toBeNull();
+  });
+});
+
+describe("timeSignatureOf", () => {
+  it("finds the meter the plan sets", () => {
+    expect(timeSignatureOf([{ __typename: "SetTimeSignature", timeSignature: "6/8" }])).toBe("6/8");
+  });
+
+  it("is null when the plan leaves the meter alone", () => {
+    expect(timeSignatureOf([{ __typename: "SetBpm", bpm: 90 }])).toBeNull();
+  });
+});
+
+describe("lanesToRemove", () => {
+  it("lists the lanes the plan deletes, in order", () => {
+    const plan: AiAction[] = [
+      { __typename: "RemoveLane", lane: "strings" },
+      { __typename: "SetBpm", bpm: 90 },
+      { __typename: "RemoveLane", lane: "pad" },
+    ];
+    expect(lanesToRemove(plan, ["strings", "pad", "kick"])).toEqual(["strings", "pad"]);
+  });
+
+  it("skips a lane that is already gone — the retry after a half-applied plan", () => {
+    // "strings" was removed on the first Apply; pressing again must not error
+    // trying to remove a lane that no longer exists.
+    const plan: AiAction[] = [
+      { __typename: "RemoveLane", lane: "strings" },
+      { __typename: "RemoveLane", lane: "pad" },
+    ];
+    expect(lanesToRemove(plan, ["pad"])).toEqual(["pad"]);
+  });
+
+  it("matches existing lanes case-insensitively and won't repeat a name", () => {
+    const plan: AiAction[] = [
+      { __typename: "RemoveLane", lane: "Pad" },
+      { __typename: "RemoveLane", lane: "pad" },
+    ];
+    expect(lanesToRemove(plan, ["pad"])).toEqual(["Pad"]);
   });
 });
 
@@ -143,15 +190,19 @@ describe("planSummary", () => {
   it("describes each action in the order it will be applied", () => {
     const plan: AiAction[] = [
       { __typename: "SetBpm", bpm: 75 },
+      { __typename: "SetTimeSignature", timeSignature: "6/8" },
       { __typename: "AddLane", lane: "brushes", instrument: "DRUMS" },
       { __typename: "SetLanePattern", lane: "brushes", notes: KICK },
       { __typename: "ClearLane", lane: "old" },
+      { __typename: "RemoveLane", lane: "strings" },
     ];
     expect(planSummary(plan)).toEqual([
       "Set the tempo to 75 BPM",
+      "Set the time signature to 6/8",
       'Add a drums lane called "brushes"',
       'Write 2 notes into "brushes"',
       'Empty the "old" lane',
+      'Remove the "strings" lane',
     ]);
   });
 
@@ -171,6 +222,14 @@ describe("hasIrreversible", () => {
     expect(hasIrreversible([{ __typename: "AddLane", lane: "bass", instrument: "BASS" }])).toBe(
       true,
     );
+  });
+
+  it("is true for a time-signature change", () => {
+    expect(hasIrreversible([{ __typename: "SetTimeSignature", timeSignature: "3/4" }])).toBe(true);
+  });
+
+  it("is true for removing a lane — a delete Ctrl+Z can't bring back", () => {
+    expect(hasIrreversible([{ __typename: "RemoveLane", lane: "strings" }])).toBe(true);
   });
 
   it("is false for a plan that only touches notes", () => {

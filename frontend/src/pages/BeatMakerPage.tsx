@@ -18,8 +18,11 @@ import { ClearNotesDialog, type ClearScope } from "../beatmaker/ClearNotesDialog
 import { ComposeBeatDialog } from "../beatmaker/ComposeBeatDialog";
 import { GeneratePatternDialog } from "../beatmaker/GeneratePatternDialog";
 import { HistoryPanel } from "../beatmaker/HistoryPanel";
+import { PresetLibraryDialog } from "../beatmaker/PresetLibraryDialog";
+import { presetToPlan, type BeatPreset } from "../beatmaker/presets";
 import { BeatMakerTopBar, type EditorMode } from "../beatmaker/BeatMakerTopBar";
-import { bpmOf, lanesToAdd, notesByLaneId } from "../beatmaker/plan";
+import { instrumentLabel } from "../audio/instrumentList";
+import { bpmOf, lanesToAdd, lanesToRemove, notesByLaneId, timeSignatureOf } from "../beatmaker/plan";
 import { useAutoSave } from "../beatmaker/useAutoSave";
 import { useHistory } from "../beatmaker/useHistory";
 import { useInstruments } from "../beatmaker/useInstruments";
@@ -101,6 +104,11 @@ export function BeatMakerPage() {
    *  yes". Non-null IS the preview phase — the server has proposed and
    *  nothing has been applied. */
   const [composePlan_, setComposePlan_] = useState<AiAction[] | null>(null);
+  /** The preset library: open?, which preset's insert is in flight (also
+   *  the "one at a time" lock), and a failure shown inside the dialog. */
+  const [presetsOpen, setPresetsOpen] = useState(false);
+  const [insertingPreset, setInsertingPreset] = useState<string | null>(null);
+  const [presetError, setPresetError] = useState<string | null>(null);
   /** The history panel: open?, its entries (null = loading), its error,
    *  and which entry's restore is in flight. */
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -280,6 +288,24 @@ export function BeatMakerPage() {
     if (id) setSelectedBeatId(id); // select what you just made
   }
 
+  /**
+   * "Add an instrument" in the arrangement — the standard DAW gesture, built
+   * entirely from existing pieces: a new beat, one lane of the chosen
+   * instrument, named after it, then ARMED so the next click on the timeline
+   * drops it. No new clip type, no schema change; a placed instrument region
+   * is an ordinary beat clip, so it loops, resizes, duplicates and opens for
+   * editing (double-click) like any other. Empty until you write notes —
+   * exactly like adding an instrument track in any DAW.
+   */
+  async function addInstrument(instrument: string) {
+    const label = instrumentLabel(instrument);
+    const beatId = await data.addBeat();
+    if (!beatId) return; // addBeat already surfaced the error
+    await data.addTrack(beatId, label, instrument);
+    await patchBeat(beatId, { name: label });
+    setArmed({ kind: "BEAT", beatId });
+  }
+
   function changeBpm(raw: string) {
     const bpm = Number(raw);
     // Mirror the server's Song.MIN_BPM..MAX_BPM guard for a friendlier message;
@@ -338,7 +364,11 @@ export function BeatMakerPage() {
   }
 
   /**
-   * The accepted plan, applied.
+   * A plan, applied to a beat. The one place notes land in bulk.
+   *
+   * Two callers: the accepted AI plan (applyPlan) and a preset insert
+   * (insertPreset). They are one function because the ORDER below is the
+   * hard part and a second copy of it would be the untested copy.
    *
    * generateInto lands one lane's notes; this lands a PLAN — which may
    * retempo the song, add lanes, and write several of them. THE ORDER IS
@@ -359,6 +389,68 @@ export function BeatMakerPage() {
    * same way — one reading used twice, or the preview is a lie. Step 3 asks
    * for lane ids only AFTER step 1 created them.
    */
+  async function applyActions(beatId: string, plan: AiAction[]) {
+    // --- 1. structure ---------------------------------------------------
+    // The tempo goes first, and a failure here STOPS the plan. patchSong
+    // reports rather than throws (its banner is answer enough for the BPM
+    // field), so without this check the plan would carry on and compose
+    // the beat at the old tempo — after a preview that promised the new
+    // one. Nothing else has been applied at this point, so stopping here
+    // leaves the song exactly as it was.
+    const bpm = bpmOf(plan);
+    if (bpm !== null && !(await patchSong({ bpm }))) {
+      throw new Error(`Couldn't set the tempo to ${bpm} BPM — nothing else was applied.`);
+    }
+    // Same immediate-save, stop-on-failure contract as the tempo: a preview
+    // that promised 6/8 must not quietly proceed in 4/4.
+    const timeSignature = timeSignatureOf(plan);
+    if (timeSignature !== null && !(await patchSong({ timeSignature }))) {
+      throw new Error(
+        `Couldn't set the time signature to ${timeSignature} — nothing else was applied.`,
+      );
+    }
+    // Against the lanes that exist RIGHT NOW, not the ones that existed
+    // when the plan was made: a half-applied plan that gets retried must
+    // not delete or create the same lane twice.
+    const existing = data.beatsRef.current.find((b) => b.id === beatId)?.tracks ?? [];
+
+    // REMOVALS before additions, so "replace the keys with a piano" frees
+    // the name before the new lane wants it. Each removeTrack reloads, which
+    // is why this whole phase runs before the history snapshot below.
+    const removeNames = lanesToRemove(plan, existing.map((t) => t.name));
+    const removed = new Set(removeNames.map((name) => name.toLowerCase()));
+    const idByName = new Map(existing.map((t) => [t.name.toLowerCase(), t.id] as const));
+    for (const name of removeNames) {
+      const id = idByName.get(name.toLowerCase());
+      if (id) await removeTrack(id);
+    }
+
+    // Filter adds against the lanes that will REMAIN after the removals, or
+    // a plan that removes "keys" and re-adds it would see the old one and
+    // skip the new.
+    const remaining = existing.map((t) => t.name).filter((name) => !removed.has(name.toLowerCase()));
+    const newLanes = lanesToAdd(plan, remaining);
+    if (newLanes.length > 0) await data.addLanes(beatId, newLanes);
+
+    // --- 2. the undo point ----------------------------------------------
+    recordHistory();
+
+    // --- 3. the notes ---------------------------------------------------
+    const beat = data.beatsRef.current.find((b) => b.id === beatId);
+    const landed = notesByLaneId(plan, beat?.tracks ?? []);
+    const laneIds = Object.keys(landed);
+    if (laneIds.length > 0) {
+      data.setNotes((prev) => ({ ...prev, ...landed }));
+      data.setDirty((prev) => new Set([...prev, ...laneIds]));
+      setSelectedNote(null); // old indices don't exist in the new patterns
+      // Select a lane the plan actually wrote, so the result is LOOKED AT
+      // rather than taken on faith — same instinct as restoreFrom.
+      setSelectedId(laneIds[0]);
+    }
+  }
+
+  /** The accepted AI plan, landed. Failures stay in the compose dialog —
+   *  the plan is still on screen there, and Apply can be pressed again. */
   async function applyPlan() {
     const beatId = selectedBeatId;
     const plan = composePlan_;
@@ -366,44 +458,47 @@ export function BeatMakerPage() {
     setComposing(true);
     setComposeError(null);
     try {
-      // --- 1. structure -------------------------------------------------
-      // The tempo goes first, and a failure here STOPS the plan. patchSong
-      // reports rather than throws (its banner is answer enough for the BPM
-      // field), so without this check the plan would carry on and compose
-      // the beat at the old tempo — after a preview that promised the new
-      // one. Nothing else has been applied at this point, so stopping here
-      // leaves the song exactly as it was.
-      const bpm = bpmOf(plan);
-      if (bpm !== null && !(await patchSong({ bpm }))) {
-        throw new Error(`Couldn't set the tempo to ${bpm} BPM — nothing else was applied.`);
-      }
-      // Against the lanes that exist RIGHT NOW, not the ones that existed
-      // when the plan was made: a half-applied plan that gets retried must
-      // not create its first lanes twice.
-      const existing = data.beatsRef.current.find((b) => b.id === beatId)?.tracks ?? [];
-      const newLanes = lanesToAdd(plan, existing.map((t) => t.name));
-      if (newLanes.length > 0) await data.addLanes(beatId, newLanes);
-
-      // --- 2. the undo point --------------------------------------------
-      recordHistory();
-
-      // --- 3. the notes -------------------------------------------------
-      const beat = data.beatsRef.current.find((b) => b.id === beatId);
-      const landed = notesByLaneId(plan, beat?.tracks ?? []);
-      const laneIds = Object.keys(landed);
-      if (laneIds.length > 0) {
-        data.setNotes((prev) => ({ ...prev, ...landed }));
-        data.setDirty((prev) => new Set([...prev, ...laneIds]));
-        setSelectedNote(null); // old indices don't exist in the new patterns
-        // Select a lane the plan actually wrote, so the result is LOOKED AT
-        // rather than taken on faith — same instinct as restoreFrom.
-        setSelectedId(laneIds[0]);
-      }
+      await applyActions(beatId, plan);
       closeCompose();
     } catch (e) {
       setComposeError(e instanceof Error ? e.message : "Applying the plan failed — try again.");
     } finally {
       setComposing(false);
+    }
+  }
+
+  /**
+   * A preset, landed as a NEW beat.
+   *
+   * Never into the selected beat: a preset is a part you add to a song, and
+   * writing five lanes over whatever was already there is not something a
+   * single click should be able to do. A new beat also makes the undo
+   * obvious — delete it and the song is exactly as it was.
+   *
+   * The resize comes BEFORE the notes and is fatal if it fails: a 4-bar
+   * preset written into a 1-bar beat is a server rejection per lane, and
+   * what would survive is a half-empty beat that looks like the preset is
+   * broken.
+   */
+  async function insertPreset(preset: BeatPreset) {
+    setInsertingPreset(preset.id);
+    setPresetError(null);
+    try {
+      const beatId = await data.addBeat();
+      if (!beatId) throw new Error("Couldn't create the beat.");
+      if (!(await data.patchBeat(beatId, { name: preset.name, bars: preset.bars }))) {
+        throw new Error(`Couldn't size the beat to ${preset.bars} bars — nothing was written.`);
+      }
+      setSelectedBeatId(beatId);
+      await applyActions(beatId, presetToPlan(preset));
+      // Armed like "add an instrument" is: the next click on the arrangement
+      // timeline drops this part, which is the whole point of inserting one.
+      setArmed({ kind: "BEAT", beatId });
+      setPresetsOpen(false);
+    } catch (e) {
+      setPresetError(e instanceof Error ? e.message : "Couldn't insert that preset — try again.");
+    } finally {
+      setInsertingPreset(null);
     }
   }
 
@@ -634,6 +729,16 @@ export function BeatMakerPage() {
         />
       )}
 
+      {presetsOpen && (
+        <PresetLibraryDialog
+          bpm={song.bpm}
+          inserting={insertingPreset}
+          error={presetError}
+          onClose={() => setPresetsOpen(false)}
+          onInsert={(preset: BeatPreset) => void insertPreset(preset)}
+        />
+      )}
+
       {composeOpen && selectedBeat && (
         <ComposeBeatDialog
           beat={selectedBeat}
@@ -691,6 +796,7 @@ export function BeatMakerPage() {
               onArmedChange={setArmed}
               onClipsChange={setClips}
               onAudioFilesChange={setAudioFiles}
+              onAddInstrument={addInstrument}
               onError={setError}
               canEdit={canEdit}
             />
@@ -706,6 +812,10 @@ export function BeatMakerPage() {
               soloed={soloed}
               canEdit={canEdit}
               onAddBeat={() => void addBeat()}
+              onOpenPresets={() => {
+                setPresetError(null);
+                setPresetsOpen(true);
+              }}
               onSelectBeat={(beatId, firstTrackId) => {
                 setSelectedBeatId(beatId);
                 setSelectedId(firstTrackId);

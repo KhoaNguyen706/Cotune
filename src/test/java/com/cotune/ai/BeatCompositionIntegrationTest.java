@@ -41,9 +41,11 @@ class BeatCompositionIntegrationTest extends AbstractIntegrationTest {
             mutation Compose($beatId: ID!, $prompt: String!) {
                 composeBeat(beatId: $beatId, prompt: $prompt) {
                     ... on SetBpm { bpm }
+                    ... on SetTimeSignature { timeSignature }
                     ... on AddLane { lane instrument }
                     ... on SetLanePattern { lane notes { step pitch } }
                     ... on ClearLane { lane }
+                    ... on RemoveLane { lane }
                 }
             }""";
 
@@ -81,7 +83,8 @@ class BeatCompositionIntegrationTest extends AbstractIntegrationTest {
         // action added to BeatComposer.TOOLS and mapped in AiActionDto but
         // forgotten in schema.graphqls fails right here.
         assertThat(javaMembers)
-                .containsExactly("AddLane", "ClearLane", "SetBpm", "SetLanePattern");
+                .containsExactly("AddLane", "ClearLane", "RemoveLane", "SetBpm",
+                        "SetLanePattern", "SetTimeSignature");
     }
 
     /** The union's fields must line up with the records too — a record

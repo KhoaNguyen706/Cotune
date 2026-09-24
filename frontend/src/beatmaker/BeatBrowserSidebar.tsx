@@ -2,8 +2,10 @@ import { useState } from "react";
 import type { Beat, Track } from "../types";
 import type { Peer } from "../realtime/socket";
 import { beatColor, colorFor } from "../ui/trackColors";
+import { INSTRUMENTS, instrumentLabel } from "../audio/instrumentList";
 import { Button, EditableName, Select, TextInput } from "../ui/kit";
 import { IconButton, SidebarSection } from "../ui/shell";
+import { LibraryIcon } from "../ui/icons";
 import { PeerDots } from "./PeerDots";
 
 interface BeatBrowserSidebarProps {
@@ -17,6 +19,7 @@ interface BeatBrowserSidebarProps {
   soloed: Set<string>;
   canEdit: boolean;
   onAddBeat: () => void;
+  onOpenPresets: () => void;
   onSelectBeat: (beatId: string, firstTrackId: string | null) => void;
   onRenameBeat: (beatId: string, name: string) => void;
   onRemoveBeat: (beatId: string) => void;
@@ -28,7 +31,6 @@ interface BeatBrowserSidebarProps {
   onAddTrack: (name: string, instrument: string) => Promise<void>;
 }
 
-const INSTRUMENTS = ["DRUMS", "BASS", "SYNTH", "PIANO", "GUITAR", "STRINGS"];
 const mixerButton =
   "rounded border px-1.5 py-0.5 text-[0.62rem] font-bold transition-colors duration-150 cursor-pointer " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
@@ -46,6 +48,7 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
     soloed,
     canEdit,
     onAddBeat,
+    onOpenPresets,
     onSelectBeat,
     onRenameBeat,
     onRemoveBeat,
@@ -71,15 +74,24 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
         title="Beats"
         action={
           canEdit ? (
-            <IconButton onClick={onAddBeat} title="New beat">
-              +
-            </IconButton>
+            <div className="flex items-center gap-1">
+              {/* Presets first: from an empty song, starting from a finished
+                  part is the likelier move than drawing one from nothing. */}
+              <IconButton onClick={onOpenPresets} title="Preset beats">
+                <LibraryIcon className="h-[15px] w-[15px]" />
+              </IconButton>
+              <IconButton onClick={onAddBeat} title="New empty beat">
+                +
+              </IconButton>
+            </div>
           ) : undefined
         }
       >
         <div className="flex flex-col gap-1">
           {beats.length === 0 && (
-            <p className="text-xs text-muted">A beat is a full multi-instrument groove. Create one to start.</p>
+            <p className="text-xs text-muted">
+              A beat is a full multi-instrument groove. Start from a preset, or add an empty one.
+            </p>
           )}
           {beats.map((beat) => (
             <div
@@ -220,7 +232,7 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
                 >
                   {INSTRUMENTS.map((value) => (
                     <option key={value} value={value}>
-                      {value.toLowerCase()}
+                      {instrumentLabel(value)}
                     </option>
                   ))}
                 </Select>
