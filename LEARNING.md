@@ -190,6 +190,49 @@ delete, double-click = open the beat editor.
   beat once, every placement changes. That's why the arrangement stores
   clips, not note data.
 
+### 4.5b Preset beats (the ngũ cung pack)
+
+Six ready-made multi-lane beats — a festival drum groove, a zither cascade,
+a lullaby, a lofi-folk groove, a flute lead, a break-and-roll — inserted with
+one click and then arranged on the timeline like any other beat.
+`frontend/src/beatmaker/presets.ts`.
+
+**The point of the feature:** almost nobody writes a song by drawing every
+note from an empty grid. They assemble finished parts. §4.5 already built the
+assembling; this is the box of parts.
+
+**The three decisions to talk about:**
+
+- **It ships composition, not sound design.** There is no đàn tranh *voice*
+  here. What makes these read as Vietnamese is the **notes** — traditional
+  Vietnamese music is pentatonic (ngũ cung), and that mode survives being
+  played on a plucked-string synth. So the pack adds zero instruments, zero
+  samples, zero bytes of storage. The alternative (sampling real instruments)
+  is the version that needs a bucket, a CDN and licensing — a different
+  project, correctly deferred.
+- **One key for the whole pack: A C D E G.** Simultaneously A-minor and
+  C-major pentatonic — the same five notes, heard as dark or bright depending
+  which one the part leans on. That single pool is what makes *any two*
+  presets stackable, which is the difference between a pack you arrange and a
+  pack you audition one at a time. `presets.test.ts` **enforces** it rather
+  than trusting it, and exempts drums (a pitched membrane synth, so its
+  "pitch" is a drum size, not a note).
+- **A preset IS an AI plan.** `presetToPlan()` returns the same `AiAction[]`
+  the composer returns, and the page's `applyActions()` lands both. The apply
+  path is not trivial — lanes before notes, one history snapshot so Ctrl+Z
+  takes the whole insert back, notes flushed as per-note deltas collaborators
+  watch arrive. A second bespoke insert path would have been the *untested*
+  copy of all that. (Insert also never emits `SetBpm`: dropping a part into a
+  song must not retempo the five beats already in it. The suggested tempo is
+  displayed, not applied.)
+
+**The test is the interesting artifact.** Hand-written note data rots
+silently, and the failure is remote and late — the server rejects a note one
+step too long, in a dialog, in front of the user. So `presets.test.ts`
+duplicates the server's bounds *on purpose* (`Step.java`'s pitch regex,
+`Beat.MAX_BARS`, the `step + length <= bars*16` rule) and is the tripwire for
+them drifting. 28 assertions, no key, no browser, 12 ms.
+
 ### 4.6 AI features (three of them, one Gemini client)
 
 All gated the same way: song edit access + **invite list** (`aiAccess` flag
@@ -201,8 +244,11 @@ caller can't alternate between them to double their rate).
    notes for ONE lane. The answer's shape is fixed before the call.
 2. **Beat composer** (`BeatComposer`) ⭐ — "make me a sad lofi beat" → the
    model *decides what to do* via function-calling tools (`set_bpm`,
-   `add_lane`, `set_lane_pattern`, `clear_lane`). The current beat is shown
-   to it as text grids (`x` = hit, `—` = held, `.` = silence).
+   `set_time_signature`, `add_lane`, `set_lane_pattern`, `clear_lane`,
+   `remove_lane`). The current beat is shown to it as text grids (`x` = hit,
+   `—` = held, `.` = silence). The system prompt tells it the request leads
+   (honor named instruments/tempo/meter first) and gives real per-genre
+   tempo ranges so a "house beat" lands near 124, not a guess.
 3. **Chat advisor** (`ChatAiBridge` / `AiAdvisor`) — mention the AI in song
    chat, it answers with advice.
 
@@ -214,7 +260,11 @@ caller can't alternate between them to double their rate).
   the dirty-flush, and the realtime broadcast all work *without knowing an
   AI was involved*. An AI that saved its own plan would be an AI with write
   access to your song — and the first thing you'd want back is the undo it
-  skipped.
+  skipped. This is also why `remove_lane` (a *destructive* tool, added on
+  request) is safe to offer: the plan lists "Remove the X lane", the dialog
+  flags it irreversible, and the delete only happens on Apply through the
+  same `deleteTrack` a person uses. The model's reach stays a **subset of
+  the user's own powers** — it can do nothing you couldn't do by hand.
 - **Every argument is re-validated server-side** (`BeatComposer.validate`).
   Gemini's schema constrains the JSON's *shape*, not its meaning — nothing
   stops a schema-valid call naming instrument "SAD" or BPM 900. Each call is
@@ -269,6 +319,54 @@ deltas exist only in flight.)
   legacy rows.
 - `/handbook` (`HandbookPage.tsx`): shows what the AI was told — the system
   prompt and tools — in a tab. Nice transparency touch to show in the demo.
+
+### 4.12 Observability (Micrometer → Prometheus)
+
+`/actuator/prometheus` exposes metrics in Prometheus' text format. Boot's
+actuator ships Micrometer's *facade*; `micrometer-registry-prometheus` (runtime
+scope) supplies the *backend*. Application code imports `io.micrometer.core`
+and never names Prometheus, so swapping to Datadog or OTLP is a one-line
+dependency change.
+
+**Free from Boot:** HTTP latency per endpoint (with histogram buckets enabled,
+so p95/p99 are computable at query time — a mean latency hides the tail, which
+is the part users feel), JVM heap and GC, Hikari pool saturation.
+
+**Ours** (`com.cotune.common.metrics.CotuneMetrics`, one class so meter names
+are compiler-checked rather than typo-able strings):
+
+| Metric | Why it exists |
+|---|---|
+| `cotune.realtime.broadcast` | Events published, tagged by type and relay mode |
+| `cotune.realtime.relay.delivered` | Events received back off Redis. Compared against the above, this is the **only external evidence the fan-out works**: N instances should deliver ~N per publish, and a ratio sagging to 1 means instances stopped hearing each other — invisible to anyone testing alone, because you always see your own edits |
+| `cotune.ai.plan.action{outcome}` | Tool calls kept vs **dropped by the validator**. Rising drops = the model drifting from what the domain accepts, otherwise invisible because a partly-dropped plan still returns a good-looking beat |
+| `cotune.conflict.stale.version` | Optimistic-lock refusals — the one error that isn't a fault. A steady low rate is the lock working; a spike is real contention or a client stuck retrying |
+
+**The two decisions to talk about:**
+
+- **Metrics are ADMIN-only; health is public.** Deliberate asymmetry. Health
+  answers one bit. The metrics dump lists every URI template (a free map of the
+  API), per-endpoint traffic, and JVM internals — no credentials, but pure
+  reconnaissance. The usual excuse for leaving it open is "the scraper is on a
+  private network"; a Heroku dyno *has* no private network, so that would be a
+  statement of intent, not of fact. Reused `hasRole('ADMIN')` rather than
+  minting a scrape secret, since a second credential type is a second thing to
+  rotate and forget. (Caveat to volunteer: our JWTs expire in 12h, so a real
+  scraper needs a service account, not a pasted token.)
+- **Cardinality is the way a metrics change hurts production.** Every distinct
+  tag combination is a stored time series, so one `songId` label turns one
+  metric into millions. Every tag above comes from a closed set — a sealed
+  interface of three event types, a relay mode, a two-valued outcome.
+
+**What is deliberately NOT measured: plans applied.** Applying runs through the
+ordinary edit mutations, and teaching them to recognise an AI-authored edit
+would put AI-specific code into the exact paths whose innocence is §4.6's best
+property. The funnel belongs to the client, which already knows the difference.
+
+Tests: `MetricsEndpointIntegrationTest` asserts three identities (anonymous →
+401, ordinary user → 403, admin → 200). The 403 case is the load-bearing one —
+a rule downgraded from `hasRole('ADMIN')` to `.authenticated()` still passes an
+anonymous-only test while handing every account the app's internals.
 
 ---
 
@@ -350,8 +448,20 @@ reason you can defend.
 Interviewers respect "here's what I'd do next" far more than pretending
 there are no gaps.
 
-- **In-memory rate limits/cooldowns** (`AiGraphqlController`, chat) are
-  per-instance maps — documented trade-off, "move to Redis when web > 1".
+- **In-memory rate limits/cooldowns** (`AiGraphqlController`, chat,
+  `RateLimitFilter`, `SongAccessCache`) are per-instance maps — documented
+  trade-off, "move to Redis when web > 1". Worth naming plainly: the realtime
+  layer scales out via the Redis relay and this axis does not, so with two
+  dynos a caller gets roughly double the intended rate limit depending on which
+  instance the load balancer picks. Known, not hidden.
+- **Metrics are exposed but not scraped** — `/actuator/prometheus` is live and
+  ADMIN-gated (§4.12), but nothing is collecting or graphing it yet. The next
+  step is a hosted Prometheus + Grafana with a service account, at which point
+  the k6 baseline becomes a before/after comparison rather than a one-off
+  number.
+- **No distributed tracing** — metrics tell you *that* p99 moved; with one
+  service and no fan-out, tracing would mostly confirm what the metrics say.
+  Worth adding the day a second service exists.
 - **Non-realtime data doesn't auto-refresh**: song lists, shares, etc. need
   a manual reload; only the beat grid + chat + presence are live. (You
   decided against polling stopgaps — the plan is WebSocket push.)
