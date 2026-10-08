@@ -138,6 +138,28 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(errors).containsKeys("email", "password");
     }
 
+    @Test
+    void loginRejectsAMalformedEmailPerFieldButNotAShortPassword() {
+        ResponseEntity<Map<String, Object>> malformed = rest.exchange(
+                "/api/auth/login", HttpMethod.POST,
+                new HttpEntity<>(new LoginInput("not-an-email", "")),
+                new ParameterizedTypeReference<>() {
+                });
+
+        assertThat(malformed.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        @SuppressWarnings("unchecked")
+        Map<String, String> errors = (Map<String, String>) malformed.getBody().get("errors");
+        assertThat(errors).containsKeys("email", "password");
+
+        // A password far below the REGISTER minimum is still an
+        // authentication failure, not a validation one: login never
+        // re-enforces the password policy (see LoginInput).
+        ResponseEntity<ProblemDetail> shortPassword = rest.postForEntity(
+                "/api/auth/login", new LoginInput("nobody-" + UUID.randomUUID() + "@example.com", "x"),
+                ProblemDetail.class);
+        assertThat(shortPassword.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
     private static HttpEntity<Void> withBearer(String token) {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);

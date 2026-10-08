@@ -118,7 +118,10 @@ const controlBase =
   "w-full rounded-lg border border-edge bg-bg-soft px-4 py-2 text-[0.95rem] text-text " +
   "transition-[border-color,box-shadow] duration-150 " +
   "placeholder:text-muted/60 " +
-  "focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/40";
+  "focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/40 " +
+  // A field the form flagged (aria-invalid) stays red even while focused,
+  // so the input and its message read as one.
+  "aria-[invalid=true]:border-danger aria-[invalid=true]:focus:ring-danger/40";
 
 type FieldProps = {
   label: string;

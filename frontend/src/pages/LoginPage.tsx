@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import { type LoginFields, validateLogin } from "../auth/validateLogin";
 import { Button, Card, ErrorBanner, Field, TextInput, Wordmark } from "../ui/kit";
 
 export function LoginPage() {
@@ -10,16 +11,36 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<LoginFields>>({});
+  // Errors appear on the first SUBMIT, not while the user is still typing
+  // their address — then re-check on every keystroke so each message
+  // clears the moment the field is fixed.
+  const [submitted, setSubmitted] = useState(false);
   // Disable the button while the request is in flight: double-submit on a
   // slow network is the classic way users fire duplicate requests.
   const [busy, setBusy] = useState(false);
 
-  async function onSubmit(event: FormEvent) {
+  function onChange(next: LoginFields) {
+    setEmail(next.email);
+    setPassword(next.password);
+    if (submitted) setFieldErrors(validateLogin(next));
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setSubmitted(true);
+    const errors = validateLogin({ email, password });
+    setFieldErrors(errors);
+    const firstInvalid = (["email", "password"] as const).find((k) => errors[k]);
+    if (firstInvalid) {
+      // Keyboard and screen-reader users land on the field to fix.
+      (event.currentTarget.elements.namedItem(firstInvalid) as HTMLInputElement | null)?.focus();
+      return;
+    }
     setBusy(true);
     try {
-      await login(email, password);
+      await login(email.trim(), password);
       // /songs, not "/": "/" is the landing page, and signing in only to be
       // shown the "Start a session" pitch again would be a joke at the
       // user's expense.
@@ -29,6 +50,9 @@ export function LoginPage() {
       // password") — we show it verbatim rather than "improving" it into
       // something that leaks which half was wrong.
       setError(e instanceof ApiError ? e.message : "Something went wrong");
+      // The server is still the authority: a 400 carries per-field
+      // messages (errors.email) that annotate the inputs like ours do.
+      if (e instanceof ApiError) setFieldErrors(e.fieldErrors);
     } finally {
       setBusy(false);
     }
@@ -52,24 +76,32 @@ export function LoginPage() {
 
       <Card>
         <h1 className="mb-6 text-lg font-semibold">Sign in</h1>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <Field label="Email">
+        {/* noValidate: our inline messages replace the browser's bubbles,
+            which differ per browser and vanish after a second. type, required
+            and autoComplete stay for mobile keyboards and password managers. */}
+        <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+          <Field label="Email" error={fieldErrors.email}>
             <TextInput
+              name="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => onChange({ email: e.target.value, password })}
               placeholder="you@example.com"
               required
+              aria-invalid={!!fieldErrors.email}
+              maxLength={320}
               autoComplete="email"
             />
           </Field>
-          <Field label="Password">
+          <Field label="Password" error={fieldErrors.password}>
             <TextInput
+              name="password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => onChange({ email, password: e.target.value })}
               placeholder="••••••••"
               required
+              aria-invalid={!!fieldErrors.password}
               autoComplete="current-password"
             />
           </Field>

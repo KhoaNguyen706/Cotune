@@ -72,6 +72,15 @@ per-operation via `@PreAuthorize` on resolvers instead.
 localStorage. Roles ride *inside* the token (that's why a promoted admin
 must re-login).
 
+**Sign-in validates shape, never policy.** The form (`auth/validateLogin.ts`)
+and `LoginInput` both check that the email *looks like* an address and the
+password is non-empty, and stop there. Re-checking register's 8–72 length rule
+at login would lock out old passwords the day the policy tightens, and would
+tell an attacker what a valid password looks like. Wrong credentials are a
+401 with one fixed message, whether the email exists or not (no user
+enumeration). Validation is a 400 with per-field `errors`, which the form
+renders inline. The client check is for speed; the server is the authority.
+
 ---
 
 ## 4. The features, and how each one works
