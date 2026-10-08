@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
-import { CloseIcon } from "./icons";
+import { AlertIcon, CloseIcon } from "./icons";
 
 /**
  * The UI kit: every interactive atom owns its full state set — hover,
@@ -23,30 +23,29 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: "md" | "sm";
 };
 
+// A press moves the key DOWN a pixel — what a hardware key does — rather
+// than shrinking it, which no physical button has ever done. Touch targets
+// grow to 44px on coarse pointers; with a mouse, a DAW's density wins.
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-md font-semibold " +
-  "transition-[transform,box-shadow,filter,border-color,color] duration-150 cursor-pointer " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg " +
-  "active:scale-[0.97] disabled:opacity-55 disabled:cursor-default disabled:active:scale-100";
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-semibold " +
+  "transition-[transform,background-color,border-color,color] duration-150 ease-key cursor-pointer " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg " +
+  "active:translate-y-px disabled:opacity-55 disabled:cursor-default disabled:active:translate-y-0 " +
+  "pointer-coarse:min-h-11";
 
 const buttonVariants: Record<NonNullable<ButtonProps["variant"]>, string> = {
-  // FLAT, not a gradient. It used to run accent → accent-2, which worked
-  // when those were violet → sky (neighbours on the wheel). The studio
-  // palette's pair is lime → amber, nearly a third of the wheel apart, and
-  // the ramp between them passes through olive: the button read as a smear
-  // rather than a colour. The designs use one flat lime for the one primary
-  // action, which is also the more honest signal — a gradient says "look at
-  // me twice".
-  primary: "bg-accent text-bg hover:not-disabled:brightness-110",
+  // The black key: ink fill, light legend. One per view — it is the only
+  // heavy thing on a grey panel, which is the whole of its emphasis.
+  primary: "bg-accent text-bg-soft hover:not-disabled:bg-accent/85",
   ghost:
     "border border-edge-strong text-text bg-transparent " +
-    "hover:not-disabled:border-accent hover:not-disabled:text-text",
+    "hover:not-disabled:bg-surface-2",
   danger:
     "border border-transparent text-muted bg-transparent " +
     "hover:not-disabled:text-danger hover:not-disabled:border-danger",
   // The confirm button of an irreversible action: solid, so the dialog's
   // last word is unmistakably the dangerous one.
-  destructive: "bg-danger text-bg hover:not-disabled:brightness-110",
+  destructive: "bg-danger text-bg-soft hover:not-disabled:bg-danger/85",
 };
 
 const buttonSizes: Record<NonNullable<ButtonProps["size"]>, string> = {
@@ -54,54 +53,51 @@ const buttonSizes: Record<NonNullable<ButtonProps["size"]>, string> = {
   sm: "px-2 py-1 text-xs",
 };
 
+/** The button look, for a <Link> that navigates: an <a> styled as a key,
+ *  never a <button> that routes (a link wearing a costume). */
+export function buttonClass(variant: ButtonProps["variant"] = "primary", size: ButtonProps["size"] = "md"): string {
+  return cx(buttonBase, buttonVariants[variant], buttonSizes[size]);
+}
+
 export function Button({ variant = "primary", size = "md", className, ...props }: ButtonProps) {
-  return (
-    <button
-      className={cx(buttonBase, buttonVariants[variant], buttonSizes[size], className)}
-      {...props}
-    />
-  );
+  return <button className={cx(buttonClass(variant, size), className)} {...props} />;
 }
 
 /* ---------- Brand ---------- */
 
 /**
- * The wordmark: a live dot in a tile, then the name.
+ * The wordmark: one bar's four step keys, then the name set wide.
  *
  * It exists as ONE component because it had been copy-pasted into five
- * screens (login, register, listen, songs, admin), each with its own
- * slightly different gradient ♪ — so the repalette would have meant fixing
- * the same mark five times and, realistically, missing one.
+ * screens (login, register, listen, songs, admin) — a rebrand is one edit.
  *
- * The dot is the design's idea and it is a good one: Cotune's whole point
- * is that a session is LIVE and someone else is in it. A pulsing dot says
- * that; a music note glyph says "audio software", which you already knew.
+ * The mark IS the signature: the four beat keys of a bar, red / orange /
+ * yellow / white, the same keys the editor paints over its grid. The name
+ * is set in Archivo's wide cut, heavy, the way a model name is printed on
+ * the faceplate of a machine.
  */
 export function Wordmark({ size = "md", compactOnPhone }: { size?: "md" | "lg"; compactOnPhone?: boolean }) {
   const lg = size === "lg";
   return (
     <span className="flex items-center gap-2.5">
-      <span
-        className={cx(
-          "flex shrink-0 items-center justify-center rounded-lg border border-edge bg-surface-2",
-          lg ? "h-10 w-10" : "h-[30px] w-[30px]",
-        )}
-      >
-        {/* aria-hidden: the dot is decoration next to the name, and a
-            screen reader announcing "bullet Cotune" helps nobody. */}
-        <span
-          aria-hidden
-          className={cx(
-            "rounded-full bg-accent motion-safe:animate-[blink_2.4s_ease-in-out_infinite]",
-            lg ? "h-2.5 w-2.5" : "h-2 w-2",
-          )}
-          style={{ boxShadow: "0 0 10px -1px var(--color-accent)" }}
-        />
+      {/* aria-hidden: the keys are the mark beside the name; a screen
+          reader gets "Cotune" and nothing else. */}
+      <span aria-hidden className={cx("grid shrink-0 grid-cols-4 gap-[2px]", lg ? "h-4 w-11" : "h-3 w-8")}>
+        {[1, 2, 3, 4].map((key) => (
+          <i
+            key={key}
+            className="rounded-[1px]"
+            style={{
+              background: `var(--color-key-${key})`,
+              boxShadow: key === 4 ? "inset 0 0 0 1px var(--color-key-edge)" : undefined,
+            }}
+          />
+        ))}
       </span>
       <span
         className={cx(
-          "font-bold tracking-[-0.01em]",
-          lg ? "text-2xl" : "text-[17px]",
+          "font-extrabold font-stretch-125% tracking-[-0.01em]",
+          lg ? "text-[1.6rem]" : "text-[17px]",
           // In the phone-width nav rail the name would set the rail's width.
           compactOnPhone && "max-md:hidden",
         )}
@@ -114,11 +110,14 @@ export function Wordmark({ size = "md", compactOnPhone }: { size?: "md" | "lg"; 
 
 /* ---------- Form field ---------- */
 
+// border-edge-strong, not edge: an input's outline is how you find it, so
+// it is held to the 3:1 non-text contrast rule (3.4:1 on the faceplate).
 const controlBase =
-  "w-full rounded-lg border border-edge bg-bg-soft px-4 py-2 text-[0.95rem] text-text " +
+  "w-full rounded-md border border-edge-strong bg-bg-soft px-3 py-2 text-[0.95rem] font-normal text-text " +
   "transition-[border-color,box-shadow] duration-150 " +
-  "placeholder:text-muted/60 " +
-  "focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/40 " +
+  "placeholder:text-muted " +
+  "focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 " +
+  "pointer-coarse:min-h-11 " +
   // A field the form flagged (aria-invalid) stays red even while focused,
   // so the input and its message read as one.
   "aria-[invalid=true]:border-danger aria-[invalid=true]:focus:ring-danger/40";
@@ -131,11 +130,14 @@ type FieldProps = {
 
 export function Field({ label, error, children }: FieldProps) {
   return (
-    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted">
+    <label className="flex flex-col gap-2 text-sm font-semibold text-text">
       {label}
       {children}
       {error && (
-        <span className="text-xs font-medium normal-case tracking-normal text-danger">{error}</span>
+        <span className="flex items-center gap-1 text-[0.8125rem] font-medium text-danger">
+          <AlertIcon className="h-3.5 w-3.5 shrink-0" />
+          {error}
+        </span>
       )}
     </label>
   );
@@ -226,7 +228,7 @@ export function RangeField({
               }
         }
       />
-      <span className="w-9 shrink-0 text-right font-mono tabular-nums text-text">{format(value)}</span>
+      <span className="w-9 shrink-0 text-right font-semibold tabular-nums text-text">{format(value)}</span>
     </label>
   );
 }
@@ -291,7 +293,7 @@ export function EditableName({
     <input
       autoFocus
       className={cx(
-        "rounded border border-accent bg-bg-soft px-1 font-[inherit] text-inherit " +
+        "rounded-sm border border-accent bg-bg-soft px-1 font-[inherit] text-inherit " +
           "focus:outline-none focus:ring-2 focus:ring-accent/40",
         className,
       )}
@@ -328,10 +330,10 @@ export function Chip({ tone = "default", children }: { tone?: "default" | "accen
   return (
     <span
       className={cx(
-        "whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold",
+        "whitespace-nowrap rounded-sm border px-2 py-0.5 text-xs font-semibold",
         tone === "accent"
-          ? "border-accent/45 bg-accent/10 text-accent"
-          : "border-edge bg-bg-soft text-muted",
+          ? "border-accent bg-accent text-bg-soft"
+          : "border-edge-strong bg-bg-soft text-muted",
       )}
     >
       {children}
@@ -346,16 +348,20 @@ export function Chip({ tone = "default", children }: { tone?: "default" | "accen
  *  the next error replaced them. */
 export function ErrorBanner({ children, onDismiss }: { children: ReactNode; onDismiss?: () => void }) {
   return (
+    // Ink text on the faceplate, flagged by the danger rule and icon: the
+    // message is something to READ and act on, and long red text is hard
+    // to read. The color marks it; the words carry it.
     <div
       role="alert"
-      className="my-2 flex items-start gap-3 rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm text-danger"
+      className="my-2 flex items-start gap-3 rounded-md border border-danger/60 border-l-4 border-l-danger bg-surface px-4 py-2 text-sm text-text"
     >
+      <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
       <p className="min-w-0 flex-1">{children}</p>
       {onDismiss && (
         <button
           onClick={onDismiss}
           aria-label="Dismiss"
-          className="-mr-2 shrink-0 cursor-pointer rounded px-1 text-danger/80 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/60"
+          className="-mr-2 shrink-0 cursor-pointer rounded-sm px-1 text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <CloseIcon className="h-4 w-4" />
         </button>
@@ -367,7 +373,7 @@ export function ErrorBanner({ children, onDismiss }: { children: ReactNode; onDi
 /** Loading placeholder that mirrors the shape of the content it replaces —
  *  skeletons reduce layout shift AND perceived wait versus a spinner. */
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cx("animate-pulse rounded-lg bg-surface-2", className)} aria-hidden />;
+  return <div className={cx("animate-pulse rounded-md bg-surface-2", className)} aria-hidden />;
 }
 
 /**
@@ -406,7 +412,7 @@ export function AiThinkingPanel({ label }: { label: string }) {
       <Spinner className="h-8 w-8 text-accent" />
       <p className="text-sm font-semibold text-text">{label}</p>
       <p className="max-w-xs text-xs text-muted">
-        The AI is reading your song — this usually takes a few seconds.
+        The AI is reading your song. This usually takes a few seconds.
       </p>
     </div>
   );
@@ -431,7 +437,7 @@ export function EmptyState({
       <span className="text-muted" aria-hidden>
         {icon}
       </span>
-      <p className="mt-1 font-semibold text-text">{title}</p>
+      <p className="mt-1 text-lg font-bold font-stretch-semi-expanded text-text">{title}</p>
       {hint && <p className="max-w-xs text-sm text-muted">{hint}</p>}
       {action && <div className="mt-3 flex flex-wrap justify-center gap-2">{action}</div>}
     </div>

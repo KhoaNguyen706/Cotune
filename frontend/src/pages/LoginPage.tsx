@@ -99,7 +99,6 @@ export function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => onChange({ email, password: e.target.value })}
-              placeholder="••••••••"
               required
               aria-invalid={!!fieldErrors.password}
               autoComplete="current-password"

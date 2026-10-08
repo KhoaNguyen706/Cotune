@@ -1,183 +1,178 @@
 /* ==========================================================================
-   Cotune Design System — Tailwind v4, CSS-first configuration.
+   Cotune Design System — "Chassis". Tailwind v4, CSS-first configuration.
+   The direction, the reasoning and the rejected ideas live in ui/DESIGN.md;
+   this file is the part the browser reads.
+
+   THE IDEA IN ONE LINE: Cotune is the drum machine on your desk. Warm grey
+   hardware, ink-black keys, and the one thing every drum machine has that
+   a web app doesn't: step keys painted by beat, red / orange / yellow /
+   white, so you always know where in the bar you are.
 
    RULES OF THE SYSTEM (enforced by convention, reviewed in PRs):
    - SEMANTIC TOKENS ONLY: components never hard-code a hex. Every color
      goes through the @theme tokens below (bg-surface, text-muted,
-     border-edge, bg-accent...). A rebrand or light theme = edit this block.
+     border-edge, bg-accent...). A rebrand or a theme = edit this file.
+   - COLOR MEANS ONE THING EACH. Neutrals are structure. Ink is "do this"
+     and "this is a note". The key colors mean POSITION IN TIME — which
+     beat of the bar, and the running light (playhead) that walks across
+     them, as on the hardware — and nothing else: never a status, never
+     decoration. Lane caps identify an instrument. Danger is errors and
+     destruction, always with words beside it.
    - 8px SPACING GRID: spacing utilities are restricted to EVEN Tailwind
      steps (p-2/4/6/8 = 8/16/24/32px, gap-2/4/6...). p-1 (4px) is allowed
      only INSIDE atoms for icon-to-label micro-gaps — never for layout.
-   - AA CONTRAST: text/text on bg ≈ 15:1, text-muted on surface ≥ 6.5:1,
-     accent on bg ≥ 5:1. Check any new pair before adding it.
+   - AA CONTRAST, MEASURED: every ratio in a comment below was computed,
+     not eyeballed. Change a value and re-measure the pair.
    - STATES ARE PART OF THE COMPONENT: hover, focus-visible, disabled,
      loading (skeletons), and empty states ship WITH a screen, not after.
    ========================================================================== */
 
 @import "tailwindcss";
 
-@theme {
-  /* -- color tokens (semantic, not descriptive: "surface", never "gray-900") --
+/* `static`: emit EVERY token as a CSS variable, used or not. Tailwind
+   normally drops the ones it doesn't see in a class name, and the beat
+   keys and lane caps are only ever read through template strings
+   (`var(--color-key-${n})` in the canvas, `lane(n)` in trackColors), which
+   its scanner can't see. Without this the light theme silently lost
+   them; the dark theme, being plain CSS below, kept them. */
+@theme static {
+  /* -- color: the chassis (light, the primary design) ----------------------
 
-     THE STUDIO PALETTE: warm near-black and lime, from the Dashboard and
-     Editor designs. It replaced a cool violet set, and the swap touched
-     exactly this block — no component changed, because no component has
-     ever named a colour. That is the whole return on the "semantic tokens
-     only" rule at the top of this file, collected in one commit.
+     Warm grey, not cream. Every neutral leans the same few degrees toward
+     yellow, like powder-coated aluminium, so the ink reads as printed on
+     the panel rather than floating over it. Elevation is LIGHTNESS: the
+     chassis is the lowest surface, the faceplate sits on it, and the keys
+     (grid cells, inputs) are the lightest thing you can touch. */
+  --color-bg: #d8d5ce; /* chassis: the app canvas */
+  --color-surface: #eeece7; /* faceplate: bars, panels, strips */
+  --color-surface-2: #e3e0d9; /* pressed / hover fill, skeletons */
+  --color-bg-soft: #f7f6f2; /* keys: grid cells, inputs, wells */
+  --color-edge: #b3afa6; /* rules between things */
+  --color-edge-strong: #857f75; /* bar lines, control outlines (3.4:1 on faceplate) */
 
-     Warm, not neutral: every grey here carries hue 95 at low chroma, so
-     the greys agree with the lime instead of fighting it. A true-neutral
-     #161616 next to this accent reads faintly blue and dirty.
+  --color-text: #1c1d1c; /* ink (14.3:1 on faceplate, 11.5:1 on chassis) */
+  --color-muted: #55524b; /* legends, meta (6.6:1 on faceplate, 5.3:1 on chassis) */
 
-     The ratios in the comments are MEASURED (see the AA CONTRAST rule
-     above), not estimated. Change a value and re-check the pair. */
-  --color-bg: oklch(0.15 0.006 95); /* app canvas */
-  --color-bg-soft: oklch(0.19 0.006 95); /* inputs, wells, roll cells */
-  --color-surface: oklch(0.185 0.006 95); /* cards, sidebars, top bar */
-  --color-surface-2: oklch(0.22 0.007 95); /* raised fills, hover, nav-active, skeletons */
-  --color-edge: oklch(0.26 0.007 95); /* default borders */
-  --color-edge-strong: oklch(0.38 0.008 95); /* emphasized + hover borders */
+  /* Ink is the accent. The primary action is a black key, the way Play is
+     on the hardware — one dark, heavy button per view, and everything else
+     is grey. There is no brand hue competing with the key colors. */
+  --color-accent: #1c1d1c;
+  --color-accent-2: #6b675e; /* recorded audio: tape, not a synth part */
+  --color-danger: #a8241b; /* 6.1:1 on faceplate — always with an icon or words */
+  --color-solo: #1c1d1c; /* a lit key; S on it says which one */
 
-  --color-text: oklch(0.96 0.004 95); /* primary text (17.5:1 on bg) */
-  --color-muted: oklch(0.7 0.006 95); /* secondary text (7.0:1 on surface) */
+  /* The four beat keys of a bar, after the TR-808's key strip. As fills
+     they are under 3:1 on the faceplate (orange 2.2, yellow 1.5), so they
+     are NEVER the only signal: the beat number is always printed in ink
+     beside them, and the color is the at-a-glance second channel. */
+  --color-key-1: #cf4a2f;
+  --color-key-2: #e58a2e;
+  --color-key-3: #e9c04a;
+  --color-key-4: #f4f1e8;
+  --color-key-edge: #857f75; /* outlines the white key (3.5:1 on it) */
 
-  --color-accent: oklch(0.86 0.19 138); /* brand lime — an ON step, the one primary action */
-  --color-accent-2: oklch(0.82 0.16 62); /* brand amber — gradient partner, audio clips */
-  --color-danger: oklch(0.72 0.17 25); /* destructive, errors */
-  --color-solo: oklch(0.85 0.16 85); /* solo-active amber */
+  /* Lane caps — the colored caps on a console's faders. They identify an
+     instrument (a swatch beside the name; a clip on the timeline). Picked
+     AWAY from the key hues, and with no violet, so a red-ish thing on screen
+     can only ever mean beat 1. Each is 4.5:1+ on the faceplate. */
+  --color-lane-1: #3b5ba5; /* cobalt */
+  --color-lane-2: #2e7d74; /* teal */
+  --color-lane-3: #4f7f2b; /* moss */
+  --color-lane-4: #7a5638; /* walnut */
+  --color-lane-5: #9c3d6e; /* berry */
+  --color-lane-6: #5e6672; /* steel */
+  --color-on-lane: #ffffff; /* text on a cap-colored clip */
 
-  /* Space Grotesk is the designs' voice: a grotesk with just enough
-     personality to read as a product rather than a bootstrap template.
-     JetBrains Mono carries every NUMBER and label — BPM, bar counts, step
-     positions, plan names. That split is not decoration: tabular digits
-     stop the transport readout jittering as it counts, and a mono label
-     reads as machine state rather than prose. Both self-hosted (see
-     main.tsx); Inter is gone with the violet. */
-  --font-sans: "Space Grotesk Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", monospace;
+  /* -- type ----------------------------------------------------------------
 
-  --shadow-card: 0 18px 40px -24px rgb(0 0 0 / 0.8);
+     Archivo, and specifically its WIDTH axis (62–125%). Hardware is
+     labelled in narrow type where space is tight and wide type where it
+     is proud: a channel strip's scribble strip is condensed so "Trống
+     trầm" fits a 96px strip without an ellipsis, and the model badge on
+     the faceplate is set wide and heavy. One family doing both keeps it one
+     voice. It also carries full Vietnamese — the ngũ cung presets stack
+     two diacritics on a vowel, and plenty of grotesks collide them.
 
-  /* ---------------------------------------------------------------------
-     THE POSTER PALETTE — the marketing landing page (/) and nothing else.
+     Numbers are Archivo with tabular figures (`tabular-nums`), not a
+     monospace: BPM, bars and step numbers must not jitter as they change,
+     and that is a property of the figures, not of a coding font. Mono is
+     kept for actual code and key names only. */
+  --font-sans: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
 
-     These used to be a whole second identity, because the app was violet
-     and the landing page was not. Now they are the SAME family, and what
-     is left is a deliberately smaller difference: the landing page sits a
-     touch lighter than the app (0.17 vs 0.15) because a poster wants air
-     where a workstation wants its canvas to recede.
+  /* -- shape ---------------------------------------------------------------
+     Radius grows with the size of the thing: a key is barely rounded, a
+     panel slightly more, a dialog most. Overriding the scale here means
+     every existing rounded-* class tightened with no component edit. */
+  --radius-xs: 2px;
+  --radius-sm: 3px; /* keys, notes, chips */
+  --radius-md: 4px; /* controls: buttons, inputs */
+  --radius-lg: 6px; /* panels, strips */
+  --radius-xl: 8px; /* dialogs */
+  --radius-2xl: 10px;
 
-     They still exist for one reason, and it is the same one as before:
-     these are FIXED. They do not remap under [data-theme="light"], so the
-     landing page stays a dark poster whichever theme you use. A lime-on-
-     white version of that page is a different design, not a token swap,
-     and half-doing it would just be a broken one. ONLY HomePage.tsx may
-     use `studio-*`; everything inside the app uses the semantic tokens
-     above, or it will not follow the theme toggle.
-     --------------------------------------------------------------------- */
-  --color-studio-bg: oklch(0.17 0.006 95); /* warm near-black */
-  --color-studio-panel: oklch(0.205 0.007 95); /* the sequencer mock's body */
-  --color-studio-panel-2: oklch(0.215 0.007 95); /* feature cards, CTA band */
-  --color-studio-cell: oklch(0.255 0.008 95); /* an OFF step */
-  --color-studio-edge: oklch(0.28 0.008 95);
-  --color-studio-edge-2: oklch(0.31 0.008 95);
-  --color-studio-edge-3: oklch(0.4 0.008 95); /* bar lines — every 4th step */
-  --color-studio-text: oklch(0.96 0.004 95);
-  --color-studio-muted: oklch(0.74 0.006 95); /* body copy */
-  --color-studio-dim: oklch(0.6 0.006 95); /* mono eyebrows, footer links */
-  --color-studio-lime: oklch(0.86 0.19 138); /* THE accent — an ON step */
-  --color-studio-amber: oklch(0.82 0.16 62); /* the second peer's cursor */
-}
+  /* No resting shadows: hardware separates parts with seams, not glow.
+     The one shadow is for things that genuinely float (dialogs, drawers). */
+  --shadow-card: 0 18px 40px -22px rgb(28 29 28 / 0.45);
 
-/* The landing page's three ambient animations. The playhead sweep is the
-   one that matters: a static grid is a screenshot, and a grid with a bar
-   travelling across it is a thing that is RUNNING. All three are inert
-   under prefers-reduced-motion via the global rule further down. */
-@keyframes sweep {
-  0% {
-    left: 0%;
-  }
-  100% {
-    left: 100%;
-  }
-}
-
-@keyframes floaty {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-5px);
-  }
-}
-
-@keyframes blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
+  /* -- motion --------------------------------------------------------------
+     Short and mechanical: a key goes down and comes back. */
+  --ease-key: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 /* ==========================================================================
-   LIGHT THEME — the entire theme is a token remap, nothing more.
-   That is the payoff of the "semantic tokens only, never a raw hex in a
-   component" rule at the top of this file: every surface, border and text
-   color in the app resolves through the variables below, so a second theme
-   costs one block of CSS instead of a rewrite. Any component that had
-   hard-coded #111 would be the one thing that breaks here — which is why
-   the rule exists.
+   THE NIGHT PANEL — dark mode, designed rather than inverted.
+
+   Same hardware with the room lights off. The keys stay the lightest
+   surface (they are what you touch), so elevation still reads as
+   lightness. The key colors are desaturated a step — full-strength red
+   on charcoal glows — and the lane caps are lifted until they clear 3:1
+   on the panel. Ink flips to the panel's legend color; the primary key
+   becomes the one LIGHT key on a dark board.
 
    Selector, not @media: the user's explicit choice must be able to BEAT
    their OS preference. main.tsx stamps data-theme on <html>; "system" mode
    stamps whichever the OS currently reports.
-
-   THERE IS NO MOCK FOR THIS ONE. The Dashboard and Editor designs are
-   dark-only, so this block is derived rather than copied, under one rule:
-   keep the HUES, re-pick the LIGHTNESS. The warm greys invert around hue
-   95 so the light theme is warm paper rather than blue-white, and it stays
-   recognisably the same product.
-
-   The accent is where a naive inversion breaks, and it is worth being
-   explicit about why. The brand lime is oklch(0.86 ...) — nearly as light
-   as white. As text or a border on white it measures about 1.5:1: not
-   "slightly under AA", but genuinely unreadable. So light mode uses a
-   deep green of the same hue for anything that must be READ (text-accent,
-   focus rings), which is the same trade the old violet made here. Buttons
-   are unaffected in kind: they are an accent FILL with bg-coloured text,
-   and a dark fill with near-white text is exactly as legible as the
-   reverse.
    ========================================================================== */
-:root[data-theme="light"] {
-  --color-bg: oklch(0.97 0.005 95); /* warm paper, not blue-white */
-  --color-bg-soft: oklch(1 0 0); /* inputs, wells, roll cells */
-  --color-surface: oklch(1 0 0); /* cards */
-  --color-surface-2: oklch(0.945 0.006 95); /* raised/hover fills, skeletons */
-  --color-edge: oklch(0.89 0.006 95); /* default borders */
-  --color-edge-strong: oklch(0.76 0.008 95); /* emphasized borders */
+:root[data-theme="dark"] {
+  --color-bg: #23221f;
+  --color-surface: #2d2c28;
+  --color-surface-2: #3a3934;
+  --color-bg-soft: #34332e;
+  --color-edge: #4a4842;
+  --color-edge-strong: #7d7a71; /* 3.3:1 on the panel */
 
-  --color-text: oklch(0.22 0.006 95); /* 15.8:1 on bg */
-  --color-muted: oklch(0.455 0.006 95); /* 6.9:1 on surface */
+  --color-text: #eceae4; /* 11.6:1 on the panel */
+  --color-muted: #aaa69c; /* 5.8:1 on the panel, 5.2:1 on a key */
 
-  --color-accent: oklch(0.495 0.14 145); /* deep green: the brand lime is ~1.5:1 on white */
-  --color-accent-2: oklch(0.52 0.12 62); /* darkened amber, same reason */
-  --color-danger: oklch(0.5 0.19 25);
-  --color-solo: oklch(0.52 0.12 85);
+  --color-accent: #eceae4;
+  --color-accent-2: #9a968c;
+  --color-danger: #eb7b6a; /* 5.0:1 on the panel */
+  --color-solo: #eceae4;
 
-  --shadow-card: 0 6px 20px rgb(32 30 24 / 0.1);
+  --color-key-1: #c25a44;
+  --color-key-2: #d18a45;
+  --color-key-3: #d4b25a;
+  --color-key-4: #dcd8cc;
+  --color-key-edge: #dcd8cc;
+
+  --color-lane-1: #7d9be0;
+  --color-lane-2: #5fb3a8;
+  --color-lane-3: #8fb85e;
+  --color-lane-4: #c4987a;
+  --color-lane-5: #d683ab;
+  --color-lane-6: #a2aab5;
+  --color-on-lane: #1c1d1c;
+
+  --shadow-card: 0 18px 40px -20px rgb(0 0 0 / 0.75);
 }
 
 /* ---------- base ----------
 
    THE LAYOUT RULE: this is a DAW, not a document. The app owns the whole
-   viewport — a fixed transport bar, a browser sidebar, and a canvas that
-   takes every remaining pixel. Nothing here centers a narrow column
-   (#root used to do exactly that, which is what made the app read as a
-   blog with a grid pasted into it). Pages that DO want a centered column
-   (login) opt in via .page-center; they are the exception.
+   viewport — a fixed transport bar, the grid, the console — and every pane
+   scrolls INSIDE itself. Pages that DO want a centered column (login) opt
+   in via .page-center; they are the exception.
    -------------------------------------------------------------------- */
 
 html,
@@ -188,7 +183,7 @@ body,
 
 #root {
   /* h-screen + overflow-hidden = the app never scrolls as a page. Scroll
-     lives INSIDE panes (sidebar, canvas), which is what makes a fixed
+     lives INSIDE panes (grid, console), which is what makes a fixed
      transport bar possible at all. */
   @apply flex h-screen flex-col overflow-hidden;
 }
@@ -198,7 +193,6 @@ body {
   font-size: 15px;
   overflow: hidden;
 }
-
 
 /** The one place a centered column is right: auth screens have no
  *  workspace to fill. */
@@ -220,8 +214,88 @@ body {
   background: transparent;
 }
 
+/* ---------- faders ----------
+
+   Every range input is a fader: a thin slot and a rectangular cap, the
+   way a mixing desk draws one. Native <input type="range"> underneath, so
+   keyboard, screen readers and touch all keep working — only the paint is
+   ours. `.fader-v` stands it up on end (writing-mode is the standard way to
+   get a vertical range; no rotation hacks, so hit-testing stays correct). */
 input[type="range"] {
-  accent-color: var(--color-accent);
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 20px;
+}
+
+input[type="range"]:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-edge-strong);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-edge-strong);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 2px;
+  background: var(--color-text);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--color-bg-soft) 45%, transparent);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 18px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--color-text);
+}
+
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+input[type="range"].fader-v {
+  writing-mode: vertical-lr;
+  direction: rtl; /* up = louder, as on every desk */
+  width: 20px;
+  height: auto;
+}
+
+input[type="range"].fader-v::-webkit-slider-runnable-track {
+  width: 4px;
+  height: 100%;
+}
+
+input[type="range"].fader-v::-moz-range-track {
+  width: 4px;
+  height: 100%;
+}
+
+input[type="range"].fader-v::-webkit-slider-thumb {
+  width: 20px;
+  height: 10px;
+  margin-top: 0;
+  margin-left: -8px;
+}
+
+input[type="range"].fader-v::-moz-range-thumb {
+  width: 20px;
+  height: 10px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -232,14 +306,64 @@ input[type="range"] {
 }
 
 /* ==========================================================================
+   The step ruler — the signature. Sits over the piano roll and spans the
+   same columns. Each beat of every bar gets its key's stripe; the number
+   is printed in ink beside it, so the color is never the only signal.
+   ========================================================================== */
+
+.step-ruler {
+  position: relative;
+  height: 28px;
+}
+
+.step-ruler-beat {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--color-edge);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 11px 0 0 5px;
+  color: var(--color-muted);
+}
+
+/* The key stripe along the top of each beat. */
+.step-ruler-beat::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 3px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--key);
+}
+
+.step-ruler-beat.k4::before {
+  box-shadow: inset 0 0 0 1px var(--color-key-edge);
+}
+
+/* Beat 1 is the downbeat: a heavier rule and the bar number in ink. */
+.step-ruler-beat.k1 {
+  border-left-color: var(--color-edge-strong);
+  color: var(--color-text);
+  font-weight: 800;
+}
+
+.step-ruler-beat.k1:first-child {
+  border-left-color: transparent;
+}
+
+/* ==========================================================================
    Sequencer geometry — deliberately plain CSS, driven by the same tokens.
-   These elements are positioned from JS constants (CELL_W/CELL_H) and
-   colored per-track via the --tc custom property; utility classes can't
-   express either cleanly. Everything still resolves to @theme tokens.
+   These elements are positioned from JS constants (CELL_W/CELL_H), which
+   utility classes can't express cleanly. Everything resolves to tokens.
    ========================================================================== */
 
 .cell {
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--color-bg-soft);
   border: 1px solid var(--color-edge);
 }
@@ -250,38 +374,26 @@ input[type="range"] {
 
 /* Every 16th step starts a new BAR. Without a stronger rule here, a
    128-step (8-bar) grid is an undifferentiated field of squares and you
-   cannot tell bar 3 from bar 6 — the thing that made long beats unusable.
-   Neutral, not the accent: the lime used to outline every bar start, so the
-   grid's structure competed with the notes for the one colour that means
-   "this is on". Structure is grey; content is colour. */
+   cannot tell bar 3 from bar 6. */
 .cell.bar {
-  border-color: color-mix(in srgb, var(--color-text) 40%, transparent);
+  border-color: var(--color-text);
 }
 
-.roll-cell.bar {
-  border-left: 1px solid color-mix(in srgb, var(--color-text) 38%, transparent);
-}
-
-/* The line between the two octave bands (under each C) — where your eye
-   finds its place when the roll shows more than one octave. */
-.roll-cell.seam {
-  border-bottom-color: var(--color-edge-strong);
-}
-
+/* A step with a note on it is an ink key, in every lane. The rack's rows
+   are labelled with their lane's cap; filling the steps in the cap color
+   as well would put six hues on the grid and drown the beat keys. */
 .cell.on {
-  background: var(--tc, var(--color-accent));
+  background: var(--color-text);
   border-color: transparent;
 }
 
-/* Playheads and selection rings were white — which is invisible on a light
-   canvas. Token-derived so they stay high-contrast in BOTH themes. */
 .cell.playhead {
-  outline: 2px solid color-mix(in srgb, var(--color-text) 85%, transparent);
+  outline: 2px solid var(--color-key-1);
   outline-offset: -2px;
 }
 
 /* A collaborator is hovering this step, in this lane.
-   --pcell is their hashed colour, so the ring here, the dot on the lane row and
+   --pcell is their hashed colour, so the ring here, the dot on the strip and
    the cursor up in the roll are all recognisably the same person.
 
    The channel rack is the ONE view that can show everybody at once: it draws
@@ -290,23 +402,10 @@ input[type="range"] {
    open. Ringing the cell rather than filling it keeps `.on` (a real note)
    readable underneath; presence must never be mistakable for content. */
 .cell.peer {
-  box-shadow:
-    inset 0 0 0 2px var(--pcell),
-    0 0 6px color-mix(in srgb, var(--pcell) 70%, transparent);
+  box-shadow: inset 0 0 0 2px var(--pcell);
   /* Cursor frames arrive ~20/sec and the highlight hops cell to cell; a short
      fade stops that from reading as a strobe. */
   transition: box-shadow 90ms linear;
-}
-
-.seq-cells {
-  display: flex;
-  gap: 4px;
-}
-
-.seq-cells.mini .cell {
-  width: 1.05rem;
-  height: 1.05rem;
-  display: inline-block;
 }
 
 .roll {
@@ -315,55 +414,69 @@ input[type="range"] {
   cursor: crosshair;
 }
 
+/* Each cell carries its beat's key as --key; the tint is faint on purpose.
+   It zones the grid into beats the way the stripes above it do, without
+   competing with the ink notes that sit on top. */
 .roll-cell {
   position: absolute;
-  border-right: 1px solid color-mix(in srgb, var(--color-edge) 72%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-edge) 72%, transparent);
-  background: var(--color-bg-soft);
+  border-right: 1px solid color-mix(in srgb, var(--color-edge) 60%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-edge) 60%, transparent);
+  background: color-mix(in srgb, var(--key, transparent) 9%, var(--color-bg-soft));
 }
 
-/* The "black key" lane and the playhead column were the only raw hexes in
-   this file — and they are exactly what a second theme breaks. Derived
-   from tokens instead, so they follow whichever theme is active. */
+/* Sharp/flat rows: the black keys of the piano, shaded a step down. */
 .roll-cell.dark {
-  background: color-mix(in srgb, var(--color-bg) 65%, var(--color-edge));
+  background: color-mix(in srgb, var(--key, transparent) 9%, var(--color-surface-2));
 }
 
 .roll-cell.beat {
+  border-left: 1px solid var(--color-edge);
+}
+
+.roll-cell.bar {
   border-left: 1px solid var(--color-edge-strong);
 }
 
+/* The line between the two octave bands (under each C) — where your eye
+   finds its place when the roll shows more than one octave. */
+.roll-cell.seam {
+  border-bottom-color: var(--color-edge-strong);
+}
+
 .roll-cell.playcol {
-  background: color-mix(in srgb, var(--color-accent) 22%, var(--color-bg-soft));
+  background: color-mix(in srgb, var(--color-key-1) 16%, var(--color-bg-soft));
 }
 
 .roll-cell.dark.playcol {
-  background: color-mix(in srgb, var(--color-accent) 30%, var(--color-bg));
+  background: color-mix(in srgb, var(--color-key-1) 16%, var(--color-surface-2));
 }
 
+/* A note is an ink bar; how hard it hits is how dark it prints. */
 .note {
   position: absolute;
-  background: var(--tc, var(--color-accent));
-  border-radius: 4px;
+  background: var(--color-text);
+  border-radius: var(--radius-xs);
   cursor: grab;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.55);
 }
 
 .note:active {
   cursor: grabbing;
 }
 
+/* Selected = hollow. A shape change rather than a color, so it reads in
+   either theme and never borrows a key color that means "beat". */
 .note.selected {
-  outline: 2px solid var(--color-text);
-  outline-offset: 1px;
+  background: var(--color-bg-soft);
+  box-shadow: inset 0 0 0 2px var(--color-text);
+  opacity: 1 !important;
   z-index: 1;
 }
 
 /* Shift/Ctrl-drag selection box. */
 .marquee {
   position: absolute;
-  border: 1px solid var(--color-text);
-  background: color-mix(in srgb, var(--color-text) 10%, transparent);
+  border: 1px dashed var(--color-text);
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
   pointer-events: none;
   z-index: 4;
 }
@@ -389,15 +502,15 @@ input[type="range"] {
   position: absolute;
   bottom: 0;
   width: 6px;
-  border-radius: 2px 2px 0 0;
-  background: var(--tc, var(--color-accent));
-  opacity: 0.75;
+  border-radius: 1px 1px 0 0;
+  background: var(--color-text);
+  opacity: 0.7;
   pointer-events: none;
 }
 
 .velocity-bar.selected {
   opacity: 1;
-  box-shadow: 0 0 0 1px var(--color-text);
+  box-shadow: 0 0 0 1px var(--color-bg-soft), 0 0 0 2px var(--color-text);
 }
 
 .note-handle {
@@ -407,8 +520,8 @@ input[type="range"] {
   width: 8px;
   height: 100%;
   cursor: ew-resize;
-  border-radius: 0 4px 4px 0;
-  background: rgb(255 255 255 / 0.3);
+  border-radius: 0 2px 2px 0;
+  background: color-mix(in srgb, var(--color-bg-soft) 35%, transparent);
 }
 
 /* ==========================================================================
@@ -427,8 +540,8 @@ input[type="range"] {
   width: 34px; /* CELL_W — the cell they're hovering */
   height: 26px; /* CELL_H */
   border: 2px solid var(--pc);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--pc) 18%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--pc) 14%, transparent);
   /* Cursor updates arrive ~20/sec, i.e. one every 50ms. Interpolating between
      them is what turns a row of discrete jumps into a glide — without this the
      dot stutters across the grid and reads as lag rather than as a person.
@@ -447,17 +560,13 @@ input[type="range"] {
   left: -2px;
   margin-bottom: 3px;
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--pc);
-  /* FIXED DARK, and deliberately not var(--color-bg) — I tried, and it is
-     wrong. This is text on the PEER'S colour, not on the page: peerColor()
-     always returns hsl(... 75% 62%), a light saturated fill, in every
-     theme. Following the theme would make it near-white on light-green in
-     light mode. The one rule it must obey is "contrast with --pc", and --pc
-     does not care what theme you are in. Warm-neutral so it matches the
-     palette's greys rather than reading blue. */
-  color: oklch(0.15 0.006 95);
-  font-size: 0.6rem;
+  /* White on the peer's colour: peerColor() returns a mid-dark fill
+     (lightness 40%) in every theme, so the label's contrast is fixed by
+     the color, not by the page behind it. */
+  color: #fff;
+  font-size: 0.65rem;
   font-weight: 700;
   line-height: 1.4;
   white-space: nowrap;
@@ -466,19 +575,17 @@ input[type="range"] {
 /* A note that somebody ELSE just placed. One pulse, then it settles into being
    an ordinary note — a permanent highlight would just become visual noise. */
 .note.landed {
-  animation: note-landed 600ms ease-out;
+  animation: note-landed 600ms var(--ease-key);
 }
 
 @keyframes note-landed {
   0% {
-    transform: scale(1.35);
-    filter: brightness(2);
-    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.55);
+    transform: scale(1.3);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-text) 35%, transparent);
   }
   100% {
     transform: scale(1);
-    filter: brightness(1);
-    box-shadow: 0 1px 4px rgb(0 0 0 / 0.55);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
@@ -503,7 +610,7 @@ input[type="range"] {
 
 .tl-ruler {
   display: flex;
-  height: 26px;
+  height: 28px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-edge);
   /* The canvas scrolls; the bar numbers must stay readable while it does.
@@ -511,53 +618,52 @@ input[type="range"] {
   position: sticky;
   top: 0;
   z-index: 2;
-}
-
-.tl-ruler {
   cursor: pointer;
 }
 
 /* The loop brace on the ruler, and the shade it casts over the lanes.
-   Accent only while the loop is ON: a remembered-but-off region stays
+   Ink only while the loop is ON: a remembered-but-off region stays
    visible in grey so you can see what L will bring back. */
 .tl-loop {
   position: absolute;
   top: 3px;
   bottom: 3px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--color-text) 14%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
   pointer-events: none;
 }
 
 .tl-loop.on {
-  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-accent);
+  background: color-mix(in srgb, var(--color-text) 22%, transparent);
+  box-shadow: inset 0 0 0 1px var(--color-text);
 }
 
 .tl-loop-shade {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
-  border-left: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
-  border-right: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+  background: color-mix(in srgb, var(--color-text) 5%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--color-text) 50%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--color-text) 50%, transparent);
   pointer-events: none;
 }
 
 .tl-ruler-bar {
   flex: none;
   padding-left: 5px;
-  font-size: 0.62rem;
+  font-size: 0.68rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: 26px;
+  line-height: 28px;
   color: var(--color-muted);
   border-left: 1px solid var(--color-edge);
 }
 
-/* Every 4th bar gets a brighter number + stronger rule: the eye needs
-   anchors to count from once the timeline is 60 bars wide. */
+/* Every 4th bar gets an ink number + stronger rule: the eye needs anchors
+   to count from once the timeline is 60 bars wide. */
 .tl-ruler-bar.major {
   color: var(--color-text);
+  font-weight: 800;
   border-left-color: var(--color-edge-strong);
 }
 
@@ -582,11 +688,10 @@ input[type="range"] {
   display: flex;
   align-items: center;
   overflow: hidden;
-  border-radius: 6px;
-  background: var(--tc, var(--color-accent));
-  color: var(--color-bg);
+  border-radius: var(--radius-sm);
+  background: var(--tc, var(--color-text));
+  color: var(--color-on-lane);
   cursor: grab;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.55);
   user-select: none;
 }
 
@@ -594,9 +699,9 @@ input[type="range"] {
   cursor: grabbing;
 }
 
+/* Uploaded audio reads differently from synth beats at a glance: hatched
+   like a length of tape, in the neutral tape grey. */
 .tl-clip.audio {
-  /* Uploaded audio reads differently from synth beats at a glance:
-     sky tint + subtle waveform-ish stripes. */
   background: repeating-linear-gradient(
     115deg,
     var(--color-accent-2) 0 6px,
@@ -611,8 +716,8 @@ input[type="range"] {
   width: 8px;
   height: 100%;
   cursor: ew-resize;
-  border-radius: 0 6px 6px 0;
-  background: rgb(255 255 255 / 0.3);
+  border-radius: 0 3px 3px 0;
+  background: color-mix(in srgb, var(--color-on-lane) 30%, transparent);
 }
 
 .tl-playhead {
@@ -620,6 +725,6 @@ input[type="range"] {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: color-mix(in srgb, var(--color-text) 85%, transparent);
+  background: var(--color-key-1);
   pointer-events: none;
 }

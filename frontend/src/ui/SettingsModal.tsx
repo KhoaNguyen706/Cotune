@@ -73,7 +73,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Settings" onClose={onClose}>
       <div className="flex flex-col">
-        <h3 className="mb-1 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">
+        <h3 className="mb-1 text-[0.8125rem] font-bold text-text">
           Appearance
         </h3>
         <Row title="Theme" hint="System follows your OS light/dark setting.">
@@ -97,7 +97,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         </Row>
 
         <hr className="my-2 border-edge" />
-        <h3 className="mb-1 mt-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">
+        <h3 className="mb-1 mt-2 text-[0.8125rem] font-bold text-text">
           Editor
         </h3>
         <Row
@@ -119,7 +119,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         </Row>
 
         <hr className="my-2 border-edge" />
-        <h3 className="mb-1 mt-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">
+        <h3 className="mb-1 mt-2 text-[0.8125rem] font-bold text-text">
           Privacy
         </h3>
         <Row

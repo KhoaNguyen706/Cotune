@@ -205,7 +205,9 @@ export function peerColor(userId: string): string {
   for (let i = 0; i < userId.length; i++) {
     hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
   }
-  return `hsl(${(hash * 137.508) % 360} 75% 62%)`;
+  // Mid-dark (lightness 40%) so the white name label on it reads in BOTH
+  // themes — the cursor's contrast comes from the color, not the page.
+  return `hsl(${(hash * 137.508) % 360} 70% 40%)`;
 }
 
 /**

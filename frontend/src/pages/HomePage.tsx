@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { Wordmark, buttonClass } from "../ui/kit";
 import editorShot from "../assets/editor-session.jpg";
 
 /**
@@ -13,23 +14,20 @@ import editorShot from "../assets/editor-session.jpg";
  * is only the calls to action: a person who already has an account does not
  * need to be sold, they need the way in.
  *
- * THE DESIGN RULE, after a pass that stripped the template out of it: the
- * product is the picture. The hero used to be a hand-drawn sequencer MOCK
- * with glowing cells and floating cursor tags, next to a pill eyebrow, a
- * headline with one lime word, and a "Live / ∞ / 0 / FL-style" stats strip
- * — every one of them a stock landing-page move. The shot below is the real
- * editor, captured with two accounts in one session, so the collaborator's
- * cursor in it is a real cursor. The page claims nothing the screenshot
- * can't back up.
+ * THE DESIGN RULE: the product is the picture. The shot below is the real
+ * editor, captured by e2e/landing-shot.mjs with two accounts in one session,
+ * so the collaborator's cursor in it is a real cursor. The page claims
+ * nothing the screenshot can't back up.
  *
- * It keeps its own fixed-dark "studio" palette (see styles.css): it is a
- * poster, so it does not follow the theme toggle. Outside AppShell for the
- * same reason: a landing page is a DOCUMENT that scrolls, and #root is a
- * non-scrolling workstation, so this opts into its own scroll container.
+ * Built from the same Chassis tokens as the app, and it follows the theme
+ * like every other screen: the front door should look like the room you are
+ * about to walk into. Outside AppShell because a landing page is a DOCUMENT
+ * that scrolls, and #root is a non-scrolling workstation, so this opts into
+ * its own scroll container.
  */
 export function HomePage() {
   return (
-    <div className="h-full overflow-y-auto bg-studio-bg text-studio-text antialiased">
+    <div className="h-full overflow-y-auto bg-bg text-text">
       <Nav />
       <Hero />
       <Features />
@@ -38,58 +36,33 @@ export function HomePage() {
   );
 }
 
-const SHELL = "mx-auto w-full max-w-[1120px] px-8 max-md:px-5";
+const SHELL = "mx-auto w-full max-w-[1120px] px-8 max-md:px-4";
 
-/** Primary call to action. An <a>, because every one of these navigates —
- *  a <button> that routes is a link wearing a costume. */
-function Cta({ to, children, ghost }: { to: string; children: React.ReactNode; ghost?: boolean }) {
-  return (
-    <Link
-      to={to}
-      className={
-        "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition-[filter,border-color,color] duration-150 " +
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-studio-lime focus-visible:ring-offset-2 focus-visible:ring-offset-studio-bg " +
-        (ghost
-          ? "border border-studio-edge-3 text-studio-text hover:border-studio-text"
-          : "bg-studio-lime text-studio-bg hover:brightness-110")
-      }
-    >
-      {children}
-    </Link>
-  );
-}
-
-function Mark() {
-  return (
-    <span className="flex items-center gap-2.5">
-      <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-studio-lime" />
-      <span className="text-lg font-bold tracking-[-0.01em]">Cotune</span>
-    </span>
-  );
-}
+const textLink =
+  "whitespace-nowrap rounded-sm px-2 py-1 text-sm font-semibold text-muted transition-colors duration-150 hover:text-text " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 function Nav() {
   const { user } = useAuth();
   return (
-    <nav className={`${SHELL} flex items-center justify-between gap-6 py-6`}>
-      <Link
-        to="/"
-        aria-label="Cotune home"
-        className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-studio-lime"
-      >
-        <Mark />
+    <nav className={`${SHELL} flex items-center justify-between gap-4 py-6`}>
+      <Link to="/" aria-label="Cotune home" className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+        <Wordmark />
       </Link>
       {user ? (
-        <Cta to="/songs">Open my songs</Cta>
+        <Link to="/songs" className={buttonClass()}>
+          Open my songs
+        </Link>
       ) : (
-        <div className="flex items-center gap-3">
-          <Link
-            to="/login"
-            className="rounded px-2 py-1 text-sm text-studio-muted transition-colors hover:text-studio-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-studio-lime"
-          >
+        <div className="flex items-center gap-2">
+          <Link to="/login" className={textLink}>
             Sign in
           </Link>
-          <Cta to="/register">Create account</Cta>
+          {/* Not on a phone: there is no room for both, and the same key
+              sits right below in the hero. */}
+          <Link to="/register" className={`${buttonClass()} max-sm:hidden`}>
+            Create account
+          </Link>
         </div>
       )}
     </nav>
@@ -99,36 +72,43 @@ function Nav() {
 function Hero() {
   const { user } = useAuth();
   return (
-    <header className={`${SHELL} pb-16 pt-16 max-md:pt-8`}>
-      <h1 className="max-w-[760px] text-[clamp(34px,5.4vw,58px)] font-bold leading-[1.02] tracking-[-0.03em] text-balance">
+    <header className={`${SHELL} pb-16 pt-14 max-md:pt-6`}>
+      {/* The one bold thing on the page: the headline set wide and heavy,
+          the way a model name is printed on a machine. */}
+      <h1 className="max-w-[820px] text-[clamp(32px,5.2vw,60px)] font-extrabold leading-[1.02] tracking-[-0.02em] text-balance font-stretch-expanded">
         Make beats together, in the browser.
       </h1>
-      <p className="mt-5 max-w-[560px] text-lg leading-[1.55] text-studio-muted text-pretty max-md:text-base">
+      <p className="mt-6 max-w-[560px] text-lg leading-[1.55] text-muted text-pretty max-md:text-base">
         Cotune is a pattern sequencer where everyone on a song edits the same grid at the same
         time: notes, mix and arrangement. Nothing to install.
       </p>
-      <div className="mt-8 flex flex-wrap items-center gap-3">
+      <div className="mt-8 flex flex-wrap items-center gap-2">
         {user ? (
-          <Cta to="/songs">Open my songs</Cta>
+          <Link to="/songs" className={buttonClass()}>
+            Open my songs
+          </Link>
         ) : (
           <>
-            <Cta to="/register">Create account</Cta>
-            <Cta to="/login" ghost>
+            <Link to="/register" className={buttonClass()}>
+              Create account
+            </Link>
+            <Link to="/login" className={buttonClass("ghost")}>
               Sign in
-            </Cta>
+            </Link>
           </>
         )}
       </div>
 
-      <figure className="mt-14 max-md:mt-10">
+      {/* The screen set into the faceplate: a panel with the shot inset. */}
+      <figure className="mt-14 rounded-xl border border-edge bg-surface p-2 max-md:mt-10">
         <img
           src={editorShot}
           width={1600}
           height={1000}
-          alt="The Cotune beat editor: a piano roll with a drum pattern, the channel rack below it, and a second collaborator's cursor on the grid."
-          className="w-full rounded-lg border border-studio-edge-2"
+          alt="The Cotune beat editor: the beat tabs, a piano roll with a keys part under the beat-colored step ruler, a second collaborator's cursor on the grid, and the mixer with one channel strip per lane."
+          className="w-full rounded-lg border border-edge"
         />
-        <figcaption className="mt-3 font-mono text-xs text-studio-dim">
+        <figcaption className="px-2 pb-1 pt-3 text-sm text-muted">
           Two accounts in one song. The labelled box on the grid is the other person's cursor.
         </figcaption>
       </figure>
@@ -169,12 +149,12 @@ const FEATURES = [
 function Features() {
   return (
     <section className={`${SHELL} pb-20`}>
-      <h2 className="text-2xl font-bold tracking-[-0.02em]">What's in it</h2>
+      <h2 className="text-2xl font-extrabold tracking-[-0.01em] font-stretch-semi-expanded">What's in it</h2>
       <dl className="mt-8 grid grid-cols-3 gap-x-10 max-lg:grid-cols-2 max-md:grid-cols-1">
         {FEATURES.map((feature) => (
-          <div key={feature.t} className="border-t border-studio-edge py-6">
-            <dt className="font-semibold">{feature.t}</dt>
-            <dd className="mt-2 text-[15px] leading-[1.55] text-studio-muted text-pretty">{feature.d}</dd>
+          <div key={feature.t} className="border-t border-edge-strong py-6">
+            <dt className="font-bold">{feature.t}</dt>
+            <dd className="mt-2 text-[15px] leading-[1.55] text-muted text-pretty">{feature.d}</dd>
           </div>
         ))}
       </dl>
@@ -184,15 +164,10 @@ function Features() {
 
 function Footer() {
   return (
-    <footer className={`${SHELL} flex flex-wrap items-center justify-between gap-4 border-t border-studio-edge py-8`}>
-      <Mark />
+    <footer className={`${SHELL} flex flex-wrap items-center justify-between gap-4 border-t border-edge-strong py-8`}>
+      <Wordmark />
       {/* The repository is the one footer link that exists. */}
-      <a
-        href="https://github.com/KhoaNguyen706/Cotune"
-        target="_blank"
-        rel="noreferrer"
-        className="rounded text-sm text-studio-dim transition-colors hover:text-studio-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-studio-lime"
-      >
+      <a href="https://github.com/KhoaNguyen706/Cotune" target="_blank" rel="noreferrer" className={textLink}>
         GitHub
       </a>
     </footer>

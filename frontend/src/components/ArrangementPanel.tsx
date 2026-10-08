@@ -767,21 +767,25 @@ export function ArrangementTimeline({
           >
             {clips.length === 0 && !armed && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <EmptyState
-                  icon={<TimelineMark />}
-                  title="Empty timeline"
-                  hint={
-                    canEdit
-                      ? "Pick a beat or an instrument on the left, then click a lane to place it."
-                      : "Nothing arranged yet."
-                  }
-                />
+                {/* A key-colored backing, so the grid lines don't run
+                    through the words. */}
+                <div className="rounded-lg border border-edge bg-bg-soft px-6">
+                  <EmptyState
+                    icon={<TimelineMark />}
+                    title="Empty timeline"
+                    hint={
+                      canEdit
+                        ? "Pick a beat or an instrument on the left, then click a lane to place it."
+                        : "Nothing arranged yet."
+                    }
+                  />
+                </div>
               </div>
             )}
             {armed && clips.length === 0 && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <p className="rounded-lg border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent">
-                  Click any lane to place it · Esc to disarm
+                  Click any lane to place it. Esc cancels.
                 </p>
               </div>
             )}
@@ -812,8 +816,8 @@ export function ArrangementTimeline({
                   // the tooltip version of the 403 storm.
                   title={
                     canEdit
-                      ? `${label}\nDrag to move · Alt+drag to duplicate · Right-click to delete${
-                          clip.type === "BEAT" ? " · Double-click to edit the beat" : ""
+                      ? `${label}\nDrag to move, Alt+drag to duplicate, right-click to delete.${
+                          clip.type === "BEAT" ? " Double-click to edit the beat." : ""
                         }`
                       : label + (clip.type === "BEAT" ? "\nDouble-click to view the beat" : "")
                   }

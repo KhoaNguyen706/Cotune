@@ -1,34 +1,38 @@
 /**
- * Track colors — a real DAW convention (Ableton/FL/Logic all do it): each
- * instrument family gets a stable hue, used everywhere that track appears
- * (list row, mini preview, piano-roll notes). Color becomes a second,
- * pre-attentive channel for "which track is this" — you stop reading
- * labels and start recognizing lanes.
+ * Lane caps — the colored caps on a console's faders. A real DAW convention
+ * (Ableton/FL/Logic all do it): each instrument family gets a stable color,
+ * used wherever that lane appears (its strip, its rack row, its clips).
+ * Color becomes a second, pre-attentive channel for "which lane is this" —
+ * you stop reading labels and start recognizing lanes.
  *
- * Hues are spread around the wheel and kept at similar lightness so no
- * track shouts louder than another on the dark background.
+ * Returned as CSS variables, not hexes, because a cap that reads on the
+ * light chassis disappears on the night panel: styles.css defines each
+ * --color-lane-N twice, and every consumer here is an inline style, so the
+ * theme switch re-colors them with no JS. The palette deliberately avoids
+ * the beat-key hues (red/orange/yellow mean "which beat") and violet.
  */
+const lane = (n: number) => `var(--color-lane-${n})`;
+
 export const INSTRUMENT_COLORS: Record<string, string> = {
-  DRUMS: "#f5a524", // amber  — percussion
-  BASS: "#9b7bff", //  violet — low end
-  SYNTH: "#38bdf8", //  sky    — leads
-  PIANO: "#34d399", //  emerald— keys
-  GUITAR: "#fb7185", // rose   — strings, plucked
-  STRINGS: "#a3e635", // lime  — strings, bowed
+  DRUMS: lane(4), //   walnut — the wooden shell
+  BASS: lane(1), //    cobalt — low end
+  SYNTH: lane(2), //   teal   — leads
+  PIANO: lane(6), //   steel  — keys
+  GUITAR: lane(5), //  berry  — plucked strings
+  STRINGS: lane(3), // moss   — bowed strings
 };
 
 export function colorFor(instrument: string): string {
-  return INSTRUMENT_COLORS[instrument] ?? "#8b7cf8";
+  return INSTRUMENT_COLORS[instrument] ?? lane(6);
 }
 
 /**
- * Beat colors — a beat groups many instruments, so it gets its own hue by
- * POSITION (Beat 1 is always the same color in the palette, the timeline,
- * everywhere). Distinct from the instrument palette on purpose: clips and
- * lanes are different kinds of things and should read differently.
+ * Beat colors — a beat groups many instruments, so it gets a cap by
+ * POSITION (Beat 1 is always the same color in the strip, the timeline,
+ * everywhere). Same six caps as the lanes: a clip and a lane are told
+ * apart by where they sit, and a second palette would only add hues that
+ * mean nothing new.
  */
-const BEAT_COLORS = ["#8b7cf8", "#f5a524", "#34d399", "#fb7185", "#38bdf8", "#a3e635", "#f472b6", "#facc15"];
-
 export function beatColor(position: number): string {
-  return BEAT_COLORS[((position % BEAT_COLORS.length) + BEAT_COLORS.length) % BEAT_COLORS.length];
+  return lane((((position % 6) + 6) % 6) + 1);
 }

@@ -69,12 +69,19 @@ interface BeatMakerTopBarProps {
 function peerLocation(peer: Peer, beats: Beat[]): string {
   const beat = beats.find((candidate) => candidate.id === peer.beatId);
   const track = beat?.tracks.find((candidate) => candidate.id === peer.trackId);
-  if (beat && track) return `${beat.name} · ${track.name}`;
+  if (beat && track) return `${beat.name}, ${track.name}`;
   if (beat) return beat.name;
   return "elsewhere in this song";
 }
 
-/** Shared editor chrome. It knows how controls look, but not how songs are saved or played. */
+/**
+ * The faceplate: the strip across the top of the machine.
+ *
+ * Left is WHAT this is (the song, set wide like a model name, and who is in
+ * it); the middle is the transport, the one cluster your hands live on; the
+ * right is the output and the panels you open now and then. Shared editor
+ * chrome — it knows how controls look, not how songs are saved or played.
+ */
 export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
   const {
     song,
@@ -116,9 +123,13 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
     onOpenSettings,
   } = props;
 
+  // "Beat", singular, in the label: you edit one beat at a time, and the
+  // tab is named for what is under it. The title keeps the old wording
+  // ("Build the beats") because it is also what the smoke test presses.
   const tab = (id: EditorMode, label: string) => (
     <IconButton
       active={mode === id}
+      aria-pressed={mode === id}
       className="px-3"
       onClick={() => onModeChange(id)}
       title={id === "arrange" ? "Arrange the song timeline" : "Build the beats"}
@@ -127,6 +138,16 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
     </IconButton>
   );
 
+  const saveStatus = readOnly
+    ? "View only: you can play this song but not change it"
+    : saving
+      ? "Saving…"
+      : dirtyCount > 0
+        ? autoSave || live
+          ? `${dirtyCount} unsaved, saving shortly`
+          : `${dirtyCount} unsaved`
+        : "All changes saved";
+
   return (
     <TopBar
       left={
@@ -134,81 +155,86 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
           <Link
             to="/songs"
             title="Back to songs"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            aria-label="Back to songs"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-bg-soft hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent pointer-coarse:h-11 pointer-coarse:w-11"
           >
             <BackIcon className={ICON} />
           </Link>
-          <IconButton
-            onClick={onToggleSidebar}
-            active={!sidebarCollapsed}
-            title={sidebarCollapsed ? "Show panel" : "Hide panel"}
-          >
-            <MenuIcon className={ICON} />
-          </IconButton>
-          <span className="min-w-0">
-            <h1 className="flex items-center gap-2 truncate text-base font-bold leading-tight tracking-tight">
+          {/* The panel only exists in Arrange (the palette). The Beat view
+              has no side panel to hide: its lanes are the console below. */}
+          {mode === "arrange" && (
+            <IconButton
+              onClick={onToggleSidebar}
+              active={!sidebarCollapsed}
+              aria-pressed={!sidebarCollapsed}
+              title={sidebarCollapsed ? "Show the palette" : "Hide the palette"}
+            >
+              <MenuIcon className={ICON} />
+            </IconButton>
+          )}
+          {/* Capped on phones, where the bar no longer shrinks to fit: a
+              long title would otherwise push the transport off screen. */}
+          <div className="min-w-0 max-md:max-w-36">
+            <h1 className="truncate text-lg font-extrabold leading-tight font-stretch-semi-expanded">
               {canEdit ? (
                 <EditableName value={song.title} maxLength={120} onRename={onRenameSong} />
               ) : (
                 song.title
               )}
+            </h1>
+            <div className="flex items-center gap-2 text-xs text-muted">
+              {/* Filled dot = connected, hollow = not: the state is in the
+                  SHAPE and the word, never in a color alone. */}
               <span
                 data-testid="socket-status"
                 title={
                   live
-                    ? "Live — collaborators see your edits as you make them"
-                    : "Offline — edits are saved, but not shared live"
+                    ? "Live: collaborators see your edits as you make them"
+                    : "Offline: edits are saved, but not shared live"
                 }
-                className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[0.55rem] font-bold uppercase tracking-wider ${
-                  live
-                    ? "border-accent/40 bg-accent/10 text-accent"
-                    : "border-edge bg-surface-2 text-muted"
-                }`}
+                className={`inline-flex shrink-0 items-center gap-1 font-semibold ${live ? "text-text" : "text-muted"}`}
               >
-                <i className={`h-1.5 w-1.5 rounded-full ${live ? "bg-accent" : "bg-muted"}`} aria-hidden />
-                {live ? "live" : "offline"}
+                <i
+                  aria-hidden
+                  className={`h-2 w-2 rounded-full border-[1.5px] ${live ? "border-text bg-text" : "border-muted"}`}
+                />
+                {live ? "Live" : "Offline"}
               </span>
+              <span className="truncate">{saveStatus}</span>
+            </div>
+          </div>
+          {Object.keys(peers).length > 0 && (
+            <div className="flex shrink-0 -space-x-1.5" aria-label="In this song now">
               {Object.values(peers).map((peer) => (
                 <span
                   key={peer.userId}
-                  title={`${peer.displayName} — ${peerLocation(peer, beats)}`}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.6rem] font-bold text-bg ring-2 ring-bg"
+                  title={`${peer.displayName}, ${peerLocation(peer, beats)}`}
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-[0.7rem] font-bold text-white ring-2 ring-surface"
                   style={{ background: peerColor(peer.userId) }}
                 >
                   {peer.displayName[0]?.toUpperCase() ?? "?"}
                 </span>
               ))}
-            </h1>
-            <span className="text-[0.68rem] text-muted">
-              {readOnly
-                ? "Read-only — you were invited to view this song"
-                : saving
-                  ? "Saving…"
-                  : dirtyCount > 0
-                    ? autoSave || live
-                      ? `${dirtyCount} unsaved · saving shortly`
-                      : `${dirtyCount} unsaved`
-                    : "All changes saved"}
-            </span>
-          </span>
+            </div>
+          )}
         </>
       }
       center={
         <>
           <ToolGroup>
             {tab("arrange", "Arrange")}
-            {tab("beats", "Beats")}
+            {tab("beats", "Beat")}
           </ToolGroup>
           <ToolGroup>
-            <IconButton onClick={onUndo} disabled={historyPast === 0} title="Undo (Ctrl+Z)">
+            <IconButton onClick={onUndo} disabled={historyPast === 0} title="Undo (Ctrl+Z)" aria-label="Undo">
               <UndoIcon className={ICON} />
             </IconButton>
-            <IconButton onClick={onRedo} disabled={historyFuture === 0} title="Redo (Ctrl+Shift+Z)">
+            <IconButton onClick={onRedo} disabled={historyFuture === 0} title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
               <RedoIcon className={ICON} />
             </IconButton>
             <IconButton
               tone="solid"
-              className="min-w-16"
+              className="min-w-20"
               onClick={onTogglePlay}
               disabled={!playing && !canPlay}
               title={
@@ -217,8 +243,8 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
                     ? "Play the arrangement (Space)"
                     : "Loop the selected beat (Space)"
                   : mode === "arrange"
-                    ? "Nothing on the timeline yet — place a beat to play it"
-                    : "This beat has no notes yet — click the grid to add some"
+                    ? "Nothing on the timeline yet: place a beat to play it"
+                    : "This beat has no notes yet: click the grid to add some"
               }
             >
               {playing ? <StopIcon className={ICON} /> : <PlayIcon className={ICON} />}
@@ -228,9 +254,9 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
               <IconButton
                 active={loopOn}
                 aria-pressed={loopOn}
-                className={loopOn ? "!text-accent" : undefined}
+                aria-label="Loop"
                 onClick={onToggleLoop}
-                title={loopOn ? "Loop on — drag on the ruler to change the range (L)" : "Loop a range of bars (L)"}
+                title={loopOn ? "Loop on: drag on the ruler to change the range (L)" : "Loop a range of bars (L)"}
               >
                 <LoopIcon className={ICON} />
               </IconButton>
@@ -238,14 +264,14 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
             <IconButton
               active={metronome}
               aria-pressed={metronome}
-              className={metronome ? "!text-accent" : undefined}
+              aria-label="Metronome"
               onClick={onToggleMetronome}
               title={metronome ? "Metronome on (M)" : "Metronome (M)"}
             >
               <MetronomeIcon className={ICON} />
             </IconButton>
           </ToolGroup>
-          <ToolGroup>
+          <div className="flex items-center">
             <Readout label="BPM">
               {canEdit ? (
                 <EditableName value={String(song.bpm)} maxLength={3} onRename={onChangeBpm} />
@@ -253,31 +279,32 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
                 song.bpm
               )}
             </Readout>
-            <Readout label="Sig">
+            <Readout label="Time">
               {canEdit ? (
                 <EditableName value={song.timeSignature} maxLength={5} onRename={onChangeTimeSignature} />
               ) : (
                 song.timeSignature
               )}
             </Readout>
-          </ToolGroup>
+          </div>
         </>
       }
       right={
         <>
-          <ToolGroup>
-            <label className="flex items-center gap-2 px-2" title="Master volume">
-              <VolumeIcon className={`${ICON} shrink-0 text-muted`} />
-              <input
-                type="range"
-                className="w-20"
-                min={0}
-                max={100}
-                value={volume}
-                onChange={(event) => onVolumeChange(Number(event.target.value))}
-              />
-            </label>
-          </ToolGroup>
+          {/* Not on phones: they have a volume rocker, and the bar has no
+              width to spare. */}
+          <label className="flex items-center gap-2 px-1 max-md:hidden" title="Master volume">
+            <VolumeIcon className={`${ICON} shrink-0 text-muted`} />
+            <span className="sr-only">Master volume</span>
+            <input
+              type="range"
+              className="w-24"
+              min={0}
+              max={100}
+              value={volume}
+              onChange={(event) => onVolumeChange(Number(event.target.value))}
+            />
+          </label>
           {!readOnly && !autoSave && (
             <Button variant="ghost" size="sm" onClick={onSave} disabled={saving || dirtyCount === 0}>
               {saving ? "Saving…" : dirtyCount > 0 ? `Save ${dirtyCount}` : "Saved"}
@@ -294,22 +321,28 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
             </ToolGroup>
           )}
           <span className="relative">
-            <IconButton active={chatOpen} onClick={onToggleChat} title={chatOpen ? "Close chat" : "Chat with everyone in this song"}>
+            <IconButton
+              active={chatOpen}
+              aria-pressed={chatOpen}
+              aria-label="Chat"
+              onClick={onToggleChat}
+              title={chatOpen ? "Close chat" : "Chat with everyone in this song"}
+            >
               <ChatIcon className={ICON} />
             </IconButton>
             {!chatOpen && chatUnread > 0 && (
               <span
-                className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.6rem] font-bold text-bg"
+                className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.6rem] font-bold text-bg-soft tabular-nums"
                 data-testid="chat-unread"
               >
                 {chatUnread > 9 ? "9+" : chatUnread}
               </span>
             )}
           </span>
-          <IconButton onClick={onOpenHistory} title="History — who changed what, and restore a lane to any moment">
+          <IconButton onClick={onOpenHistory} aria-label="History" title="History: who changed what, and restore a lane to any moment">
             <ClockIcon className={ICON} />
           </IconButton>
-          <IconButton onClick={onOpenSettings} title="Settings">
+          <IconButton onClick={onOpenSettings} aria-label="Settings" title="Settings">
             <SlidersIcon className={ICON} />
           </IconButton>
         </>

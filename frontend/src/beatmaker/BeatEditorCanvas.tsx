@@ -1,11 +1,12 @@
-import type { MutableRefObject } from "react";
+import { useLayoutEffect, useRef, type MutableRefObject } from "react";
 import type { Beat, Step, Track } from "../types";
 import { peerColor, type Peer } from "../realtime/socket";
 import { colorFor } from "../ui/trackColors";
-import { Button, EmptyState, ErrorBanner, RangeField, Select } from "../ui/kit";
+import { instrumentLabel } from "../audio/instrumentList";
+import { Button, EmptyState, ErrorBanner } from "../ui/kit";
 import { Canvas, CanvasBar, IconButton, ToolGroup } from "../ui/shell";
 import { BlocksIcon, LanesIcon, LibraryIcon, MinusIcon, PlusIcon, SparkIcon } from "../ui/icons";
-import { CELL_H, CELL_W, PITCH_ROWS, ROLL_ROWS, VELOCITY_H, pitchOf, rowOf } from "./constants";
+import { CELL_H, CELL_W, PITCH_ROWS, ROLL_ROWS, STEPS, VELOCITY_H, pitchOf, rowOf } from "./constants";
 import { keyOf, type NoteKey } from "./noteOps";
 import type { Box } from "./usePianoRoll";
 import type { ClearScope } from "./ClearNotesDialog";
@@ -30,18 +31,12 @@ interface BeatEditorCanvasProps {
   octave: number;
   beatSteps: number;
   laneNoteCount: number;
-  beatNoteCount: number;
   error: string | null;
   onDismissError: () => void;
   rollRef: MutableRefObject<HTMLDivElement | null>;
-  onPatchBeat: (beatId: string, patch: { bars?: number }) => void;
-  /** Swing mid-drag (local + audible on the next loop) and on release (saved). */
-  onSwingChange: (swing: number) => void;
-  onSwingCommit: (swing: number) => void;
   onOctaveChange: (octave: number) => void;
   onRequestClear: (scope: ClearScope) => void;
   onRequestGenerate: () => void;
-  onRequestCompose: () => void;
   /** Empty-state actions: the fix offered where the gap is, not described. */
   onAddBeat: () => void;
   onOpenPresets: () => void;
@@ -59,8 +54,46 @@ interface BeatEditorCanvasProps {
 /** The gestures, where the grid can say them. There is no other place to
  *  discover Shift-drag or Ctrl+D; the handbook has the full list. */
 const ROLL_HELP =
-  "Click to draw · drag to move · drag a note's right edge to stretch · right-click to delete\n" +
-  "Shift-drag to select · Shift-click to add · Ctrl+C / Ctrl+V / Ctrl+D · arrows nudge (Shift: beat / octave)";
+  "Click to draw, drag to move, drag a note's right edge to stretch, right-click to delete.\n" +
+  "Shift-drag to select, Shift-click to add. Ctrl+C, Ctrl+V, Ctrl+D. Arrows nudge (Shift: a beat or an octave).";
+
+/** Width of the pitch-label gutter; the ruler, velocity and rack labels share it
+ *  so every row's step 1 lines up under the same ruler key. */
+const GUTTER = "w-12";
+
+/** The tint a roll column takes from its beat's key. Beat 4 is the white
+ *  key: no tint. On the chassis it would be invisible anyway, and on the
+ *  night panel a light tint made every fourth beat look selected. */
+const keyVar = (step: number) => {
+  const key = Math.floor((step % STEPS) / 4) + 1;
+  return key === 4 ? "transparent" : `var(--color-key-${key})`;
+};
+
+/**
+ * The step ruler — the signature. One cell per beat (4 steps), striped in
+ * that beat's key color, numbered in ink: the bar number on the downbeat,
+ * "bar.beat" elsewhere. Same columns as the roll below it, so the stripe
+ * over a note says which beat it is on without counting squares.
+ */
+function StepRuler({ steps }: { steps: number }) {
+  return (
+    <div className="step-ruler" style={{ width: steps * CELL_W }} aria-hidden>
+      {Array.from({ length: steps / 4 }, (_, beat) => {
+        const key = (beat % 4) + 1;
+        const bar = Math.floor(beat / 4) + 1;
+        return (
+          <span
+            key={beat}
+            className={`step-ruler-beat k${key}`}
+            style={{ left: beat * 4 * CELL_W, width: 4 * CELL_W, "--key": `var(--color-key-${key})` } as React.CSSProperties}
+          >
+            {key === 1 ? bar : `${bar}.${key}`}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Piano roll, velocity lane and channel rack. It renders editor state and emits user intent through callbacks. */
 export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
@@ -82,17 +115,12 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
     octave,
     beatSteps,
     laneNoteCount,
-    beatNoteCount,
     error,
     onDismissError,
     rollRef,
-    onPatchBeat,
-    onSwingChange,
-    onSwingCommit,
     onOctaveChange,
     onRequestClear,
     onRequestGenerate,
-    onRequestCompose,
     onAddBeat,
     onOpenPresets,
     onAddLane,
@@ -110,7 +138,27 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
   const hiddenNotes = selectedTrack
     ? laneNotes.filter((note) => rowOf(note.pitch, octave) === null).length
     : 0;
-  const color = selectedTrack ? colorFor(selectedTrack.instrument) : undefined;
+
+  // Opening a lane scrolls its notes into view. The roll is two octaves
+  // tall, more than the bank and mixer leave it, so a kick on C2 sat below
+  // the fold and the lane looked empty. Once per lane and octave, and only
+  // when the notes are off screen: the view must never jump while you draw.
+  const revealed = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const roll = rollRef.current;
+    const pane = roll?.closest("main");
+    const key = `${selectedTrackId}:${octave}`;
+    if (!roll || !pane || !selectedTrackId || revealed.current === key) return;
+    revealed.current = key;
+    const rows = laneNotes.map((note) => rowOf(note.pitch, octave)).filter((row) => row !== null);
+    if (rows.length === 0) return;
+    const rollTop = roll.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+    const top = rollTop + Math.min(...rows) * CELL_H;
+    const bottom = rollTop + (Math.max(...rows) + 1) * CELL_H;
+    const laneBar = 44; // the sticky CanvasBar covers the top of the pane
+    if (top >= pane.scrollTop + laneBar && bottom <= pane.scrollTop + pane.clientHeight) return;
+    pane.scrollTop = Math.max(0, (top + bottom) / 2 - (pane.clientHeight + laneBar) / 2);
+  });
 
   const peerCells = new Map<string, Peer[]>();
   for (const peer of Object.values(peers)) {
@@ -122,86 +170,41 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
   }
 
   return (
-    <Canvas>
-      {selectedBeat && (
+    <Canvas className="min-h-0">
+      {/* The lane bar: what the grid below is showing, and the controls that
+          act on THAT lane. Beat-wide settings live in the bank above. */}
+      {selectedBeat && selectedTrack && (
         <CanvasBar>
-          <span className="truncate text-sm font-semibold tracking-tight">
-            {selectedTrack ? selectedTrack.name : selectedBeat.name}
+          <i aria-hidden className="h-3 w-3 shrink-0 rounded-[2px]" style={{ background: colorFor(selectedTrack.instrument) }} />
+          <span className="min-w-0 truncate text-sm font-bold font-stretch-semi-condensed" title={selectedTrack.name}>
+            {selectedTrack.name}
           </span>
-          {selectedTrack && (
-            <span className="text-xs text-muted">{selectedTrack.instrument.toLowerCase()}</span>
-          )}
+          {/* The instrument is on the lane's strip too; a phone spends the
+              width on the name instead. */}
+          <span className="shrink-0 text-xs text-muted max-md:hidden">{instrumentLabel(selectedTrack.instrument)}</span>
 
-          <div className="ml-auto flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs text-muted">
-              length
-              <Select
-                className="!w-auto !py-0.5 !text-xs"
-                value={selectedBeat.bars}
-                disabled={!canEdit}
-                onChange={(event) => onPatchBeat(selectedBeat.id, { bars: Number(event.target.value) })}
-              >
-                {[1, 2, 4, 8].map((bars) => (
-                  <option key={bars} value={bars}>
-                    {bars} bar{bars > 1 ? "s" : ""}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            {/* Swing belongs to the BEAT (V16), so it sits next to its length.
-                0 = straight, 67 ≈ triplet swing, 100 = dotted. */}
-            <div className="w-44">
-              <RangeField
-                label="swing"
-                value={Math.round(selectedBeat.swing * 100)}
-                min={0}
-                max={100}
-                format={(value) => `${value}%`}
-                disabled={!canEdit}
-                resetTo={0}
-                title="Pushes every off-beat 16th late — 0 straight, ~67 triplet, 100 dotted. Double-click to reset."
-                onChange={(value) => onSwingChange(value / 100)}
-                onCommit={(value) => onSwingCommit(value / 100)}
-              />
-            </div>
-          </div>
-
-          {selectedTrack && (
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <ToolGroup>
-              <IconButton onClick={() => onOctaveChange(Math.max(0, octave - 1))} title="Octave down">
+              <IconButton onClick={() => onOctaveChange(Math.max(0, octave - 1))} title="Octave down" aria-label="Octave down">
                 <MinusIcon className="h-3.5 w-3.5" />
               </IconButton>
-              <span className="px-1 font-mono text-xs tabular-nums text-muted">
-                C{octave}–B{octave + 1}
+              <span className="whitespace-nowrap px-1 text-xs font-semibold tabular-nums" aria-live="polite">
+                C{octave} to B{octave + 1}
               </span>
-              <IconButton onClick={() => onOctaveChange(Math.min(7, octave + 1))} title="Octave up">
+              <IconButton onClick={() => onOctaveChange(Math.min(7, octave + 1))} title="Octave up" aria-label="Octave up">
                 <PlusIcon className="h-3.5 w-3.5" />
               </IconButton>
             </ToolGroup>
-          )}
-          {/* Beat-level, so it does NOT require a selected lane — an empty
-              beat has none, and "compose me a beat" is exactly what you want
-              there. The per-lane Generate below needs a target. */}
-          {canEdit && aiEnabled && (
-            <IconButton
-              title={`Describe a beat and the AI writes ${selectedBeat.name} — tempo, lanes and all`}
-              onClick={onRequestCompose}
-            >
-              <SparkIcon className="h-4 w-4" />
-              Compose
-            </IconButton>
-          )}
-          {selectedTrack && canEdit && aiEnabled && (
-            <IconButton
-              title={`Describe a pattern and the AI writes it into ${selectedTrack.name} — undoable like any edit`}
-              onClick={onRequestGenerate}
-            >
-              <SparkIcon className="h-4 w-4" />
-              Generate
-            </IconButton>
-          )}
-          {selectedTrack && canEdit && (
-            <ToolGroup>
+            {canEdit && aiEnabled && (
+              <IconButton
+                title={`Describe a pattern and the AI writes it into ${selectedTrack.name}. Undo works like any edit.`}
+                onClick={onRequestGenerate}
+              >
+                <SparkIcon className="h-4 w-4" />
+                Generate
+              </IconButton>
+            )}
+            {canEdit && (
               <IconButton
                 tone="danger"
                 disabled={laneNoteCount === 0}
@@ -210,16 +213,8 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
               >
                 Clear lane
               </IconButton>
-              <IconButton
-                tone="danger"
-                disabled={beatNoteCount === 0}
-                title={`Clear every lane in ${selectedBeat.name} (${beatNoteCount} note${beatNoteCount === 1 ? "" : "s"})`}
-                onClick={() => onRequestClear("beat")}
-              >
-                Clear beat
-              </IconButton>
-            </ToolGroup>
-          )}
+            )}
+          </div>
         </CanvasBar>
       )}
 
@@ -234,7 +229,7 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
           <EmptyState
             icon={<BlocksIcon className="h-8 w-8" />}
             title="No beats yet"
-            hint="A beat is a pattern of instrument lanes that you place on the timeline."
+            hint="A beat is a few bars of instrument lanes. Make one here, then place it on the timeline in Arrange."
             action={
               canEdit && (
                 <>
@@ -255,6 +250,7 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
           <EmptyState
             icon={<LanesIcon className="h-8 w-8" />}
             title="No lanes in this beat"
+            hint="Each lane is one instrument. Pick one to start, or name your own in the mixer below."
             action={
               canEdit && (
                 <>
@@ -275,11 +271,16 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
         </div>
       ) : (
         <div className="flex min-w-0 flex-col p-4">
-          <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-edge bg-bg-soft p-2">
+          <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-edge bg-surface p-2">
             <div className="w-max select-none">
+              {/* ---- step ruler ---- */}
+              <div className="flex">
+                <div className={`sticky left-0 z-2 ${GUTTER} shrink-0 bg-surface`} />
+                <StepRuler steps={beatSteps} />
+              </div>
               {/* ---- piano roll ---- */}
               <div className="flex">
-                <div className="sticky left-0 z-2 w-11 shrink-0 bg-bg-soft text-[0.68rem] text-muted">
+                <div className={`sticky left-0 z-2 ${GUTTER} shrink-0 bg-surface text-[0.7rem] text-muted`}>
                   {Array.from({ length: ROLL_ROWS }, (_, row) => {
                     const pitch = pitchOf(row, octave);
                     const isC = row % PITCH_ROWS.length === PITCH_ROWS.length - 1;
@@ -288,8 +289,8 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
                         key={row}
                         style={{ height: CELL_H }}
                         className={
-                          "flex items-center justify-end pr-2 font-mono " +
-                          (pitch.includes("#") ? "text-muted/45" : isC ? "font-semibold text-text" : "")
+                          "flex items-center justify-end pr-2 tabular-nums " +
+                          (pitch.includes("#") ? "text-muted/70" : isC ? "font-bold text-text" : "")
                         }
                       >
                         {pitch}
@@ -325,7 +326,8 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
                           top: row * CELL_H,
                           width: CELL_W,
                           height: CELL_H,
-                        }}
+                          "--key": keyVar(column),
+                        } as React.CSSProperties}
                       />
                     ));
                   })}
@@ -358,9 +360,9 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
                           top: row * CELL_H + 2,
                           width: note.length * CELL_W - 3,
                           height: CELL_H - 4,
-                          opacity: 0.45 + 0.55 * note.velocity,
-                          "--tc": color,
-                        } as React.CSSProperties}
+                          // How hard it hits is how dark it prints.
+                          opacity: 0.4 + 0.6 * note.velocity,
+                        }}
                         onMouseDown={canEdit ? (event) => onNoteMouseDown(event, note, false) : undefined}
                         onContextMenu={canEdit ? (event) => onNoteContextMenu(event, note) : undefined}
                       >
@@ -392,8 +394,8 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
                   loudness is per note whatever its pitch. Press and sweep to
                   paint; with a selection, only selected notes change. */}
               <div className="mt-2 flex border-t border-edge pt-2">
-                <div className="sticky left-0 z-2 flex w-11 shrink-0 items-start justify-end bg-bg-soft pr-2 pt-0.5 text-[0.62rem] font-semibold uppercase tracking-wider text-muted">
-                  vel
+                <div className={`sticky left-0 z-2 flex ${GUTTER} shrink-0 items-start justify-end bg-surface pr-2 pt-0.5 text-[0.7rem] font-semibold text-muted`}>
+                  Vel
                 </div>
                 <div
                   className={"velocity-lane" + (canEdit ? " editable" : "")}
@@ -410,20 +412,21 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
                         style={{
                           left: note.step * CELL_W + CELL_W / 2 - 3,
                           height: Math.max(2, note.velocity * VELOCITY_H),
-                          "--tc": color,
-                        } as React.CSSProperties}
+                        }}
                       />
                     );
                   })}
                 </div>
               </div>
               {hiddenNotes > 0 && (
-                <p className="mt-1 pl-11 text-xs text-muted">
-                  {hiddenNotes} note{hiddenNotes === 1 ? "" : "s"} outside C{octave}–B{octave + 1}
+                <p className="mt-1 pl-12 text-xs text-muted">
+                  {hiddenNotes} note{hiddenNotes === 1 ? "" : "s"} outside C{octave} to B{octave + 1}. Change the octave to see them.
                 </p>
               )}
 
-              {/* ---- channel rack: every lane of the beat at a glance ---- */}
+              {/* ---- channel rack: every lane of the beat at a glance ----
+                  The one view where a collaborator on ANOTHER lane is still
+                  visible on the grid (a ring on the step they are on). */}
               <div className="mt-3 flex flex-col gap-1 border-t border-edge pt-3">
                 {tracks.map((track) => {
                   const notes = notesByTrack[track.id] ?? [];
@@ -431,23 +434,24 @@ export function BeatEditorCanvas(props: BeatEditorCanvasProps) {
                     <div
                       key={track.id}
                       className={
-                        "flex cursor-pointer items-center rounded transition-colors duration-150 " +
+                        "flex cursor-pointer items-center rounded-sm transition-colors duration-150 " +
                         (track.id === selectedTrackId ? "bg-surface-2" : "hover:bg-surface-2/60")
                       }
                       onClick={() => onSelectTrack(track.id)}
                     >
-                      <span className="sticky left-0 z-2 flex w-11 shrink-0 items-center gap-1 bg-bg-soft pr-1">
+                      <span className={`sticky left-0 z-2 flex ${GUTTER} shrink-0 items-center gap-1 bg-surface pr-1`}>
                         <i
-                          className="h-2 w-2 shrink-0 rounded-full"
+                          aria-hidden
+                          className="h-2 w-2 shrink-0 rounded-[2px]"
                           style={{ background: colorFor(track.instrument) }}
-                          title={track.name}
                         />
-                        <span className="truncate text-[0.6rem] font-semibold text-muted">{track.name}</span>
+                        <span className="truncate text-[0.68rem] font-semibold font-stretch-condensed" title={track.name}>
+                          {track.name}
+                        </span>
                       </span>
                       <div
                         className="flex"
                         onMouseMove={live ? (event) => onRackCursorMove(event, track.id) : undefined}
-                        style={{ "--tc": colorFor(track.instrument) } as React.CSSProperties}
                       >
                         {Array.from({ length: beatSteps }, (_, step) => {
                           const here = peerCells.get(`${track.id}:${step}`);

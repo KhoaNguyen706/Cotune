@@ -1,15 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-// Both ship INSIDE the bundle (@fontsource) — no CDN request, no FOUT
-// flash, works offline. "Self-host your fonts" is the industry default now.
+// Ships INSIDE the bundle (@fontsource) — no CDN request, no FOUT flash,
+// works offline. "Self-host your fonts" is the industry default now.
 //
-// They live here rather than in a page because the studio redesign made
-// them the WHOLE app's typefaces (--font-sans / --font-mono in styles.css),
-// not one screen's: Space Grotesk for prose, JetBrains Mono for every
-// number and machine label. Inter left with the violet palette.
-import "@fontsource-variable/space-grotesk";
-import "@fontsource-variable/jetbrains-mono";
+// wdth.css, not the default import: the default carries only the weight
+// axis, and Chassis leans on Archivo's WIDTH axis (condensed lane names,
+// wide song titles — see styles.css). One file, both axes, every subset
+// including Vietnamese.
+import "@fontsource-variable/archivo/wdth.css";
 import "./styles.css";
 
 // StrictMode double-invokes effects in dev to flush out unsafe ones —

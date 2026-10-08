@@ -91,7 +91,7 @@ export function ChatPanel({
       data-testid="chat-panel"
     >
       <header className="flex h-11 shrink-0 items-center justify-between border-b border-edge px-3">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-muted">Chat</h2>
+        <h2 className="text-[0.8125rem] font-bold text-text">Chat</h2>
         <IconButton onClick={onClose} title="Close chat">
           <CloseIcon className="h-[18px] w-[18px]" />
         </IconButton>

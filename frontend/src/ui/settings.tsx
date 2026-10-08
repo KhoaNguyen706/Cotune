@@ -28,7 +28,10 @@ export interface Settings {
 }
 
 const DEFAULTS: Settings = {
-  theme: "dark",
+  // Light: Chassis is designed light-first (the night panel is its
+  // variant). Anyone who already chose dark keeps it — stored settings
+  // spread over these defaults.
+  theme: "light",
   autoSave: true,
   rememberDevice: true,
   metronome: false,

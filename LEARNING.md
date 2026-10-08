@@ -143,7 +143,8 @@ one detail that proves you understand it.
 
 ### 4.2b The mixer, effects and transport
 
-- **Channel strip per lane** (beat sidebar): volume, pan (V14) and **reverb /
+- **Channel strip per lane** (the mixer under the grid, every lane side by
+  side, `beatmaker/Console.tsx`): volume, pan (V14) and **reverb /
   delay sends** (V17, `tracks.reverb` / `tracks.delay`, 0..1). All four are
   song data — saved on release, heard by collaborators *and* by listen-link
   visitors, and baked into the WAV/MP3 export.
@@ -171,6 +172,34 @@ one detail that proves you understand it.
   move every collaborator's playback whenever you moved yours. The playhead
   reads the transport position (`getTicksAtTime`) instead of counting, so it
   wraps with the loop.
+
+### 4.2c The look: the "Chassis" design system
+
+The frontend was remade around one idea: Cotune is the drum machine on your
+desk. The reasoning, the tokens and the rejected directions are in
+`ui/DESIGN.md`; the values are in `frontend/src/styles.css`.
+
+- **Tokens only.** Components never hard-code a hex; every color is a semantic
+  token (`bg`, `surface`, `edge`, `text`, `danger`...). The dark theme ("night
+  panel") is one block that redefines the same tokens, so a theme switch
+  touches no component.
+- **Each color means one thing.** The four beat keys (red, orange, yellow,
+  white, after the TR-808) mean *which beat of the bar* and nothing else; lane
+  caps mean *which instrument*; ink is the one primary action. That's why the
+  song-list covers lost their per-song hues.
+- **Layout = a console**: transport on top, a pattern bank of beat tabs, the
+  grid, and a mixer with one strip per lane. Balancing the kick against the
+  bass used to mean clicking between lanes in a sidebar.
+- **Bug worth telling:** Tailwind v4 only emits theme variables it sees used
+  in class names. The beat-key and lane colors are read through template
+  strings (`var(--color-key-${n})`), so the light theme silently lost them
+  while dark mode (plain CSS) kept them. Screenshots caught it; the fix is
+  `@theme static`. The lesson: a build tool that tree-shakes CSS can't see
+  names you assemble at runtime.
+- **Phone layout lesson:** in a row that scrolls sideways, a flex child with
+  `min-w-0` doesn't scroll, it shrinks below its content and *overlaps* its
+  neighbor (it even stole the Beat tab's clicks). Phones keep each slot whole
+  (`flex-none`) and let the row scroll.
 
 ### 4.3 Real-time collaboration ⭐ (the headline feature — know this cold)
 

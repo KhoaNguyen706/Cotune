@@ -104,7 +104,7 @@ export function HandbookPage() {
                         <th className="pb-2 font-semibold">Reads as</th>
                       </tr>
                     </thead>
-                    <tbody className="font-mono text-[13px]">
+                    <tbody className="text-[13px] tabular-nums">
                       <tr className="border-b border-edge/50">
                         <td className="py-2 pr-4">Sad / lofi</td>
                         <td className="py-2 pr-4 text-accent">60&ndash;85</td>
@@ -153,7 +153,7 @@ export function HandbookPage() {
                         <th className="pb-2 font-semibold">Why</th>
                       </tr>
                     </thead>
-                    <tbody className="font-mono text-[13px]">
+                    <tbody className="text-[13px] tabular-nums">
                       <tr className="border-b border-edge/50">
                         <td className="py-2 pr-4">Kick, snare</td>
                         <td className="py-2 pr-4 text-accent">near C2</td>

@@ -68,10 +68,10 @@ export function PresetLibraryDialog({
                     <Chip>{preset.role}</Chip>
                   </div>
                   <p className="mt-1 text-[0.68rem] tabular-nums text-muted">
-                    {preset.bars} bar{preset.bars > 1 ? "s" : ""} · {preset.lanes.length} lanes ·{" "}
-                    {noteCount(preset)} notes · {preset.bpm} BPM
-                    {/* Amber, not danger: it's worth noticing, not a failure. */}
-                    {offTempo && <span className="text-solo"> (song is {bpm})</span>}
+                    {preset.bars} bar{preset.bars > 1 ? "s" : ""}, {preset.lanes.length} lanes,{" "}
+                    {noteCount(preset)} notes, {preset.bpm} BPM
+                    {/* Ink, not danger: it's worth noticing, not a failure. */}
+                    {offTempo && <span className="font-semibold text-text"> (song is {bpm})</span>}
                   </p>
                 </div>
                 <Button

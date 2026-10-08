@@ -192,7 +192,7 @@ export function SongsPage() {
                 <h1 className="text-2xl font-semibold tracking-[-0.02em]">
                   {view === "mine" ? "My songs" : "Shared with me"}
                 </h1>
-                <p className="mt-1 font-mono text-xs text-muted">
+                <p className="mt-1 text-xs tabular-nums text-muted">
                   {loading ? "Loading…" : `${count} song${count === 1 ? "" : "s"}`}
                 </p>
               </div>
@@ -266,7 +266,7 @@ export function SongsPage() {
                     }
                     offset += (beat.bars ?? 1) * 16;
                   }
-                  const cover = coverFor(song.id, { steps, totalSteps: offset });
+                  const cover = coverFor({ steps, totalSteps: offset });
                   // Straight from the server's myRole — never `ownerId === me`.
                   // Since sharing exists, an EDITOR can write to a song they
                   // don't own, so ownership no longer answers "can I edit?".
@@ -292,22 +292,17 @@ export function SongsPage() {
                         aria-label={`Open ${song.title}`}
                       />
 
-                      {/* Note density over the song's length (ui/cover.ts).
-                          Flat and grey when the song has no notes — an
-                          invented waveform for an empty song would be
-                          decoration posing as data. */}
-                      <div
-                        className="flex h-20 items-end gap-[2px] overflow-hidden rounded-t-xl px-4 pt-4"
-                        style={{ background: cover.backdrop }}
-                      >
+                      {/* Note density over the song's length (ui/cover.ts):
+                          ink bars in a key-colored well, like a level meter
+                          set into the panel. Flat and grey when the song
+                          has no notes — an invented waveform for an empty
+                          song would be decoration posing as data. */}
+                      <div className="m-2 mb-0 flex h-20 items-end gap-[2px] overflow-hidden rounded-lg border border-edge bg-bg-soft px-3 pt-3">
                         {cover.bars.map((height, i) => (
                           <i
                             key={i}
-                            className="min-w-0 flex-1 rounded-t-sm"
-                            style={{
-                              height: `${height}%`,
-                              background: cover.fromNotes ? cover.accent : "var(--color-edge-strong)",
-                            }}
+                            className={`min-w-0 flex-1 rounded-t-[1px] ${cover.fromNotes ? "bg-text" : "bg-edge-strong"}`}
+                            style={{ height: `${height}%` }}
                           />
                         ))}
                       </div>
@@ -333,8 +328,8 @@ export function SongsPage() {
                           {!isOwner && <RoleBadge role={song.myRole} />}
                         </div>
 
-                        <p className="mt-1 font-mono text-xs text-muted">
-                          {song.bpm} BPM · {song.timeSignature} · {trackCount} lane
+                        <p className="mt-1 text-xs tabular-nums text-muted">
+                          {song.bpm} BPM, {song.timeSignature}, {trackCount} lane
                           {trackCount === 1 ? "" : "s"}
                         </p>
 
@@ -519,14 +514,14 @@ function Collaborators({ people }: { people: Song["collaborators"] }) {
         <span
           key={person.userId}
           title={person.displayName}
-          className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-2 font-mono text-[9.5px] font-semibold text-muted first:ml-0"
+          className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-2 text-[0.65rem] font-bold text-muted first:ml-0"
           style={{ marginLeft: i ? -8 : 0, zIndex: 10 - i }}
         >
           {person.displayName?.trim()?.[0]?.toUpperCase() ?? "?"}
         </span>
       ))}
       {rest > 0 && (
-        <span className="ml-1.5 font-mono text-[10px] text-muted">+{rest}</span>
+        <span className="ml-1.5 text-[0.7rem] font-semibold tabular-nums text-muted">+{rest}</span>
       )}
     </div>
   );
@@ -539,14 +534,14 @@ function Collaborators({ people }: { people: Song["collaborators"] }) {
  */
 function RoleBadge({ role }: { role: Song["myRole"] }) {
   const style = {
-    OWNER: { label: "yours", className: "border-accent/40 bg-accent/10 text-accent" },
-    EDITOR: { label: "can edit", className: "border-edge-strong bg-surface-2 text-text" },
-    VIEWER: { label: "view only", className: "border-edge bg-surface-2 text-muted" },
+    OWNER: { label: "Yours", className: "border-accent bg-accent text-bg-soft" },
+    EDITOR: { label: "Can edit", className: "border-edge-strong bg-surface-2 text-text" },
+    VIEWER: { label: "View only", className: "border-edge bg-surface-2 text-muted" },
   }[role];
 
   return (
     <span
-      className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wider ${style.className}`}
+      className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[0.7rem] font-semibold ${style.className}`}
     >
       {style.label}
     </span>

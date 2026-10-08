@@ -13,8 +13,9 @@ import type { AiAction, Beat, SongEvent, Step } from "../types";
 
 import { CELL_H, CELL_W, ROLL_ROWS, STEPS, lowestOctave } from "../beatmaker/constants";
 import type { NoteKey } from "../beatmaker/noteOps";
-import { BeatBrowserSidebar } from "../beatmaker/BeatBrowserSidebar";
 import { BeatEditorCanvas } from "../beatmaker/BeatEditorCanvas";
+import { BeatStrip } from "../beatmaker/BeatStrip";
+import { Console } from "../beatmaker/Console";
 import { ClearNotesDialog, type ClearScope } from "../beatmaker/ClearNotesDialog";
 import { ComposeBeatDialog } from "../beatmaker/ComposeBeatDialog";
 import { GeneratePatternDialog } from "../beatmaker/GeneratePatternDialog";
@@ -714,20 +715,22 @@ export function BeatMakerPage() {
   if (!song) {
     return (
       <AppShell>
-        {/* The skeleton mirrors the SHELL, not a stack of cards: bar on top,
-            sidebar left, canvas right. Loading looks like the app it's
-            becoming, so nothing jumps when the data lands. */}
-        <TopBar left={<Skeleton className="h-6 w-48" />} right={<Skeleton className="h-8 w-64" />} />
-        <Workspace>
-          <Sidebar>
-            <Skeleton className="h-4 w-16" />
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-          </Sidebar>
-          <Canvas className="p-4">
-            {error ? <ErrorBanner>{error}</ErrorBanner> : <Skeleton className="h-full w-full" />}
-          </Canvas>
-        </Workspace>
+        {/* The skeleton mirrors the MACHINE, not a stack of cards: faceplate
+            on top, the bank, the grid, the console. Loading looks like the
+            app it's becoming, so nothing jumps when the data lands. */}
+        <TopBar left={<Skeleton className="h-6 w-48" />} center={<Skeleton className="h-8 w-72" />} right={<Skeleton className="h-8 w-40" />} />
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-edge bg-surface px-4">
+          <Skeleton className="h-7 w-28" />
+          <Skeleton className="h-7 w-28" />
+        </div>
+        <Canvas className="min-h-0 p-4">
+          {error ? <ErrorBanner>{error}</ErrorBanner> : <Skeleton className="h-full w-full" />}
+        </Canvas>
+        <div className="flex h-60 shrink-0 gap-2 border-t border-edge-strong bg-surface p-2">
+          <Skeleton className="h-full w-32" />
+          <Skeleton className="h-full w-32" />
+          <Skeleton className="h-full w-32" />
+        </div>
       </AppShell>
     );
   }
@@ -878,10 +881,12 @@ export function BeatMakerPage() {
       )}
 
       <Workspace>
-        {/* Folds while dragging a clip (the timeline needs the width) or
-            when the user hides it by hand. */}
-        <Sidebar collapsed={sidebarCollapsed || dragging}>
-          {mode === "arrange" ? (
+        {/* ---- ARRANGE: palette + timeline ------------------------------ */}
+        {mode === "arrange" ? (
+          <>
+          {/* Folds while dragging a clip (the timeline needs the width) or
+              when the user hides it by hand. */}
+          <Sidebar collapsed={sidebarCollapsed || dragging}>
             <ArrangementPalette
               songId={song.id}
               beats={sortedBeats}
@@ -894,54 +899,7 @@ export function BeatMakerPage() {
               onError={setError}
               canEdit={canEdit}
             />
-          ) : (
-            <BeatBrowserSidebar
-              beats={sortedBeats}
-              selectedBeat={selectedBeat}
-              selectedBeatId={selectedBeatId}
-              tracks={sortedLanes}
-              selectedTrackId={selectedId}
-              peers={peers}
-              muted={muted}
-              soloed={soloed}
-              canEdit={canEdit}
-              onAddBeat={() => void addBeat()}
-              onOpenPresets={() => {
-                setPresetError(null);
-                setPresetsOpen(true);
-              }}
-              onSelectBeat={(beatId, firstTrackId) => {
-                setSelectedBeatId(beatId);
-                setSelectedId(firstTrackId);
-              }}
-              onRenameBeat={(beatId, name) => void patchBeat(beatId, { name })}
-              onRemoveBeat={(beatId) => void removeBeat(beatId)}
-              onSelectTrack={setSelectedId}
-              onRenameTrack={(trackId, name) => void renameTrack(trackId, name)}
-              onRemoveTrack={(trackId) => void removeTrack(trackId)}
-              onToggleMute={(trackId) => setMuted((current) => toggleIn(current, trackId))}
-              onToggleSolo={(trackId) => setSoloed((current) => toggleIn(current, trackId))}
-              onAddTrack={async (name, instrument) => {
-                if (!selectedBeatId) return;
-                await data.addTrack(selectedBeatId, name, instrument);
-              }}
-              onMixChange={(mix) => {
-                if (!selectedId) return;
-                // State and audio move together mid-drag; the server waits
-                // for the commit below — dozens of PATCHes per drag would be
-                // traffic with no one listening.
-                data.setTrackMixLocal(selectedId, mix);
-                instruments.map.current.get(selectedId)?.setMix(mix);
-              }}
-              onMixCommit={(mix) => {
-                if (selectedId) data.saveTrackMix(selectedId, mix);
-              }}
-            />
-          )}
-        </Sidebar>
-
-        {/* ---- CANVAS -------------------------------------------------- */}
-        {mode === "arrange" ? (
+          </Sidebar>
           <Canvas>
             {error && (
               <div className="px-4 pt-4">
@@ -975,7 +933,43 @@ export function BeatMakerPage() {
               }}
             />
           </Canvas>
+          </>
         ) : (
+          /* ---- BEAT: the machine — bank, grid, console ----------------
+             No side panel: the beats are a row of tabs above the grid and
+             the lanes are the mixer's strips below it, so the grid gets
+             the whole width of the screen. */
+          <div className="flex min-w-0 flex-1 flex-col">
+          <BeatStrip
+            beats={sortedBeats}
+            selectedBeat={selectedBeat}
+            peers={peers}
+            canEdit={canEdit}
+            aiEnabled={user?.aiAccess ?? false}
+            beatNoteCount={beatNoteCount}
+            onSelectBeat={(beatId, firstTrackId) => {
+              setSelectedBeatId(beatId);
+              setSelectedId(firstTrackId);
+            }}
+            onRenameBeat={(beatId, name) => void patchBeat(beatId, { name })}
+            onRemoveBeat={(beatId) => void removeBeat(beatId)}
+            onAddBeat={() => void addBeat()}
+            onOpenPresets={() => {
+              setPresetError(null);
+              setPresetsOpen(true);
+            }}
+            onChangeBars={(beatId, bars) => void patchBeat(beatId, { bars })}
+            onSwingChange={(swing) => {
+              // Local only: the beat loop reads swing every step, so the
+              // groove changes under your hands; the PATCH waits for release.
+              if (selectedBeat) data.patchBeatLocal(selectedBeat.id, { swing });
+            }}
+            onSwingCommit={(swing) => {
+              if (selectedBeat) data.saveBeatSwing(selectedBeat.id, swing);
+            }}
+            onRequestCompose={() => setComposeOpen(true)}
+            onRequestClearBeat={() => setClearing("beat")}
+          />
           <BeatEditorCanvas
             selectedBeat={selectedBeat}
             selectedTrack={selected}
@@ -994,17 +988,14 @@ export function BeatMakerPage() {
             octave={octave}
             beatSteps={beatSteps}
             laneNoteCount={laneNoteCount}
-            beatNoteCount={beatNoteCount}
             error={error}
             onDismissError={() => setError(null)}
             rollRef={rollRef}
-            onPatchBeat={(beatId, patch) => void patchBeat(beatId, patch)}
             onOctaveChange={(nextOctave) => {
               if (selected) setOctaves((current) => ({ ...current, [selected.id]: nextOctave }));
             }}
             onRequestClear={setClearing}
             onRequestGenerate={() => setGenerateOpen(true)}
-            onRequestCompose={() => setComposeOpen(true)}
             onAddBeat={() => void addBeat()}
             onOpenPresets={() => {
               setPresetError(null);
@@ -1012,14 +1003,6 @@ export function BeatMakerPage() {
             }}
             onAddLane={(name, instrument) => {
               if (selectedBeatId) void data.addTrack(selectedBeatId, name, instrument);
-            }}
-            onSwingChange={(swing) => {
-              // Local only: the beat loop reads swing every step, so the
-              // groove changes under your hands; the PATCH waits for release.
-              if (selectedBeat) data.patchBeatLocal(selectedBeat.id, { swing });
-            }}
-            onSwingCommit={(swing) => {
-              if (selectedBeat) data.saveBeatSwing(selectedBeat.id, swing);
             }}
             onRollMouseDown={onRollMouseDown}
             onRollMouseMove={onRollMouseMove}
@@ -1030,6 +1013,34 @@ export function BeatMakerPage() {
             onRackCursorMove={onRackCursorMove}
             onSelectTrack={setSelectedId}
           />
+          {selectedBeat && (
+            <Console
+              tracks={sortedLanes}
+              selectedTrackId={selectedId}
+              peers={peers}
+              muted={muted}
+              soloed={soloed}
+              canEdit={canEdit}
+              onSelectTrack={setSelectedId}
+              onRenameTrack={(trackId, name) => void renameTrack(trackId, name)}
+              onRemoveTrack={(trackId) => void removeTrack(trackId)}
+              onToggleMute={(trackId) => setMuted((current) => toggleIn(current, trackId))}
+              onToggleSolo={(trackId) => setSoloed((current) => toggleIn(current, trackId))}
+              onAddTrack={async (name, instrument) => {
+                if (!selectedBeatId) return;
+                await data.addTrack(selectedBeatId, name, instrument);
+              }}
+              onMixChange={(trackId, mix) => {
+                // State and audio move together mid-drag; the server waits
+                // for the commit below — dozens of PATCHes per drag would be
+                // traffic with no one listening.
+                data.setTrackMixLocal(trackId, mix);
+                instruments.map.current.get(trackId)?.setMix(mix);
+              }}
+              onMixCommit={(trackId, mix) => data.saveTrackMix(trackId, mix)}
+            />
+          )}
+          </div>
         )}
 
         {chat.open && (

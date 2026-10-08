@@ -72,18 +72,19 @@ try {
   // the STOMP CONNECT round trip completing over the real handshake — the
   // layer no jsdom test and no HTTP integration test crosses.
   step("wait for the socket");
-  await page.getByTestId("socket-status").getByText("live", { exact: true }).waitFor();
+  await page.getByTestId("socket-status").getByText("Live", { exact: true }).waitFor();
 
   step("build a beat and a lane");
   // The page opens on the arrangement; beats are built in the other view.
   await page.getByTitle("Build the beats").click();
   await page.getByTitle("New empty beat").click();
-  await page.getByPlaceholder("Lane name").fill("Kick");
+  await page.getByLabel("Lane name").fill("Kick");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   // Select the lane (the roll draws into the SELECTED lane; don't rely on
   // any auto-selection behavior staying the way it happens to be today).
-  // .first() = the sidebar row; the name may also appear in the rack.
-  await page.getByText("Kick", { exact: true }).first().click();
+  // By its NAME on the mixer strip: the strip is mostly faders, and a
+  // click on its middle would move one.
+  await page.getByRole("group", { name: "Kick channel" }).getByText("Kick", { exact: true }).click();
 
   step("draw a note");
   const roll = page.getByTestId("piano-roll");

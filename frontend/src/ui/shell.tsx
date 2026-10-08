@@ -46,9 +46,12 @@ export function TopBar({
       // that WRAPS steals canvas height, and one that truncates hides
       // commands — sideways scroll loses nothing.
     >
-      <div className="flex min-w-0 flex-1 items-center gap-3 max-md:gap-2">{left}</div>
+      {/* max-md:flex-none: in a bar that scrolls sideways, a slot allowed
+          to shrink below its content doesn't scroll, it OVERLAPS the next
+          slot (and steals its clicks). Phones keep every slot whole. */}
+      <div className="flex min-w-0 flex-1 items-center gap-3 max-md:flex-none max-md:gap-2">{left}</div>
       {center && <div className="flex shrink-0 items-center gap-2">{center}</div>}
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-2">{right}</div>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2 max-md:flex-none">{right}</div>
     </header>
   );
 }
@@ -73,7 +76,7 @@ export function NavRail({ children, footer }: { children: ReactNode; footer?: Re
     // On phones the rail narrows to icons (labels hidden by NavItem below):
     // 240px of navigation on a 375px screen would leave the actual app a
     // third of the glass. Same rail, same buttons — just their icon column.
-    <nav className="flex w-60 shrink-0 flex-col border-r border-edge bg-surface/40 p-3 max-md:w-auto max-md:p-2">
+    <nav className="flex w-60 shrink-0 flex-col border-r border-edge bg-surface p-3 max-md:w-auto max-md:p-2">
       <div className="flex flex-1 flex-col gap-1">{children}</div>
       {footer && <div className="mt-4 flex flex-col gap-2">{footer}</div>}
     </nav>
@@ -99,8 +102,12 @@ export function NavItem({
       title={label}
       className={cx(
         "flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors duration-150 " +
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
-        active ? "bg-surface-2 text-text" : "text-muted hover:bg-surface-2/60 hover:text-text",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent pointer-coarse:min-h-11",
+        // The current page is marked by an ink rule on its left edge as
+        // well as the fill, so it never rests on a grey-on-grey difference.
+        active
+          ? "bg-bg-soft font-semibold text-text shadow-[inset_3px_0_0_var(--color-text)]"
+          : "text-muted hover:bg-surface-2 hover:text-text",
       )}
     >
       <span aria-hidden className="w-4 text-center">
@@ -125,7 +132,7 @@ export function Sidebar({ children, collapsed }: { children: ReactNode; collapse
     <aside
       aria-hidden={collapsed}
       className={cx(
-        "flex shrink-0 flex-col gap-6 border-r border-edge bg-surface/40 transition-[width,padding] duration-200",
+        "flex shrink-0 flex-col gap-6 border-r border-edge bg-surface transition-[width,padding] duration-200",
         // On phones an open sidebar OVERLAYS the canvas instead of
         // squeezing it: 256px out of 375 would leave a grid too narrow to
         // mean anything. Solid background because there's content under it.
@@ -151,7 +158,7 @@ export function SidebarSection({
   return (
     <section className="flex flex-col gap-2">
       <div className="flex h-6 items-center justify-between">
-        <h2 className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">{title}</h2>
+        <h2 className="text-[0.8125rem] font-bold text-text">{title}</h2>
         {action}
       </div>
       {children}
@@ -168,7 +175,7 @@ export function Canvas({ children, className }: { children: ReactNode; className
  *  bar count, velocity) — the "inspector" row every DAW has. */
 export function CanvasBar({ children }: { children: ReactNode }) {
   return (
-    <div className="sticky top-0 z-3 flex h-11 shrink-0 items-center gap-3 border-b border-edge bg-bg px-4">
+    <div className="sticky top-0 left-0 z-3 flex h-11 shrink-0 items-center gap-3 border-b border-edge bg-surface px-4">
       {children}
     </div>
   );
@@ -179,14 +186,16 @@ export function CanvasBar({ children }: { children: ReactNode }) {
 /**
  * A segmented cluster of controls that belong together (transport, export).
  * Grouping is what turns "a row of loose buttons" into a toolbar: related
- * actions share one bordered container, unrelated ones are separated by a
- * gap. The old header had neither, which is why it read as clutter.
+ * actions share one container, unrelated ones are separated by a gap.
+ *
+ * Drawn as a recess cut into the faceplate (chassis color, inset), with the
+ * keys sitting in it — how a key row is mounted on the hardware.
  */
 export function ToolGroup({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
       className={cx(
-        "flex items-center gap-0.5 rounded-lg border border-edge bg-bg-soft/70 p-0.5",
+        "flex items-center gap-0.5 rounded-md bg-bg p-0.5 shadow-[inset_0_1px_0_rgb(0_0_0/0.06)]",
         className,
       )}
     >
@@ -211,18 +220,21 @@ export function IconButton({ tone = "default", active, className, ...props }: Ic
   return (
     <button
       className={cx(
-        "inline-flex h-8 min-w-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 " +
+        "inline-flex h-8 min-w-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-sm px-2 " +
           "text-sm font-semibold transition-colors duration-150 " +
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 " +
-          "disabled:cursor-default disabled:opacity-40",
-        // Flat accent — same reasoning as kit.tsx's primary Button: the
-        // lime→amber ramp goes through olive.
-        tone === "solid" && "bg-accent text-bg hover:not-disabled:brightness-110",
-        tone === "danger" && "text-muted hover:not-disabled:bg-danger/15 hover:not-disabled:text-danger",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
+          "active:translate-y-px disabled:cursor-default disabled:opacity-40 disabled:active:translate-y-0 " +
+          "pointer-coarse:h-11 pointer-coarse:min-w-11",
+        // The black key (Play): the one heavy control on the bar.
+        tone === "solid" && "bg-accent text-bg-soft hover:not-disabled:bg-accent/85",
+        tone === "danger" && "text-muted hover:not-disabled:bg-danger/10 hover:not-disabled:text-danger",
         tone === "default" &&
           !active &&
-          "text-muted hover:not-disabled:bg-surface-2 hover:not-disabled:text-text",
-        tone === "default" && active && "bg-surface-2 text-text",
+          "text-muted hover:not-disabled:bg-bg-soft hover:not-disabled:text-text",
+        // LATCHED — a lit key. Metronome on, loop on, the open tab: ink, the
+        // same as a pressed key on the hardware, so "on" never depends on a
+        // faint grey difference (aria-pressed / aria-current carry it too).
+        tone === "default" && active && "bg-accent text-bg-soft",
         className,
       )}
       {...props}
@@ -234,9 +246,11 @@ export function IconButton({ tone = "default", active, className, ...props }: Ic
  *  digits don't jitter as values change during playback. */
 export function Readout({ label, children }: { label: string; children: ReactNode }) {
   return (
+    // The value is the display, set wide and heavy like a machine's readout;
+    // the label is a quiet legend under it, not a shouting eyebrow over it.
     <div className="flex flex-col justify-center px-2 leading-tight">
-      <span className="text-[0.6rem] font-bold uppercase tracking-[0.1em] text-muted">{label}</span>
-      <span className="font-mono text-sm font-semibold tabular-nums text-text">{children}</span>
+      <span className="text-base font-extrabold font-stretch-semi-expanded tabular-nums text-text">{children}</span>
+      <span className="text-[0.68rem] font-medium text-muted">{label}</span>
     </div>
   );
 }

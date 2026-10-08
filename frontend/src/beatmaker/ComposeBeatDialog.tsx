@@ -66,7 +66,7 @@ export function ComposeBeatDialog({
               key={index}
               className="flex items-start gap-3 rounded-lg border border-edge bg-surface px-3 py-2 text-sm"
             >
-              <span className="mt-px font-mono text-[11px] text-muted">{index + 1}</span>
+              <span className="mt-px text-[0.7rem] font-semibold tabular-nums text-muted">{index + 1}</span>
               <span className="text-text">{step}</span>
             </li>
           ))}

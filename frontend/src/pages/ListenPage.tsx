@@ -232,7 +232,7 @@ export function ListenPage() {
             </div>
           ) : (
             <>
-              <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">
+              <p className="text-[0.8125rem] font-semibold text-muted">
                 Shared song
               </p>
               <h1 className="mt-1 truncate text-2xl font-extrabold tracking-tight">{song.title}</h1>

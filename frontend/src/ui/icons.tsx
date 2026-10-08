@@ -35,6 +35,18 @@ function Icon({ children, ...props }: IconProps) {
   );
 }
 
+/** An error or a warning: a triangle with a mark, beside the words that say
+ *  what went wrong (color is never the only signal). */
+export function AlertIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3.5 2.5 20h19L12 3.5z" />
+      <path d="M12 10v4.5" />
+      <path d="M12 17.5h.01" />
+    </Icon>
+  );
+}
+
 /** My songs — a list. */
 export function ListIcon(props: IconProps) {
   return (

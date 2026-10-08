@@ -158,7 +158,7 @@ export function ShareModal({
       </form>
 
       <div className="mt-6 flex flex-col gap-3 border-t border-edge pt-5">
-        <h3 className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">
+        <h3 className="text-[0.8125rem] font-bold text-text">
           People with access
         </h3>
 
@@ -169,7 +169,7 @@ export function ShareModal({
           <Avatar name="You" />
           <span className="min-w-0 flex-1 leading-tight">
             <span className="block truncate text-sm font-semibold">You</span>
-            <span className="block text-xs text-muted">Owner · full access</span>
+            <span className="block text-xs text-muted">Owner, full access</span>
           </span>
         </div>
 
@@ -219,7 +219,7 @@ export function ShareModal({
           from collaborator access above — a listener is not a member, they
           hold a revocable capability. */}
       <div className="mt-6 flex flex-col gap-3 border-t border-edge pt-5">
-        <h3 className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">
+        <h3 className="text-[0.8125rem] font-bold text-text">
           Public listen link
         </h3>
 

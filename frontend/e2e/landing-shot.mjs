@@ -73,7 +73,7 @@ try {
     await page.click('button[type="submit"]');
     await page.waitForURL(/\/songs$/);
     await page.goto(`${BASE}/songs/${songId}`);
-    await page.getByRole("button", { name: "Beats", exact: true }).click();
+    await page.getByTitle("Build the beats").click();
     return page;
   }
 
@@ -88,17 +88,21 @@ try {
   const guest = await signedIn(GUEST, { width: 1400, height: 900 });
   await guest.waitForSelector("[data-testid=piano-roll]");
   // Same lane on both screens, so the guest's cursor lands on the host's roll.
+  // Picked by its NAME on the mixer strip: the strip is mostly faders, and a
+  // click on its middle would move one.
   const lane = process.env.SHOT_LANE ?? "Phím";
   for (const page of [host, guest]) {
-    const row = page.getByText(lane, { exact: true }).first();
-    if (await row.count()) await row.click();
+    await page.getByRole("group", { name: `${lane} channel` }).getByText(lane, { exact: true }).click();
   }
-  const roll = guest.locator("[data-testid=piano-roll]");
-  const box = await roll.boundingBox();
+  await guest.waitForTimeout(400); // the roll scrolls the lane's notes into view
+  // Next to a real note, so the cursor is on screen whatever the scroll.
+  const note = await guest.locator("[data-testid=piano-roll] .note").first().boundingBox();
   // Hover, don't click: presence is a hover, and a click would write a note.
-  await guest.mouse.move(box.x + 10 * 34 + 17, box.y + 4 * 26 + 13, { steps: 8 });
+  await guest.mouse.move(note.x + 3 * 34 + 17, note.y - 26 + 11, { steps: 8 });
   await host.waitForSelector(".peer-cursor", { timeout: 10_000 });
-  await host.mouse.move(0, 999); // our own pointer out of the picture
+  // Our own pointer out of the picture: over the empty pane right of the
+  // roll, where it hovers nothing (a strip would show its delete button).
+  await host.mouse.move(1590, 450);
   await host.waitForTimeout(600); // the cursor's glide transition settles
   await host.screenshot({ path: OUT, type: "jpeg", quality: 88 });
   console.log(`wrote ${OUT}`);
