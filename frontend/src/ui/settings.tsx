@@ -20,12 +20,19 @@ export interface Settings {
    *  vs sessionStorage (dies with the tab). The honest phrasing of the
    *  classic "remember me" checkbox — see api/client.ts. */
   rememberDevice: boolean;
+  /** Click on every beat during playback. A device preference like the
+   *  rest: your collaborator hears their own click, not yours. */
+  metronome: boolean;
+  /** One bar of clicks before playback starts. */
+  countIn: boolean;
 }
 
 const DEFAULTS: Settings = {
   theme: "dark",
   autoSave: true,
   rememberDevice: true,
+  metronome: false,
+  countIn: false,
 };
 
 const STORAGE_KEY = "cotune.settings";

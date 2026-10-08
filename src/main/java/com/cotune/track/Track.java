@@ -88,6 +88,15 @@ public class Track {
     @Column(nullable = false)
     private double pan = 0.0;
 
+    // Effect sends (V17): how much of this lane feeds the song's shared
+    // reverb / delay, 0 (dry) .. 1. The effects are client-side; the amount
+    // is part of the mix, so it is stored like volume and pan.
+    @Column(nullable = false)
+    private double reverb = 0.0;
+
+    @Column(nullable = false)
+    private double delay = 0.0;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -132,6 +141,22 @@ public class Track {
             throw new IllegalArgumentException("pan must be in [-1, 1], got " + newPan);
         }
         this.pan = newPan;
+    }
+
+    /** Ranges mirrored by the V17 CHECK constraints — change both. */
+    public void changeReverb(double newReverb) {
+        this.reverb = send("reverb", newReverb);
+    }
+
+    public void changeDelay(double newDelay) {
+        this.delay = send("delay", newDelay);
+    }
+
+    private static double send(String which, double amount) {
+        if (amount < 0.0 || amount > 1.0) {
+            throw new IllegalArgumentException(which + " send must be in [0, 1], got " + amount);
+        }
+        return amount;
     }
 
     public void changeInstrument(Instrument newInstrument) {

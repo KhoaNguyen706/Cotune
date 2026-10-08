@@ -1,4 +1,5 @@
 import * as Tone from "tone";
+import { fxBusFor } from "./fx";
 
 /**
  * Maps a backend Instrument enum value to something that makes sound.
@@ -15,19 +16,22 @@ import * as Tone from "tone";
  */
 export interface TrackInstrument {
   trigger(time: number | undefined, pitch: string, velocity: number, duration?: number): void;
-  /** Update the lane's persisted mix (V14) on the live audio graph.
-   *  Partial on purpose: a volume slider mid-drag shouldn't have to know
-   *  the pan. */
-  setMix(mix: { volume?: number; pan?: number }): void;
+  /** Update the lane's persisted mix (V14 + V17 sends) on the live audio
+   *  graph. Partial on purpose: a volume slider mid-drag shouldn't have to
+   *  know the pan. */
+  setMix(mix: Partial<Mix>): void;
   dispose(): void;
   defaultPitch: string;
   defaultOctave: number;
 }
 
-/** The lane's persisted mix: linear gain 0..1, stereo pan -1..1. */
+/** The lane's persisted mix: linear gain 0..1, stereo pan -1..1, and the
+ *  effect sends 0..1 (how much of the lane feeds the shared reverb/delay). */
 export interface Mix {
   volume: number;
   pan: number;
+  reverb: number;
+  delay: number;
 }
 
 export function createInstrument(instrument: string, mix?: Partial<Mix>): TrackInstrument {
@@ -41,15 +45,28 @@ export function createInstrument(instrument: string, mix?: Partial<Mix>): TrackI
     pan: mix?.pan ?? 0,
   }).toDestination();
 
+  // The sends (V17) tap the channel AFTER its fader and pan — "post-fader",
+  // the desk default — so pulling a lane's volume down pulls its reverb
+  // tail down with it instead of leaving a ghost of it in the room.
+  const fx = fxBusFor();
+  const reverbSend = new Tone.Gain(mix?.reverb ?? 0).connect(fx.reverb);
+  const delaySend = new Tone.Gain(mix?.delay ?? 0).connect(fx.delay);
+  channel.connect(reverbSend);
+  channel.connect(delaySend);
+
   const base = buildSynth(instrument, channel);
   return {
     ...base,
-    setMix: ({ volume, pan }) => {
+    setMix: ({ volume, pan, reverb, delay }) => {
       if (volume !== undefined) channel.volume.value = Tone.gainToDb(volume);
       if (pan !== undefined) channel.pan.value = pan;
+      if (reverb !== undefined) reverbSend.gain.value = reverb;
+      if (delay !== undefined) delaySend.gain.value = delay;
     },
     dispose: () => {
       base.dispose();
+      reverbSend.dispose();
+      delaySend.dispose();
       channel.dispose();
     },
   };

@@ -1,15 +1,28 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AdminPage } from "./pages/AdminPage";
-import { BeatMakerPage } from "./pages/BeatMakerPage";
 import { HandbookPage } from "./pages/HandbookPage";
 import { HomePage } from "./pages/HomePage";
-import { ListenPage } from "./pages/ListenPage";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SongsPage } from "./pages/SongsPage";
 import { SettingsProvider } from "./ui/settings";
+
+/**
+ * The two pages that make sound load on demand. Tone.js is most of the
+ * bundle, and importing it creates an AudioContext — so with these eager,
+ * the landing page and the login form downloaded a synth engine and the
+ * console logged an autoplay warning before anyone had pressed anything.
+ * Split here, the editor's chunk arrives when you open a song.
+ */
+const BeatMakerPage = lazy(() =>
+  import("./pages/BeatMakerPage").then((module) => ({ default: module.BeatMakerPage })),
+);
+const ListenPage = lazy(() =>
+  import("./pages/ListenPage").then((module) => ({ default: module.ListenPage })),
+);
 
 /**
  * ROUTING, and the one decision that shapes it: "/" is the LANDING PAGE, for
@@ -38,6 +51,9 @@ export function App() {
     <SettingsProvider>
     <AuthProvider>
       <BrowserRouter>
+        {/* fallback={null}: the chunk is local and arrives in a blink; a
+            spinner that flashes for 80ms reads as jank, not as loading. */}
+        <Suspense fallback={null}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -87,6 +103,7 @@ export function App() {
               that's now the landing page rather than a login prompt. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
     </SettingsProvider>

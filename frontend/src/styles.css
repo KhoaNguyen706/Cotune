@@ -57,7 +57,6 @@
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", monospace;
 
   --shadow-card: 0 18px 40px -24px rgb(0 0 0 / 0.8);
-  --shadow-glow: 0 0 24px -10px oklch(0.86 0.19 138 / 0.9);
 
   /* ---------------------------------------------------------------------
      THE POSTER PALETTE — the marketing landing page (/) and nothing else.
@@ -169,7 +168,6 @@
   --color-solo: oklch(0.52 0.12 85);
 
   --shadow-card: 0 6px 20px rgb(32 30 24 / 0.1);
-  --shadow-glow: 0 0 24px -10px oklch(0.52 0.14 145 / 0.5);
 }
 
 /* ---------- base ----------
@@ -198,26 +196,9 @@ body,
 body {
   @apply bg-bg text-text font-sans antialiased;
   font-size: 15px;
-  /* one soft brand glow, top-right — depth without imagery. Fixed, so it
-     doesn't smear when a pane scrolls under it.
-     Derived from the accent token, not a literal: this line was a hardcoded
-     violet rgb() and it survived the whole repalette — the one thing on the
-     page still glowing the old brand colour. Exactly the failure the "no raw
-     hex in a component" rule at the top of this file exists to prevent, sitting
-     in the file that declares the rule. */
-  background-image: radial-gradient(
-    1200px 600px at 88% -12%,
-    color-mix(in oklch, var(--color-accent) 10%, transparent),
-    transparent 62%
-  );
-  background-attachment: fixed;
   overflow: hidden;
 }
 
-/* The glow is a DARK-room effect; on white it just looks like a smudge. */
-:root[data-theme="light"] body {
-  background-image: none;
-}
 
 /** The one place a centered column is right: auth screens have no
  *  workspace to fill. */
@@ -269,13 +250,22 @@ input[type="range"] {
 
 /* Every 16th step starts a new BAR. Without a stronger rule here, a
    128-step (8-bar) grid is an undifferentiated field of squares and you
-   cannot tell bar 3 from bar 6 — the thing that made long beats unusable. */
+   cannot tell bar 3 from bar 6 — the thing that made long beats unusable.
+   Neutral, not the accent: the lime used to outline every bar start, so the
+   grid's structure competed with the notes for the one colour that means
+   "this is on". Structure is grey; content is colour. */
 .cell.bar {
-  border-color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-text) 40%, transparent);
 }
 
 .roll-cell.bar {
-  border-left: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--color-text) 38%, transparent);
+}
+
+/* The line between the two octave bands (under each C) — where your eye
+   finds its place when the roll shows more than one octave. */
+.roll-cell.seam {
+  border-bottom-color: var(--color-edge-strong);
 }
 
 .cell.on {
@@ -366,6 +356,48 @@ input[type="range"] {
 .note.selected {
   outline: 2px solid var(--color-text);
   outline-offset: 1px;
+  z-index: 1;
+}
+
+/* Shift/Ctrl-drag selection box. */
+.marquee {
+  position: absolute;
+  border: 1px solid var(--color-text);
+  background: color-mix(in srgb, var(--color-text) 10%, transparent);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* The velocity lane: one stem per note, height = how hard it hits. */
+.velocity-lane {
+  position: relative;
+  flex-shrink: 0;
+  background: var(--color-bg-soft);
+  background-image: linear-gradient(
+    to bottom,
+    transparent calc(50% - 0.5px),
+    color-mix(in srgb, var(--color-edge) 70%, transparent) 50%,
+    transparent calc(50% + 0.5px)
+  );
+}
+
+.velocity-lane.editable {
+  cursor: ns-resize;
+}
+
+.velocity-bar {
+  position: absolute;
+  bottom: 0;
+  width: 6px;
+  border-radius: 2px 2px 0 0;
+  background: var(--tc, var(--color-accent));
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.velocity-bar.selected {
+  opacity: 1;
+  box-shadow: 0 0 0 1px var(--color-text);
 }
 
 .note-handle {
@@ -479,6 +511,37 @@ input[type="range"] {
   position: sticky;
   top: 0;
   z-index: 2;
+}
+
+.tl-ruler {
+  cursor: pointer;
+}
+
+/* The loop brace on the ruler, and the shade it casts over the lanes.
+   Accent only while the loop is ON: a remembered-but-off region stays
+   visible in grey so you can see what L will bring back. */
+.tl-loop {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-text) 14%, transparent);
+  pointer-events: none;
+}
+
+.tl-loop.on {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.tl-loop-shade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+  pointer-events: none;
 }
 
 .tl-ruler-bar {

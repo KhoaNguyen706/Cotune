@@ -58,14 +58,15 @@ try {
   await page.getByRole("heading", { name: "My songs" }).waitFor();
 
   step("create a song");
-  // Two ways in (header button + the empty grid's dashed card) — either
+  // Two ways in (header button + the empty library's button) — either
   // opens the same modal; take whichever is first.
-  await page.getByRole("button", { name: "+ New song" }).first().click();
+  await page.getByRole("button", { name: "New song" }).first().click();
   await page.getByPlaceholder("Midnight Sketch").fill("Smoke Song");
   await page.getByRole("button", { name: "Create song" }).click();
 
-  step("open it");
-  await page.getByRole("link", { name: "Open Smoke Song", exact: true }).click();
+  step("land in it");
+  // Creating a song opens it — no second click to find what you just made.
+  await page.waitForURL(/\/songs\/[0-9a-f-]{36}$/);
 
   // The socket has to come up BEFORE we edit: this badge turning "live" is
   // the STOMP CONNECT round trip completing over the real handshake — the
@@ -76,8 +77,8 @@ try {
   step("build a beat and a lane");
   // The page opens on the arrangement; beats are built in the other view.
   await page.getByTitle("Build the beats").click();
-  await page.getByTitle("New beat").click();
-  await page.getByPlaceholder("808 Kick").fill("Kick");
+  await page.getByTitle("New empty beat").click();
+  await page.getByPlaceholder("Lane name").fill("Kick");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   // Select the lane (the roll draws into the SELECTED lane; don't rely on
   // any auto-selection behavior staying the way it happens to be today).

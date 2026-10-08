@@ -1,21 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, gql, rest } from "../api/client";
+import { AppNav } from "../ui/AppNav";
 import { beatColor } from "../ui/trackColors";
 import { coverFor } from "../ui/cover";
-import { Button, EditableName, ErrorBanner, Field, Skeleton, TextInput, Wordmark } from "../ui/kit";
-import {
-  BookIcon,
-  LibraryIcon,
-  ListIcon,
-  SearchIcon,
-  ShareIcon,
-  ShieldIcon,
-  SlidersIcon,
-} from "../ui/icons";
-import { AppShell, Canvas, Modal, NavItem, NavRail, Workspace } from "../ui/shell";
-import { SettingsModal } from "../ui/SettingsModal";
+import { Button, EditableName, ErrorBanner, Field, Skeleton, TextInput } from "../ui/kit";
+import { PlusIcon, SearchIcon } from "../ui/icons";
+import { AppShell, Canvas, Modal, Workspace } from "../ui/shell";
 import { ShareModal } from "../ui/ShareModal";
 import { canEditSong, type Song } from "../types";
 
@@ -83,19 +74,19 @@ function matching(songs: Song[], query: string): Song[] {
 }
 
 export function SongsPage() {
-  const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // The view is part of the URL (see AppNav), so the nav can link to it.
+  const view: View = params.get("view") === "shared" ? "shared" : "mine";
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<View>("mine");
   /** The search box. Not in the URL: a filter you typed is a glance, not a
    *  place — you don't bookmark it and you don't want Back to walk you out
    *  of it one letter at a time. */
   const [query, setQuery] = useState("");
 
   const [creating, setCreating] = useState(false); // modal open?
-  const [settingsOpen, setSettingsOpen] = useState(false);
   /**
    * The share sheet tracks a song ID, not a Song object. Holding the object
    * would freeze a copy: after an invite we re-query, `songs` gets a fresh
@@ -105,6 +96,9 @@ export function SongsPage() {
    * modal reading the same state everything else does.
    */
   const [sharingId, setSharingId] = useState<string | null>(null);
+  /** Same id-not-object rule for the two other per-card actions. */
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [bpm, setBpm] = useState(120);
   const [timeSignature, setTimeSignature] = useState("4/4");
@@ -131,20 +125,23 @@ export function SongsPage() {
   const mine = songs.filter((song) => song.myRole === "OWNER");
   const shared = songs.filter((song) => song.myRole !== "OWNER");
   const sharing = songs.find((song) => song.id === sharingId) ?? null;
+  const deleting = songs.find((song) => song.id === deletingId) ?? null;
   const visible = matching(view === "mine" ? mine : shared, query);
+  const count = view === "mine" ? mine.length : shared.length;
 
   async function onCreate(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await gql(CREATE_SONG, { input: { title, bpm, timeSignature } });
+      const data = await gql<{ createSong: { id: string } }>(CREATE_SONG, {
+        input: { title, bpm, timeSignature },
+      });
       setTitle("");
       setCreating(false);
-      // Re-query instead of hand-patching local state: one source of truth
-      // (the server), and we automatically see songs other collaborators
-      // created — a habit that matters once real-time editing arrives.
-      await refresh();
+      // You made a song to work on it: open it. Landing back on the list
+      // made every new song cost a second click to find.
+      navigate(`/songs/${data.createSong.id}`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to create song");
     } finally {
@@ -167,6 +164,7 @@ export function SongsPage() {
 
   async function onDelete(id: string) {
     setError(null);
+    setDeletingId(null);
     try {
       await gql(DELETE_SONG, { id });
       await refresh();
@@ -185,92 +183,20 @@ export function SongsPage() {
   return (
     <AppShell>
       <Workspace>
-        <NavRail
-          footer={
-            <>
-              {/* The account card: who am I, on what plan. Pinned to the
-                  bottom of the rail because identity is ambient — always
-                  available, never the thing you came here to do. */}
-              <div className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3">
-                <Avatar name={user?.displayName} />
-                <span className="min-w-0 leading-tight">
-                  <span className="block truncate text-sm font-bold">{user?.displayName}</span>
-                  {/* Mono, like every other piece of machine state in the
-                      designs — a plan name is a fact about the account, not
-                      prose. */}
-                  <span className="block font-mono text-[10.5px] text-muted">Free plan</span>
-                </span>
-              </div>
-              <button
-                onClick={logout}
-                className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-muted transition-colors hover:bg-surface-2/60 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-              >
-                Sign out
-              </button>
-            </>
-          }
-        >
-          <div className="mb-4 px-1 py-2">
-            <Wordmark />
-          </div>
+        <AppNav />
 
-          <NavItem
-            icon={<ListIcon className="h-[17px] w-[17px]" />}
-            label="My songs"
-            active={view === "mine"}
-            onClick={() => setView("mine")}
-          />
-          {/* No longer "soon": V10 added the collaborators table, so this is
-              a real destination. A sample library still isn't — it needs an
-              asset store — and it stays honestly inert rather than linking
-              to a blank page. */}
-          <NavItem
-            icon={<ShareIcon className="h-[17px] w-[17px]" />}
-            label="Shared with me"
-            active={view === "shared"}
-            onClick={() => setView("shared")}
-          />
-          <NavItem icon={<LibraryIcon className="h-[17px] w-[17px]" />} label="Library" soon />
-          {/* The beat-making reference — what the grid's numbers mean, and
-              what the AI was told before it writes a pattern. */}
-          <NavItem
-            icon={<BookIcon className="h-[17px] w-[17px]" />}
-            label="Handbook"
-            onClick={() => navigate("/handbook")}
-          />
-          {/* Admins get one extra destination: the AI-invite console. Gated
-              on role here for the affordance; the /admin route and the
-              mutations behind it enforce it server-side regardless. */}
-          {user?.role === "ADMIN" && (
-            <NavItem
-              icon={<ShieldIcon className="h-[17px] w-[17px]" />}
-              label="Admin"
-              onClick={() => navigate("/admin")}
-            />
-          )}
-          <NavItem
-            icon={<SlidersIcon className="h-[17px] w-[17px]" />}
-            label="Settings"
-            onClick={() => setSettingsOpen(true)}
-          />
-        </NavRail>
-
-        <Canvas className="p-8">
+        <Canvas className="p-8 max-md:p-4">
           <div className="mx-auto max-w-[1400px]">
-            <div className="mb-8 flex items-start justify-between gap-5 max-md:flex-col">
+            <div className="mb-6 flex items-end justify-between gap-4 max-md:flex-col max-md:items-stretch">
               <div>
-                <h1 className="text-3xl font-semibold tracking-[-0.02em]">
+                <h1 className="text-2xl font-semibold tracking-[-0.02em]">
                   {view === "mine" ? "My songs" : "Shared with me"}
                 </h1>
-                <p className="mt-1.5 text-sm text-muted">
-                  {loading
-                    ? "Loading…"
-                    : view === "mine"
-                      ? `${mine.length} song${mine.length === 1 ? "" : "s"} · autosaved to your account`
-                      : `${shared.length} song${shared.length === 1 ? "" : "s"} shared with you`}
+                <p className="mt-1 font-mono text-xs text-muted">
+                  {loading ? "Loading…" : `${count} song${count === 1 ? "" : "s"}`}
                 </p>
               </div>
-              <div className="flex items-center gap-3 max-md:w-full">
+              <div className="flex items-center gap-2">
                 <label className="relative flex items-center max-md:flex-1">
                   <SearchIcon className="pointer-events-none absolute left-3 h-[15px] w-[15px] text-muted" />
                   <TextInput
@@ -279,36 +205,54 @@ export function SongsPage() {
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search songs and beats"
                     aria-label="Search songs and beats"
-                    className="w-[230px] pl-9 max-md:w-full"
+                    className="w-[230px] py-1.5 pl-9 text-sm max-md:w-full"
                   />
                 </label>
                 {view === "mine" && (
-                  <Button className="shrink-0 shadow-glow" onClick={() => setCreating(true)}>
-                    + New song
+                  <Button className="shrink-0" onClick={() => setCreating(true)}>
+                    <PlusIcon className="h-4 w-4" />
+                    New song
                   </Button>
                 )}
               </div>
             </div>
 
-            {error && <ErrorBanner>{error}</ErrorBanner>}
+            {error && <ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner>}
 
             {loading ? (
               // Skeletons mirror the CARD shape (art + two text lines) — no
               // spinner, no layout shift when the real grid lands.
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-4">
                 {[0, 1, 2].map((i) => (
-                  <div key={i} className="overflow-hidden rounded-2xl border border-edge">
-                    <Skeleton className="h-32 w-full rounded-none" />
+                  <div key={i} className="overflow-hidden rounded-xl border border-edge">
+                    <Skeleton className="h-20 w-full rounded-none" />
                     <div className="flex flex-col gap-2 p-4">
                       <Skeleton className="h-5 w-1/2" />
                       <Skeleton className="h-3 w-2/3" />
-                      <Skeleton className="h-6 w-20" />
                     </div>
                   </div>
                 ))}
               </div>
+            ) : visible.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-edge-strong py-16 text-center">
+                <p className="font-semibold">
+                  {query.trim()
+                    ? `Nothing matches “${query.trim()}”`
+                    : view === "mine"
+                      ? "No songs yet"
+                      : "Nothing shared with you yet"}
+                </p>
+                {!query.trim() && view === "mine" && (
+                  <Button onClick={() => setCreating(true)}>
+                    <PlusIcon className="h-4 w-4" />
+                    New song
+                  </Button>
+                )}
+              </div>
             ) : (
-              <ul className="grid list-none grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6 p-0">
+              // min(280px, 100%): on a phone the column is narrower than the
+              // card minimum, and a bare 280px overflowed the screen.
+              <ul className="grid list-none grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-4 p-0">
                 {visible.map((song) => {
                   // Lay the song's beats end to end and collect every note's
                   // absolute step — that histogram IS the card's waveform.
@@ -329,89 +273,72 @@ export function SongsPage() {
                   const isOwner = song.myRole === "OWNER";
                   const editable = canEditSong(song);
                   const trackCount = song.beats.reduce((n, b) => n + b.tracks.length, 0);
+                  const action =
+                    "cursor-pointer rounded px-1.5 py-0.5 text-xs font-medium text-muted transition-colors duration-150 " +
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
                   return (
                     <li
                       key={song.id}
-                      className="group relative overflow-hidden rounded-2xl border border-edge bg-surface transition-[transform,border-color] duration-200 hover:-translate-y-1 hover:border-edge-strong"
+                      className="group relative rounded-xl border border-edge bg-surface transition-colors duration-150 hover:border-edge-strong"
                     >
-                      {/* Stretched link: the WHOLE card opens the song — a
-                          300px target, not a 50px text link. Interactive
-                          children sit above it via z-index. */}
+                      {/* Stretched link: the WHOLE card opens the song.
+                          Interactive children sit above it via z-index —
+                          and the title is NOT one of them: it used to be a
+                          double-click rename field at z-20, which made a
+                          click on the most obvious target do nothing. */}
                       <Link
                         to={`/songs/${song.id}`}
-                        className="absolute inset-0 z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="absolute inset-0 z-10 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         aria-label={`Open ${song.title}`}
                       />
 
-                      {/* -- waveform art --------------------------------
-                          The art is `relative` but NOT overflow-hidden: the
-                          play FAB below deliberately hangs over its bottom
-                          edge, and clipping here would slice it in half.
-                          The bars get their own clipped box instead. */}
-                      <div className="relative h-32" style={{ background: cover.backdrop }}>
-                        <div className="flex h-full items-center gap-[2px] overflow-hidden px-5">
-                          {cover.bars.map((height, i) => (
-                            <i
-                              key={i}
-                              // flex-1: the bars DIVIDE the card's width, so
-                              // the waveform spans it edge to edge at any
-                              // card size instead of huddling in the middle.
-                              className="min-w-0 flex-1 rounded-full"
-                              style={{
-                                height: `${height}%`,
-                                background: cover.accent,
-                                // Falloff at the edges so the waveform reads
-                                // as a clip, not a wall of bars.
-                                opacity: 0.45 + 0.55 * Math.sin((i / cover.bars.length) * Math.PI),
-                              }}
-                            />
-                          ))}
-                        </div>
-
-                        {/* Play FAB — opens the song in the editor. z-20 so
-                            it beats the stretched link and keeps its own
-                            label for screen readers. */}
-                        <button
-                          className="absolute -bottom-5 right-5 z-20 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-accent pl-0.5 text-sm text-bg shadow-glow transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-                          title={`Open ${song.title} in the editor`}
-                          aria-label={`Open ${song.title} in the editor`}
-                          onClick={() => navigate(`/songs/${song.id}`)}
-                        >
-                          ▶
-                        </button>
+                      {/* Note density over the song's length (ui/cover.ts).
+                          Flat and grey when the song has no notes — an
+                          invented waveform for an empty song would be
+                          decoration posing as data. */}
+                      <div
+                        className="flex h-20 items-end gap-[2px] overflow-hidden rounded-t-xl px-4 pt-4"
+                        style={{ background: cover.backdrop }}
+                      >
+                        {cover.bars.map((height, i) => (
+                          <i
+                            key={i}
+                            className="min-w-0 flex-1 rounded-t-sm"
+                            style={{
+                              height: `${height}%`,
+                              background: cover.fromNotes ? cover.accent : "var(--color-edge-strong)",
+                            }}
+                          />
+                        ))}
                       </div>
 
-                      {/* -- body --------------------------------------- */}
-                      <div className="p-5 pt-6">
-                        <div className="flex items-center gap-2">
-                          <strong className="min-w-0 truncate font-semibold tracking-[-0.01em]">
-                            {editable ? (
-                              // z-20: sits above the stretched link so
-                              // double-click-to-rename still reaches it.
-                              <span className="relative z-20">
-                                <EditableName
-                                  value={song.title}
-                                  maxLength={120}
-                                  onRename={(next) => onRename(song.id, next)}
-                                />
-                              </span>
-                            ) : (
-                              song.title
-                            )}
-                          </strong>
-                          <RoleBadge role={song.myRole} />
+                      <div className="p-4">
+                        <div className="flex min-w-0 items-center gap-2">
+                          {renamingId === song.id ? (
+                            <span className="relative z-20 min-w-0">
+                              <EditableName
+                                startEditing
+                                value={song.title}
+                                maxLength={120}
+                                className="font-semibold"
+                                onRename={(next) => onRename(song.id, next)}
+                                onDone={() => setRenamingId(null)}
+                              />
+                            </span>
+                          ) : (
+                            <strong className="min-w-0 truncate font-semibold">{song.title}</strong>
+                          )}
+                          {/* Every song in "My songs" is yours; the badge
+                              only carries information on shared ones. */}
+                          {!isOwner && <RoleBadge role={song.myRole} />}
                         </div>
 
-                        {/* Mono: this line is four numbers and a time
-                            signature. Proportional digits make "124 BPM ·
-                            4/4" read as a sentence; tabular ones make it
-                            read as a spec, which is what it is. */}
-                        <p className="mt-2 font-mono text-xs text-muted">
-                          {song.bpm} BPM · {song.timeSignature} · {trackCount} track
+                        <p className="mt-1 font-mono text-xs text-muted">
+                          {song.bpm} BPM · {song.timeSignature} · {trackCount} lane
                           {trackCount === 1 ? "" : "s"}
                         </p>
 
-                        <div className="mt-4 flex items-center gap-2">
+                        <div className="mt-3 flex h-6 items-center gap-1.5">
                           {[...song.beats]
                             // The API contract says: sort by position, never
                             // assume contiguity (gaps appear after deletes).
@@ -422,57 +349,49 @@ export function SongsPage() {
                               return (
                                 <span
                                   key={beat.id}
-                                  className="rounded-md px-2 py-1 text-xs font-bold"
+                                  className="max-w-[7rem] truncate rounded px-1.5 py-0.5 text-[11px] font-semibold"
                                   style={{
                                     color: tint,
-                                    background: `color-mix(in srgb, ${tint} 14%, transparent)`,
-                                    border: `1px solid color-mix(in srgb, ${tint} 35%, transparent)`,
+                                    background: `color-mix(in srgb, ${tint} 12%, transparent)`,
                                   }}
                                 >
                                   {beat.name}
                                 </span>
                               );
                             })}
-                          {song.beats.length === 0 && (
-                            <span className="text-xs text-muted">no beats yet</span>
-                          )}
 
-                          {/* The right-hand slot holds two things that both
-                              want the same corner, so they take turns: at
-                              rest it shows WHO is on the song (the design's
-                              idea), and on hover it becomes what you can DO
-                              about it. The actions were hover-only before
-                              this redesign too — the avatars just gave the
-                              resting state something true to say.
-
-                              Sharing and deleting are OWNER rights — an
-                              editor has neither (see SongAccess). The UI
-                              mirrors the server rule so nobody meets a button
-                              guaranteed to 403; @PreAuthorize is still the
-                              only thing that decides. */}
+                          {/* At rest the corner says WHO is on the song; on
+                              hover (or always, on touch screens, which have
+                              no hover) it becomes what you can DO. Share and
+                              delete are OWNER rights, rename is any editor's
+                              — mirroring the server rule so nobody meets a
+                              button guaranteed to 403. */}
                           <div className="relative ml-auto flex shrink-0 items-center">
                             <span
                               className={
                                 "transition-opacity duration-150 " +
-                                (isOwner ? "group-hover:opacity-0 group-focus-within:opacity-0" : "")
+                                (editable
+                                  ? "group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:hidden"
+                                  : "")
                               }
                             >
                               <Collaborators people={song.collaborators} />
                             </span>
-                            {isOwner && (
-                              <span className="absolute right-0 z-20 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-                                <button
-                                  className="cursor-pointer rounded px-1 text-sm font-medium text-muted transition-colors duration-150 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                                  onClick={() => setSharingId(song.id)}
-                                >
-                                  Share
+                            {editable && (
+                              <span className="absolute right-0 z-20 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:static pointer-coarse:opacity-100">
+                                <button className={action + " hover:text-text"} onClick={() => setRenamingId(song.id)}>
+                                  Rename
                                 </button>
-                                <button
-                                  className="cursor-pointer rounded px-1 text-sm font-medium text-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                                  onClick={() => void onDelete(song.id)}
-                                >
-                                  Delete
-                                </button>
+                                {isOwner && (
+                                  <>
+                                    <button className={action + " hover:text-text"} onClick={() => setSharingId(song.id)}>
+                                      Share
+                                    </button>
+                                    <button className={action + " hover:text-danger"} onClick={() => setDeletingId(song.id)}>
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
                               </span>
                             )}
                           </div>
@@ -481,52 +400,11 @@ export function SongsPage() {
                     </li>
                   );
                 })}
-
-                {/* The create affordance lives IN the grid too, where your eye
-                    already is after scanning the songs — but only on YOUR
-                    songs, and not while you are searching: "New song" as the
-                    lone answer to a query that matched nothing reads as a
-                    result, and clicking it is never what you meant. */}
-                {view === "mine" && !query.trim() && (
-                  <li>
-                    <button
-                      onClick={() => setCreating(true)}
-                      className="flex h-full min-h-[240px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-edge-strong text-muted transition-colors duration-150 hover:border-accent hover:bg-surface hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      <span className="text-3xl font-light">+</span>
-                      <span className="text-sm font-medium">New song</span>
-                    </button>
-                  </li>
-                )}
-
-                {/* A search with no hits must say so. Without this the grid
-                    just empties, which looks identical to "your songs are
-                    gone" — the scariest possible reading of a filter. */}
-                {query.trim() && visible.length === 0 && (
-                  <li className="col-span-full rounded-2xl border border-dashed border-edge p-10 text-center">
-                    <p className="text-sm font-semibold">No matches for “{query.trim()}”</p>
-                    <p className="mt-1 text-sm text-muted">
-                      Searches song titles and beat names in{" "}
-                      {view === "mine" ? "your songs" : "songs shared with you"}.
-                    </p>
-                  </li>
-                )}
-
-                {!query.trim() && view === "shared" && shared.length === 0 && (
-                  <li className="col-span-full rounded-2xl border border-dashed border-edge p-10 text-center">
-                    <p className="text-sm font-semibold">Nothing shared with you yet</p>
-                    <p className="mt-1 text-sm text-muted">
-                      When someone invites you to a song, it shows up here.
-                    </p>
-                  </li>
-                )}
               </ul>
             )}
           </div>
         </Canvas>
       </Workspace>
-
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
 
       {sharing && (
         <ShareModal
@@ -537,6 +415,28 @@ export function SongsPage() {
           // straight out of the refreshed list (see sharingId above).
           onChanged={refresh}
         />
+      )}
+
+      {/* Deleting a song takes every beat, lane, clip and upload with it, for
+          everyone it is shared with, and the server keeps no copy. That is
+          the case that earns a question. */}
+      {deleting && (
+        <Modal title="Delete this song?" onClose={() => setDeletingId(null)}>
+          <p className="text-sm text-muted">
+            <strong className="text-text">{deleting.title}</strong> and all of its beats, clips and
+            audio will be deleted
+            {deleting.collaborators.length > 0 ? " for everyone it's shared with" : ""}. This can't be
+            undone.
+          </p>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDeletingId(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => void onDelete(deleting.id)}>
+              Delete song
+            </Button>
+          </div>
+        </Modal>
       )}
 
       {creating && (
@@ -589,22 +489,6 @@ export function SongsPage() {
         </Modal>
       )}
     </AppShell>
-  );
-}
-
-/** Someone's initials in a tile. The account card's version of a face,
- *  and the atom the collaborator stack below is built from. */
-function Avatar({ name, className }: { name?: string | null; className?: string }) {
-  return (
-    <span
-      className={
-        "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg " +
-        "bg-accent/15 text-[13px] font-semibold text-accent " +
-        (className ?? "")
-      }
-    >
-      {name?.trim()?.[0]?.toUpperCase() ?? "?"}
-    </span>
   );
 }
 

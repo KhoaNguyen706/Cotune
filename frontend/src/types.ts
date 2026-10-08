@@ -67,7 +67,7 @@ export type AiAction =
 export interface Track
   extends Pick<
     gql.Track,
-    "id" | "name" | "instrument" | "position" | "volume" | "pan" | "version"
+    "id" | "name" | "instrument" | "position" | "volume" | "pan" | "reverb" | "delay" | "version"
   > {
   pattern: Step[];
 }
@@ -75,7 +75,7 @@ export interface Track
 /** A named multi-instrument pattern group — "Beat 1", "Beat 2" — the
  *  FL-Studio pattern model. The unit the arrangement places on the
  *  timeline: one beat clip plays ALL of the beat's lanes together. */
-export interface Beat extends Pick<gql.Beat, "id" | "name" | "position" | "bars"> {
+export interface Beat extends Pick<gql.Beat, "id" | "name" | "position" | "bars" | "swing"> {
   tracks: Track[];
 }
 
@@ -143,11 +143,14 @@ export interface Song
    interfaces, so the same scheduler plays both the editor and this page. */
 
 export interface ListenTrack
-  extends Pick<gql.ListenTrack, "id" | "name" | "instrument" | "position" | "volume" | "pan"> {
+  extends Pick<
+    gql.ListenTrack,
+    "id" | "name" | "instrument" | "position" | "volume" | "pan" | "reverb" | "delay"
+  > {
   pattern: Step[];
 }
 
-export interface ListenBeat extends Pick<gql.ListenBeat, "id" | "name" | "position" | "bars"> {
+export interface ListenBeat extends Pick<gql.ListenBeat, "id" | "name" | "position" | "bars" | "swing"> {
   tracks: ListenTrack[];
 }
 

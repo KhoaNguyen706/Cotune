@@ -54,6 +54,7 @@ export type Beat = {
   name: Scalars['String']['output'];
   position: Scalars['Int']['output'];
   songId: Scalars['ID']['output'];
+  swing: Scalars['Float']['output'];
   tracks: Array<Track>;
   updatedAt: Scalars['DateTime']['output'];
   version: Scalars['Int']['output'];
@@ -127,6 +128,7 @@ export type ListenBeat = {
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
   position: Scalars['Int']['output'];
+  swing: Scalars['Float']['output'];
   tracks: Array<ListenTrack>;
 };
 
@@ -150,12 +152,14 @@ export type ListenSong = {
 };
 
 export type ListenTrack = {
+  delay: Scalars['Float']['output'];
   id: Scalars['ID']['output'];
   instrument: Instrument;
   name: Scalars['String']['output'];
   pan: Scalars['Float']['output'];
   pattern: Array<Step>;
   position: Scalars['Int']['output'];
+  reverb: Scalars['Float']['output'];
   volume: Scalars['Float']['output'];
 };
 
@@ -403,12 +407,14 @@ export type StepInput = {
 export type Track = {
   beatId: Scalars['ID']['output'];
   createdAt: Scalars['DateTime']['output'];
+  delay: Scalars['Float']['output'];
   id: Scalars['ID']['output'];
   instrument: Instrument;
   name: Scalars['String']['output'];
   pan: Scalars['Float']['output'];
   pattern: Array<Step>;
   position: Scalars['Int']['output'];
+  reverb: Scalars['Float']['output'];
   updatedAt: Scalars['DateTime']['output'];
   version: Scalars['Int']['output'];
   volume: Scalars['Float']['output'];

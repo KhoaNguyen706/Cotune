@@ -3,9 +3,10 @@ import type { Beat, Track } from "../types";
 import type { Peer } from "../realtime/socket";
 import { beatColor, colorFor } from "../ui/trackColors";
 import { INSTRUMENTS, instrumentLabel } from "../audio/instrumentList";
-import { Button, EditableName, Select, TextInput } from "../ui/kit";
+import type { Mix } from "../audio/instruments";
+import { Button, EditableName, RangeField, Select, TextInput } from "../ui/kit";
 import { IconButton, SidebarSection } from "../ui/shell";
-import { LibraryIcon } from "../ui/icons";
+import { CloseIcon, LibraryIcon, PlusIcon } from "../ui/icons";
 import { PeerDots } from "./PeerDots";
 
 interface BeatBrowserSidebarProps {
@@ -29,7 +30,14 @@ interface BeatBrowserSidebarProps {
   onToggleMute: (trackId: string) => void;
   onToggleSolo: (trackId: string) => void;
   onAddTrack: (name: string, instrument: string) => Promise<void>;
+  /** Mid-drag: local state + live audio, no server traffic. */
+  onMixChange: (mix: Partial<Mix>) => void;
+  /** Gesture end: persist the final value — one PATCH per drag. */
+  onMixCommit: (mix: Partial<Mix>) => void;
 }
+
+const percent = (value: number) => `${value}`;
+const panLabel = (value: number) => (value === 0 ? "C" : value < 0 ? `L${-value}` : `R${value}`);
 
 const mixerButton =
   "rounded border px-1.5 py-0.5 text-[0.62rem] font-bold transition-colors duration-150 cursor-pointer " +
@@ -58,7 +66,10 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
     onToggleMute,
     onToggleSolo,
     onAddTrack,
+    onMixChange,
+    onMixCommit,
   } = props;
+  const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? null;
   const [trackName, setTrackName] = useState("");
   const [instrument, setInstrument] = useState("DRUMS");
 
@@ -81,18 +92,14 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
                 <LibraryIcon className="h-[15px] w-[15px]" />
               </IconButton>
               <IconButton onClick={onAddBeat} title="New empty beat">
-                +
+                <PlusIcon className="h-[15px] w-[15px]" />
               </IconButton>
             </div>
           ) : undefined
         }
       >
         <div className="flex flex-col gap-1">
-          {beats.length === 0 && (
-            <p className="text-xs text-muted">
-              A beat is a full multi-instrument groove. Start from a preset, or add an empty one.
-            </p>
-          )}
+          {beats.length === 0 && <p className="text-xs text-muted">No beats yet.</p>}
           {beats.map((beat) => (
             <div
               key={beat.id}
@@ -123,14 +130,15 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
               </span>
               {canEdit && (
                 <button
-                  className="shrink-0 rounded text-muted opacity-0 transition-opacity hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover:opacity-100"
+                  className="shrink-0 rounded text-muted opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover:opacity-100 pointer-coarse:opacity-100"
                   title="Delete beat (removes its lanes and timeline clips)"
+                  aria-label={`Delete ${beat.name}`}
                   onClick={(event) => {
                     event.stopPropagation();
                     onRemoveBeat(beat.id);
                   }}
                 >
-                  ×
+                  <CloseIcon className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
@@ -141,9 +149,7 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
       {selectedBeat && (
         <SidebarSection title={`${selectedBeat.name} · lanes`}>
           <div className="flex flex-col gap-1">
-            {tracks.length === 0 && (
-              <p className="text-xs text-muted">No lanes yet — add drums below, then draw a kick in the roll.</p>
-            )}
+            {tracks.length === 0 && <p className="text-xs text-muted">No lanes yet.</p>}
             {tracks.map((track) => {
               const isMuted = muted.has(track.id);
               const isSolo = soloed.has(track.id);
@@ -201,12 +207,13 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
                     <button
                       className="shrink-0 rounded px-0.5 text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                       title="Delete lane"
+                      aria-label={`Delete ${track.name}`}
                       onClick={(event) => {
                         event.stopPropagation();
                         onRemoveTrack(track.id);
                       }}
                     >
-                      ×
+                      <CloseIcon className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </div>
@@ -217,16 +224,16 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
           {canEdit && (
             <form onSubmit={(event) => void submitTrack(event)} className="mt-2 flex flex-col gap-2">
               <TextInput
-                className="!py-1 text-xs"
+                className="!py-1 !text-xs"
                 value={trackName}
                 onChange={(event) => setTrackName(event.target.value)}
-                placeholder="808 Kick"
+                placeholder="Lane name"
                 required
                 maxLength={80}
               />
               <div className="flex gap-2">
                 <Select
-                  className="!py-1 text-xs"
+                  className="!py-1 !text-xs"
                   value={instrument}
                   onChange={(event) => setInstrument(event.target.value)}
                 >
@@ -240,6 +247,64 @@ export function BeatBrowserSidebar(props: BeatBrowserSidebarProps) {
               </div>
             </form>
           )}
+        </SidebarSection>
+      )}
+
+      {/* The selected lane's channel strip. Everything here is part of the
+          SONG (V14 + V17): saved on release, heard by collaborators and by
+          listeners. Mute and solo stay up in the lane row — they are
+          audition tools, and they are not saved. */}
+      {selectedTrack && (
+        <SidebarSection title={`${selectedTrack.name} · mix`}>
+          <div className="flex flex-col gap-2">
+            <RangeField
+              label="Volume"
+              value={Math.round(selectedTrack.volume * 100)}
+              min={0}
+              max={100}
+              format={percent}
+              disabled={!canEdit}
+              resetTo={100}
+              onChange={(value) => onMixChange({ volume: value / 100 })}
+              onCommit={(value) => onMixCommit({ volume: value / 100 })}
+            />
+            <RangeField
+              label="Pan"
+              value={Math.round(selectedTrack.pan * 100)}
+              min={-100}
+              max={100}
+              format={panLabel}
+              disabled={!canEdit}
+              resetTo={0}
+              title="Double-click to center"
+              onChange={(value) => onMixChange({ pan: value / 100 })}
+              onCommit={(value) => onMixCommit({ pan: value / 100 })}
+            />
+            <RangeField
+              label="Reverb"
+              value={Math.round(selectedTrack.reverb * 100)}
+              min={0}
+              max={100}
+              format={percent}
+              disabled={!canEdit}
+              resetTo={0}
+              title="How much of this lane goes to the song's shared reverb"
+              onChange={(value) => onMixChange({ reverb: value / 100 })}
+              onCommit={(value) => onMixCommit({ reverb: value / 100 })}
+            />
+            <RangeField
+              label="Delay"
+              value={Math.round(selectedTrack.delay * 100)}
+              min={0}
+              max={100}
+              format={percent}
+              disabled={!canEdit}
+              resetTo={0}
+              title="How much of this lane goes to the song's shared delay (dotted eighths, in time)"
+              onChange={(value) => onMixChange({ delay: value / 100 })}
+              onCommit={(value) => onMixCommit({ delay: value / 100 })}
+            />
+          </div>
         </SidebarSection>
       )}
     </>

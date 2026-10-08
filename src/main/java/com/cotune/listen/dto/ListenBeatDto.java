@@ -14,6 +14,7 @@ public record ListenBeatDto(
         String name,
         int position,
         int bars,
+        double swing,
         List<ListenTrackDto> tracks
 ) {
 }

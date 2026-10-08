@@ -1,14 +1,8 @@
 /**
- * Deterministic cover art: every song gets a unique WAVEFORM derived from
- * its id. No uploads, no storage, no empty-image placeholders — and the
- * same song draws the same waveform forever, on every device, because the
- * id is the only input.
- *
- * Why a waveform rather than a gradient: it says "audio" at a glance, and
- * the bar heights give each card a silhouette you recognize before you've
- * read the title — the same pre-attentive trick as instrument colors
- * (trackColors.ts). It is ART, not data: it does not depict the song's
- * actual audio, which doesn't exist until the arrangement is rendered.
+ * Cover art for a song card: the song's note density over its length, drawn
+ * as bars — a busy chorus is a tall band, an empty stretch a flat one. The
+ * id only picks the HUE, deterministically, so a song keeps its colour on
+ * every device.
  */
 
 /** FNV-1a: a tiny, well-distributed string hash. Any decent hash works;
@@ -20,20 +14,6 @@ function hash(input: string): number {
     h = Math.imul(h, 16777619);
   }
   return h >>> 0; // force unsigned — bit ops in JS yield signed int32
-}
-
-/** Mulberry32: a seeded PRNG. Math.random() would give a DIFFERENT
- *  waveform on every render (and every reload) — the id must be the only
- *  source of randomness, so we carry the seed forward explicitly. */
-function seeded(seed: number): () => number {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 export interface Cover {
@@ -58,8 +38,8 @@ export interface CoverSource {
 }
 
 /**
- * @param id     the song id — the only input for color, and for the shape
- *               when the song has no notes yet.
+ * @param id     the song id — the only input for colour.
+ *
  * @param source the song's actual notes. When present the waveform is a
  *               real HISTOGRAM of note density over the song's length, so
  *               the card genuinely visualizes the music: a busy chorus is a
@@ -69,7 +49,6 @@ export interface CoverSource {
  */
 export function coverFor(id: string, source?: CoverSource): Cover {
   const h = hash(id);
-  const rand = seeded(h);
   const hue = h % 360;
 
   /**
@@ -116,14 +95,12 @@ export function coverFor(id: string, source?: CoverSource): Cover {
     };
   }
 
-  // No notes yet: a seeded placeholder. Still deterministic — the same empty
-  // song looks the same on every device — but honestly decorative.
+  // No notes yet: a flat line. This used to be a seeded, invented waveform —
+  // which made an empty song look exactly like a busy one, i.e. the card
+  // lied about the one thing it exists to show.
   return {
     ...palette,
     fromNotes: false,
-    bars: Array.from({ length: BAR_COUNT }, (_, i) => {
-      const arc = Math.sin((i / BAR_COUNT) * Math.PI * 2 + (h % 10)) * 0.25 + 0.6;
-      return Math.round(Math.max(18, Math.min(100, (arc + rand() * 0.45 - 0.15) * 100)));
-    }),
+    bars: new Array<number>(BAR_COUNT).fill(6),
   };
 }

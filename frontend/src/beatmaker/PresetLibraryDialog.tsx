@@ -35,11 +35,11 @@ export function PresetLibraryDialog({
 
   return (
     <Modal title="Preset beats" onClose={busy ? () => {} : onClose}>
+      {/* One line of why: the shared scale is the non-obvious fact, and the
+          reason any two presets can be layered. */}
       <p className="text-sm text-muted">
-        Finished parts to build a song out of, all in the same five-note{" "}
-        <strong className="text-text">ngũ cung</strong> scale — so any two of them stack. Insert one
-        and it becomes an ordinary beat: edit it, then drop it on the timeline as many times as the
-        song needs.
+        All in the five-note <strong className="text-text">ngũ cung</strong> scale, so any two stack.
+        Each inserts as a new, editable beat.
       </p>
 
       {error && (
@@ -48,7 +48,7 @@ export function PresetLibraryDialog({
         </div>
       )}
 
-      <div className="mt-4 flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
+      <div className="mt-4 flex min-h-0 flex-col gap-2 overflow-y-auto pr-1">
         {BEAT_PRESETS.map((preset) => {
           const thisOne = inserting === preset.id;
           // Only worth mentioning when it would actually sound wrong —
@@ -57,7 +57,8 @@ export function PresetLibraryDialog({
           return (
             <div
               key={preset.id}
-              className="rounded-lg border border-edge bg-surface px-3 py-2.5 transition-colors duration-150 hover:border-edge-strong"
+              title={preset.note}
+              className="rounded-lg border border-edge bg-bg-soft px-3 py-2.5 transition-colors duration-150 hover:border-edge-strong"
             >
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
@@ -68,7 +69,7 @@ export function PresetLibraryDialog({
                   </div>
                   <p className="mt-1 text-[0.68rem] tabular-nums text-muted">
                     {preset.bars} bar{preset.bars > 1 ? "s" : ""} · {preset.lanes.length} lanes ·{" "}
-                    {noteCount(preset)} notes · best around {preset.bpm} BPM
+                    {noteCount(preset)} notes · {preset.bpm} BPM
                     {/* Amber, not danger: it's worth noticing, not a failure. */}
                     {offTempo && <span className="text-solo"> (song is {bpm})</span>}
                   </p>
@@ -83,17 +84,10 @@ export function PresetLibraryDialog({
                   {thisOne ? <Spinner className="h-3.5 w-3.5" /> : "Insert"}
                 </Button>
               </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted">{preset.note}</p>
             </div>
           );
         })}
       </div>
-
-      <p className="mt-4 text-[0.68rem] leading-relaxed text-muted">
-        These change the notes, not the instruments — what makes them sound Vietnamese is the scale
-        and the rhythm, which survive being played on the synths the app already has. Inserting
-        never changes the song's tempo; the suggestions above are yours to follow or ignore.
-      </p>
 
       <div className="mt-4 flex justify-end">
         <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>

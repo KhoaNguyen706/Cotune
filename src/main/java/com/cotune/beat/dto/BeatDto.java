@@ -9,6 +9,7 @@ public record BeatDto(
         String name,
         int position,
         int bars,
+        double swing,
         long version,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt

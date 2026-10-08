@@ -15,6 +15,8 @@ public record ListenTrackDto(
         // The lane's mix — a listener must hear the song the way its
         // makers balanced it, so this is playback-shaped data, not a leak.
         double volume,
-        double pan
+        double pan,
+        double reverb,
+        double delay
 ) {
 }

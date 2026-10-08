@@ -1,8 +1,6 @@
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
-import { Card, Chip, Wordmark } from "../ui/kit";
-import { BookIcon, ListIcon, ShieldIcon } from "../ui/icons";
-import { AppShell, Canvas, NavItem, NavRail, Workspace } from "../ui/shell";
+import { AppNav } from "../ui/AppNav";
+import { Card, Chip } from "../ui/kit";
+import { AppShell, Canvas, Workspace } from "../ui/shell";
 
 /**
  * The beat-making reference — what the numbers on the grid actually mean,
@@ -21,56 +19,33 @@ import { AppShell, Canvas, NavItem, NavRail, Workspace } from "../ui/shell";
  * A static page on purpose: no query, no props, no loading state. It is a
  * reference, and a reference that can fail to load is worse than a heading.
  */
+const SHORTCUTS: [string, string][] = [
+  ["Space", "Play / stop"],
+  ["Ctrl+Z · Ctrl+Shift+Z", "Undo · redo note edits"],
+  ["M", "Metronome on / off"],
+  ["L", "Loop on / off (Arrange) — drag across the ruler to set the range"],
+  ["Click · drag right", "Draw a note · stretch it as you drag"],
+  ["Drag a note", "Move it — or the whole selection, if it is selected"],
+  ["Right-click", "Delete the note (or the selection it belongs to)"],
+  ["Shift-drag · Ctrl-drag", "Box-select (Shift adds to the selection)"],
+  ["Shift-click", "Add or remove one note from the selection"],
+  ["Ctrl+A", "Select every note in the lane"],
+  ["Ctrl+C · Ctrl+X · Ctrl+V", "Copy · cut · paste at the mouse (or right after the copy)"],
+  ["Ctrl+D", "Duplicate the selection right after itself"],
+  ["← →  ·  Shift+← →", "Nudge a step · a beat"],
+  ["↑ ↓  ·  Shift+↑ ↓", "Transpose a semitone · an octave"],
+  ["Delete · Esc", "Delete the selection · clear it"],
+  ["Velocity lane", "Press and sweep up or down to set how hard notes hit"],
+];
+
 export function HandbookPage() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
 
   return (
     <AppShell>
       <Workspace>
-        <NavRail
-          footer={
-            <>
-              <div className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3">
-                <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-accent/15 text-[13px] font-semibold text-accent">
-                  {user?.displayName?.[0]?.toUpperCase() ?? "?"}
-                </span>
-                <span className="min-w-0 leading-tight">
-                  <span className="block truncate text-sm font-bold">{user?.displayName}</span>
-                  <span className="block font-mono text-[10.5px] text-muted">
-                    {user?.role === "ADMIN" ? "Admin" : "Producer"}
-                  </span>
-                </span>
-              </div>
-              <button
-                onClick={logout}
-                className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-muted transition-colors hover:bg-surface-2/60 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-              >
-                Sign out
-              </button>
-            </>
-          }
-        >
-          <div className="mb-4 px-1 py-2">
-            <Wordmark />
-          </div>
+        <AppNav />
 
-          <NavItem
-            icon={<ListIcon className="h-[17px] w-[17px]" />}
-            label="My songs"
-            onClick={() => navigate("/songs")}
-          />
-          <NavItem icon={<BookIcon className="h-[17px] w-[17px]" />} label="Handbook" active />
-          {user?.role === "ADMIN" && (
-            <NavItem
-              icon={<ShieldIcon className="h-[17px] w-[17px]" />}
-              label="Admin"
-              onClick={() => navigate("/admin")}
-            />
-          )}
-        </NavRail>
-
-        <Canvas className="p-8">
+        <Canvas className="p-8 max-md:p-4">
           <div className="mx-auto max-w-3xl">
             <div className="mb-8">
               <h1 className="text-3xl font-semibold tracking-[-0.02em]">Beat handbook</h1>
@@ -286,6 +261,22 @@ export function HandbookPage() {
                     .
                   </li>
                 </ul>
+              </Card>
+
+              {/* The editor's only other place to discover these is a tooltip
+                  on the grid; this is the full list. */}
+              <Card>
+                <h2 className="text-lg font-bold tracking-tight">Keys and gestures</h2>
+                <table className="mt-4 w-full text-left text-sm">
+                  <tbody>
+                    {SHORTCUTS.map(([keys, action]) => (
+                      <tr key={keys} className="border-b border-edge/50 last:border-0">
+                        <td className="w-48 py-2 pr-4 font-mono text-[13px] text-text">{keys}</td>
+                        <td className="py-2 text-muted">{action}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </Card>
             </div>
           </div>

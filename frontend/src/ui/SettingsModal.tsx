@@ -110,6 +110,13 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             onChange={(autoSave) => settings.update({ autoSave })}
           />
         </Row>
+        <Row title="Count-in" hint="Play one bar of clicks before playback starts.">
+          <Toggle
+            label="Count-in"
+            checked={settings.countIn}
+            onChange={(countIn) => settings.update({ countIn })}
+          />
+        </Row>
 
         <hr className="my-2 border-edge" />
         <h3 className="mb-1 mt-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-muted">

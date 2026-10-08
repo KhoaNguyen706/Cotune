@@ -9,9 +9,10 @@ import { SettingsModal } from "../ui/SettingsModal";
 import { ErrorBanner, Skeleton } from "../ui/kit";
 import { AppShell, Canvas, Sidebar, TopBar, Workspace } from "../ui/shell";
 import { canEditSong } from "../types";
-import type { AiAction, Beat, SongEvent } from "../types";
+import type { AiAction, Beat, SongEvent, Step } from "../types";
 
-import { CELL_H, CELL_W, PITCH_ROWS, STEPS } from "../beatmaker/constants";
+import { CELL_H, CELL_W, ROLL_ROWS, STEPS, lowestOctave } from "../beatmaker/constants";
+import type { NoteKey } from "../beatmaker/noteOps";
 import { BeatBrowserSidebar } from "../beatmaker/BeatBrowserSidebar";
 import { BeatEditorCanvas } from "../beatmaker/BeatEditorCanvas";
 import { ClearNotesDialog, type ClearScope } from "../beatmaker/ClearNotesDialog";
@@ -27,7 +28,7 @@ import { useAutoSave } from "../beatmaker/useAutoSave";
 import { useHistory } from "../beatmaker/useHistory";
 import { useInstruments } from "../beatmaker/useInstruments";
 import { usePianoRoll } from "../beatmaker/usePianoRoll";
-import { usePlayback } from "../beatmaker/usePlayback";
+import { usePlayback, type LoopRegion } from "../beatmaker/usePlayback";
 import { useRealtime } from "../beatmaker/useRealtime";
 import { useSongData } from "../beatmaker/useSongData";
 
@@ -63,7 +64,7 @@ export function BeatMakerPage() {
   // myRole for that), but to recognise our own edits coming back on the
   // broadcast. Different question, different answer.
   const { user } = useAuth();
-  const { autoSave } = useSettings();
+  const { autoSave, metronome, countIn, update: updateSettings } = useSettings();
 
   // ---- what the page itself owns -----------------------------------------
   // Selection and chrome. Everything else has moved into a hook.
@@ -75,7 +76,17 @@ export function BeatMakerPage() {
   const [mode, setMode] = useState<EditorMode>("arrange");
   const [selectedBeatId, setSelectedBeatId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null); // lane id
-  const [selectedNote, setSelectedNote] = useState<number | null>(null);
+  /** Selected notes in the open lane, by (step, pitch) — see noteOps for
+   *  why not by index. */
+  const [selection, setSelection] = useState<Set<NoteKey>>(new Set());
+  /**
+   * The arrangement loop. Deliberately NOT song data: like mute and solo it
+   * is about where YOU are working, and a loop saved on the song would yank
+   * every collaborator's transport around whenever you moved yours. The
+   * region survives toggling the loop off, so Loop on brings it back.
+   */
+  const [loopRegion, setLoopRegion] = useState<LoopRegion | null>(null);
+  const [loopOn, setLoopOn] = useState(false);
   /** Per-lane octave: the roll shows one octave at a time. */
   const [octaves, setOctaves] = useState<Record<string, number>>({});
   // The armed material ("what am I about to place?") is shared by the palette
@@ -145,7 +156,8 @@ export function BeatMakerPage() {
       const merged = { ...prev };
       for (const beat of beats) {
         for (const lane of beat.tracks) {
-          merged[lane.id] ??= instruments.map.current.get(lane.id)!.defaultOctave;
+          merged[lane.id] ??=
+            lowestOctave(lane.pattern) ?? instruments.map.current.get(lane.id)!.defaultOctave;
         }
       }
       return merged;
@@ -189,7 +201,7 @@ export function BeatMakerPage() {
     data.dirtyRef,
     (notes) => data.setNotes(notes),
     (dirty) => data.setDirty(dirty),
-    () => setSelectedNote(null), // indices may not exist in the restored grid
+    () => setSelection(new Set()), // the selected notes may not exist in the restored grid
   );
   resetHistoryRef.current = history.reset;
 
@@ -219,6 +231,9 @@ export function BeatMakerPage() {
     beatsRef: data.beatsRef,
     selectedBeatIdRef,
     onError,
+    metronome,
+    countIn,
+    loop: loopOn ? loopRegion : null,
   });
 
   const roll = usePianoRoll({
@@ -230,8 +245,8 @@ export function BeatMakerPage() {
     setDirty: data.setDirty,
     history,
     preview: playback.preview,
-    selectedNote,
-    setSelectedNote,
+    selection,
+    setSelection,
     octaves,
     octavesRef,
   });
@@ -265,14 +280,29 @@ export function BeatMakerPage() {
   const { clips, audioFiles, notes: notesByTrack, dirty, saving } = data;
   const { live, peers, flashing } = realtime;
   const { playing, currentStep, arrangeStep, muted, soloed, volume, exporting } = playback;
-  const { setMuted, setSoloed, togglePlay, testSound, exportAs, preview } = playback;
-  const { rollRef, onRollMouseDown, onNoteMouseDown, onNoteContextMenu, updateNote, clearLanes } = roll;
+  const { setMuted, setSoloed, togglePlay, exportAs } = playback;
+  const { rollRef, onRollMouseDown, onNoteMouseDown, onNoteContextMenu, clearLanes } = roll;
   const { setClips, setAudioFiles, patchSong, patchBeat, renameTrack, removeBeat, removeTrack } = data;
   const { undo, redo, sizes: historySizes } = history;
   const applyVolume = playback.setVolume;
-  /** The velocity slider snapshots BEFORE the drag starts (onPointerDown), so a
-   *  whole slider sweep is one undo entry rather than forty. */
+  /** One undo point before a bulk landing (AI pattern, preset, restore). */
   const recordHistory = history.record;
+
+  /** After notes land in bulk, point each lane's view at them — the same
+   *  rule a fresh load uses (lowestOctave). Otherwise a preset's low piano
+   *  part arrives "outside" the bands you are looking at. */
+  function showNotes(byLane: Record<string, Step[]>) {
+    setOctaves((prev) => {
+      const next = { ...prev };
+      for (const [laneId, notes] of Object.entries(byLane)) {
+        next[laneId] = lowestOctave(notes) ?? prev[laneId];
+      }
+      return next;
+    });
+  }
+
+  // A selection belongs to one lane: switching lanes starts with none.
+  useEffect(() => setSelection(new Set()), [selectedId]);
 
   // ---- the wiring the page adds on top ------------------------------------
 
@@ -332,8 +362,9 @@ export function BeatMakerPage() {
       const generated = await data.generatePattern(selectedId, prompt);
       recordHistory();
       data.setNotes((prev) => ({ ...prev, [selectedId]: generated }));
+      showNotes({ [selectedId]: generated });
       data.setDirty((prev) => new Set(prev).add(selectedId));
-      setSelectedNote(null); // old indices don't exist in the new pattern
+      setSelection(new Set()); // the old selection may not exist in the new pattern
       setGenerateOpen(false);
     } catch (e) {
       // Stays in the dialog: the fix is rewording the prompt, right there.
@@ -441,8 +472,9 @@ export function BeatMakerPage() {
     const laneIds = Object.keys(landed);
     if (laneIds.length > 0) {
       data.setNotes((prev) => ({ ...prev, ...landed }));
+      showNotes(landed);
       data.setDirty((prev) => new Set([...prev, ...laneIds]));
-      setSelectedNote(null); // old indices don't exist in the new patterns
+      setSelection(new Set()); // the old selection may not exist in the new patterns
       // Select a lane the plan actually wrote, so the result is LOOKED AT
       // rather than taken on faith — same instinct as restoreFrom.
       setSelectedId(laneIds[0]);
@@ -535,8 +567,9 @@ export function BeatMakerPage() {
       const restored = await data.patternAt(entry.trackId, entry.id);
       recordHistory();
       data.setNotes((prev) => ({ ...prev, [entry.trackId]: restored }));
+      showNotes({ [entry.trackId]: restored });
       data.setDirty((prev) => new Set(prev).add(entry.trackId));
-      setSelectedNote(null);
+      setSelection(new Set());
       const owningBeat = sortedBeats.find((b) => b.tracks.some((t) => t.id === entry.trackId));
       if (owningBeat) {
         setSelectedBeatId(owningBeat.id);
@@ -558,14 +591,26 @@ export function BeatMakerPage() {
     return next;
   }
 
-  /** The roll broadcasts where we are; see useRealtime for why it is throttled
+  /** The roll tracks the hovered column (where Ctrl+V lands) and, while
+   *  live, broadcasts where we are; see useRealtime for why it is throttled
    *  and why the trailing edge is not optional. */
-  function onRollCursorMove(e: React.MouseEvent) {
-    if (!rollRef.current || !selectedId) return;
+  function onRollMouseMove(e: React.MouseEvent) {
+    roll.onRollMouseMove(e);
+    if (!live || !rollRef.current || !selectedId) return;
     const rect = rollRef.current.getBoundingClientRect();
     const col = Math.max(0, Math.min(beatStepsRef.current - 1, Math.floor((e.clientX - rect.left) / CELL_W)));
-    const row = Math.max(0, Math.min(PITCH_ROWS.length - 1, Math.floor((e.clientY - rect.top) / CELL_H)));
+    const row = Math.max(0, Math.min(ROLL_ROWS - 1, Math.floor((e.clientY - rect.top) / CELL_H)));
     realtime.reportCursor({ beatId: selectedBeatIdRef.current, trackId: selectedId, step: col, row });
+  }
+
+  /** Loop on/off. With no region yet, the first press loops the whole
+   *  arrangement — the most likely thing you wanted to hear on repeat. */
+  function toggleLoop() {
+    if (!loopRegion) {
+      const end = clips.reduce((max, clip) => Math.max(max, clip.startStep + clip.lengthSteps), 0);
+      setLoopRegion({ startStep: 0, endStep: Math.max(STEPS * 4, Math.ceil(end / STEPS) * STEPS) });
+    }
+    setLoopOn((on) => !on);
   }
 
   /**
@@ -584,38 +629,81 @@ export function BeatMakerPage() {
     realtime.reportCursor({ beatId: selectedBeatIdRef.current, trackId, step: col });
   }
 
-  // Spacebar = play/stop, Delete/Backspace = remove the selected note, Ctrl+Z /
-  // Ctrl+Shift+Z / Ctrl+Y = undo & redo. Attached once, so everything it calls
-  // is reached through a ref that the render keeps current.
-  const shortcutsRef = useRef({ togglePlay, undo, redo, deleteNote: roll.deleteNote, selectedId, selectedNote });
-  shortcutsRef.current = { togglePlay, undo, redo, deleteNote: roll.deleteNote, selectedId, selectedNote };
+  /**
+   * Keyboard shortcuts — the DAW set:
+   *
+   *   Space            play / stop
+   *   Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y   undo / redo
+   *   M  metronome       L  loop (arrange)
+   *   and in the piano roll:
+   *   Delete           delete the selection
+   *   Ctrl+A           select every note in the lane
+   *   Ctrl+C / X / V   copy / cut / paste (at the mouse, or after the copy)
+   *   Ctrl+D           duplicate the selection after itself
+   *   arrows           nudge a step / a semitone; Shift = a beat / an octave
+   *   Esc              clear the selection
+   *
+   * Attached once, so everything it calls is reached through a ref the
+   * render keeps current. A key is only swallowed (preventDefault) when it
+   * did something, so Ctrl+C still copies text everywhere else on the page.
+   */
+  const shortcutsRef = useRef({ togglePlay, undo, redo, commands: roll.commands, mode, toggleLoop, toggleMetronome: () => {} });
+  shortcutsRef.current = {
+    togglePlay,
+    undo,
+    redo,
+    commands: roll.commands,
+    mode,
+    toggleLoop,
+    toggleMetronome: () => updateSettings({ metronome: !metronome }),
+  };
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
-      // Never hijack keys while the user is typing in a form field.
+      // Never hijack keys while the user is typing in a form field, or while
+      // a dialog is open (it owns the keyboard — Escape, Enter).
       if (["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+      if (document.querySelector("[role=dialog]")) return;
       const current = shortcutsRef.current;
+      const mod = e.ctrlKey || e.metaKey;
+      const used = (did: boolean) => {
+        if (did) e.preventDefault();
+      };
 
       if (e.code === "Space") {
         e.preventDefault(); // spacebar scrolls the page by default
         void current.togglePlay();
-      }
-      if (e.code === "Delete" || e.code === "Backspace") {
-        if (current.selectedId !== null && current.selectedNote !== null) {
-          current.deleteNote(current.selectedId, current.selectedNote);
-        }
+        return;
       }
       // Ctrl/Cmd+Z = undo, +Shift = redo; Ctrl+Y = the Windows redo.
-      if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ") {
+      if (mod && e.code === "KeyZ") {
         e.preventDefault();
         if (e.shiftKey) current.redo();
         else current.undo();
+        return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.code === "KeyY") {
+      if (mod && e.code === "KeyY") {
         e.preventDefault();
         current.redo();
+        return;
       }
+      if (!mod && !e.altKey && e.code === "KeyM") return current.toggleMetronome();
+      if (!mod && !e.altKey && e.code === "KeyL" && current.mode === "arrange") return current.toggleLoop();
+
+      if (current.mode !== "beats") return;
+      const roll = current.commands;
+      if (e.code === "Delete" || e.code === "Backspace") return used(roll.deleteSelected());
+      if (e.code === "Escape") return void roll.clearSelection();
+      if (mod && e.code === "KeyA") return used(roll.selectAll());
+      if (mod && e.code === "KeyC") return used(roll.copy());
+      if (mod && e.code === "KeyX") return used(roll.cut());
+      if (mod && e.code === "KeyV") return used(roll.paste());
+      if (mod && e.code === "KeyD") return used(roll.duplicate());
+      if (e.code === "ArrowLeft") return used(roll.nudge(e.shiftKey ? -4 : -1, 0));
+      if (e.code === "ArrowRight") return used(roll.nudge(e.shiftKey ? 4 : 1, 0));
+      if (e.code === "ArrowUp") return used(roll.nudge(0, e.shiftKey ? 12 : 1));
+      if (e.code === "ArrowDown") return used(roll.nudge(0, e.shiftKey ? -12 : -1));
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -663,6 +751,8 @@ export function BeatMakerPage() {
 
   const selected = sortedLanes.find((t) => t.id === selectedId) ?? null;
   const octave = selected ? octaves[selected.id] ?? 4 : 4;
+  // The same two questions usePlayback's guards ask, answered for the button.
+  const canPlay = mode === "arrange" ? clips.length > 0 : beatNoteCount > 0;
 
 
   return (
@@ -680,6 +770,11 @@ export function BeatMakerPage() {
         dirtyCount={dirty.size}
         sidebarCollapsed={sidebarCollapsed}
         playing={playing}
+        canPlay={canPlay}
+        metronome={metronome}
+        onToggleMetronome={() => updateSettings({ metronome: !metronome })}
+        loopOn={loopOn}
+        onToggleLoop={toggleLoop}
         historyPast={historySizes.past}
         historyFuture={historySizes.future}
         volume={volume}
@@ -695,7 +790,6 @@ export function BeatMakerPage() {
         onRedo={redo}
         onTogglePlay={() => void togglePlay()}
         onVolumeChange={applyVolume}
-        onTestSound={() => void testSound()}
         onSave={() => void save()}
         onExport={(format) => void exportAs(format)}
         onToggleChat={() => chat.setOpen(!chat.open)}
@@ -831,6 +925,17 @@ export function BeatMakerPage() {
                 if (!selectedBeatId) return;
                 await data.addTrack(selectedBeatId, name, instrument);
               }}
+              onMixChange={(mix) => {
+                if (!selectedId) return;
+                // State and audio move together mid-drag; the server waits
+                // for the commit below — dozens of PATCHes per drag would be
+                // traffic with no one listening.
+                data.setTrackMixLocal(selectedId, mix);
+                instruments.map.current.get(selectedId)?.setMix(mix);
+              }}
+              onMixCommit={(mix) => {
+                if (selectedId) data.saveTrackMix(selectedId, mix);
+              }}
             />
           )}
         </Sidebar>
@@ -840,7 +945,7 @@ export function BeatMakerPage() {
           <Canvas>
             {error && (
               <div className="px-4 pt-4">
-                <ErrorBanner>{error}</ErrorBanner>
+                <ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner>
               </div>
             )}
             <ArrangementTimeline
@@ -856,6 +961,12 @@ export function BeatMakerPage() {
               onError={setError}
               onDraggingChange={setDragging}
               canEdit={canEdit}
+              loopRegion={loopRegion}
+              loopOn={loopOn}
+              onLoopRegionChange={(region) => {
+                setLoopRegion(region);
+                setLoopOn(true); // drawing a loop is asking for one
+              }}
               onOpenBeat={(beatId) => {
                 setSelectedBeatId(beatId);
                 const beat = sortedBeats.find((b) => b.id === beatId);
@@ -871,7 +982,8 @@ export function BeatMakerPage() {
             tracks={sortedLanes}
             selectedBeatId={selectedBeatId}
             selectedTrackId={selectedId}
-            selectedNote={selectedNote}
+            selection={selection}
+            marquee={roll.marquee}
             notesByTrack={notesByTrack}
             peers={peers}
             flashing={flashing}
@@ -884,6 +996,7 @@ export function BeatMakerPage() {
             laneNoteCount={laneNoteCount}
             beatNoteCount={beatNoteCount}
             error={error}
+            onDismissError={() => setError(null)}
             rollRef={rollRef}
             onPatchBeat={(beatId, patch) => void patchBeat(beatId, patch)}
             onOctaveChange={(nextOctave) => {
@@ -892,24 +1005,28 @@ export function BeatMakerPage() {
             onRequestClear={setClearing}
             onRequestGenerate={() => setGenerateOpen(true)}
             onRequestCompose={() => setComposeOpen(true)}
-            onMixChange={(mix) => {
-              if (!selectedId) return;
-              // State and audio move together mid-drag; the server waits
-              // for the commit below — dozens of PATCHes per drag would be
-              // traffic with no one listening.
-              data.setTrackMixLocal(selectedId, mix);
-              instruments.map.current.get(selectedId)?.setMix(mix);
+            onAddBeat={() => void addBeat()}
+            onOpenPresets={() => {
+              setPresetError(null);
+              setPresetsOpen(true);
             }}
-            onMixCommit={(mix) => {
-              if (selectedId) void data.saveTrackMix(selectedId, mix);
+            onAddLane={(name, instrument) => {
+              if (selectedBeatId) void data.addTrack(selectedBeatId, name, instrument);
             }}
-            onRecordHistory={recordHistory}
-            onUpdateNote={updateNote}
-            onPreview={preview}
+            onSwingChange={(swing) => {
+              // Local only: the beat loop reads swing every step, so the
+              // groove changes under your hands; the PATCH waits for release.
+              if (selectedBeat) data.patchBeatLocal(selectedBeat.id, { swing });
+            }}
+            onSwingCommit={(swing) => {
+              if (selectedBeat) data.saveBeatSwing(selectedBeat.id, swing);
+            }}
             onRollMouseDown={onRollMouseDown}
+            onRollMouseMove={onRollMouseMove}
+            onRollMouseLeave={roll.onRollMouseLeave}
             onNoteMouseDown={onNoteMouseDown}
             onNoteContextMenu={onNoteContextMenu}
-            onRollCursorMove={onRollCursorMove}
+            onVelocityMouseDown={roll.onVelocityMouseDown}
             onRackCursorMove={onRackCursorMove}
             onSelectTrack={setSelectedId}
           />

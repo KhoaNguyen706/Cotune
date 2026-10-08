@@ -9,8 +9,10 @@ import {
   secondsPerStep,
   type ArrangementSources,
 } from "../audio/engine";
+import { fxBusFor } from "../audio/fx";
 import { createInstrument, type TrackInstrument } from "../audio/instruments";
-import { Card, Chip, ErrorBanner, Skeleton, Wordmark } from "../ui/kit";
+import { Card, Chip, ErrorBanner, Skeleton, Spinner, Wordmark } from "../ui/kit";
+import { PlayIcon, StopIcon } from "../ui/icons";
 import type { ListenSong, Step } from "../types";
 
 /**
@@ -25,8 +27,8 @@ const LISTEN_QUERY = `
     listen(token: $token) {
       title bpm timeSignature
       beats {
-        id name position bars
-        tracks { id name instrument position volume pan pattern { step pitch velocity length } }
+        id name position bars swing
+        tracks { id name instrument position volume pan reverb delay pattern { step pitch velocity length } }
       }
       clips { id lane startStep lengthSteps type beatId audioId }
       audioFiles { id contentType durationSeconds }
@@ -154,13 +156,19 @@ export function ListenPage() {
       await Tone.start();
       const transport = Tone.getTransport();
       transport.bpm.value = sources.bpm;
+      fxBusFor().setTempo(sources.bpm);
 
       for (const beat of song.beats) {
         for (const lane of beat.tracks) {
           if (!instrumentsRef.current.has(lane.id)) {
             instrumentsRef.current.set(
               lane.id,
-              createInstrument(lane.instrument, { volume: lane.volume, pan: lane.pan }),
+              createInstrument(lane.instrument, {
+                volume: lane.volume,
+                pan: lane.pan,
+                reverb: lane.reverb,
+                delay: lane.delay,
+              }),
             );
           }
         }
@@ -239,24 +247,24 @@ export function ListenPage() {
                   onClick={() => void togglePlay()}
                   disabled={!playable || starting}
                   aria-label={playing ? "Stop" : "Play"}
-                  className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-2xl text-bg shadow-glow transition-transform duration-150 hover:not-disabled:scale-105 active:scale-95 disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                  className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-full bg-accent text-bg transition-[filter] duration-150 hover:not-disabled:brightness-110 disabled:cursor-default disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
                 >
-                  {starting ? "…" : playing ? "■" : "▶"}
+                  {starting ? (
+                    <Spinner className="h-5 w-5" />
+                  ) : playing ? (
+                    <StopIcon className="h-5 w-5" />
+                  ) : (
+                    <PlayIcon className="h-5 w-5" />
+                  )}
                 </button>
                 <div className="min-w-0 flex-1">
                   <div className="h-2 overflow-hidden rounded-full bg-bg-soft">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-accent to-accent-2 transition-[width] duration-150"
+                      className="h-full rounded-full bg-accent transition-[width] duration-150"
                       style={{ width: `${Math.round(progress * 100)}%` }}
                     />
                   </div>
-                  <p className="mt-2 text-xs text-muted">
-                    {playable
-                      ? playing
-                        ? "Playing — synthesized live in your browser."
-                        : "Press play to hear it — no account needed."
-                      : "This song has no notes yet — nothing to play."}
-                  </p>
+                  {!playable && <p className="mt-2 text-xs text-muted">This song has no notes yet.</p>}
                 </div>
               </div>
             </>
@@ -264,7 +272,7 @@ export function ListenPage() {
         </Card>
 
         <p className="mt-4 text-center text-sm text-muted">
-          Made with Cotune — beats in the browser, together.{" "}
+          Made with Cotune.{" "}
           <Link
             className="font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded"
             to="/register"

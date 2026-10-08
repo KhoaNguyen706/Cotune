@@ -64,6 +64,57 @@ class TrackMixerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void effectSendsAndSwingRoundTripAndTheListenLinkCarriesThem() {
+        AuthPayload owner = registerFreshUser();
+        HttpGraphQlTester graphQl = graphQl(owner.token());
+        Ids ids = createSongBeatAndTrack(graphQl);
+
+        // V16/V17 backfill: dry lane, straight beat — today's sound.
+        Map<String, Object> track = readTrack(graphQl, ids.songId());
+        assertThat(track.get("reverb")).isEqualTo(0.0);
+        assertThat(track.get("delay")).isEqualTo(0.0);
+
+        assertThat(patch(owner.token(), "/api/tracks/" + ids.trackId(), Map.of("reverb", 0.35, "delay", 0.2)))
+                .isEqualTo(HttpStatus.OK);
+        assertThat(patch(owner.token(), "/api/beats/" + ids.beatId(), Map.of("swing", 0.5)))
+                .isEqualTo(HttpStatus.OK);
+
+        track = readTrack(graphQl, ids.songId());
+        assertThat(track.get("reverb")).isEqualTo(0.35);
+        assertThat(track.get("delay")).isEqualTo(0.2);
+        // The sends PATCH must not have touched the rest of the mix.
+        assertThat(track.get("volume")).isEqualTo(1.0);
+        graphQl.document("""
+                        query Song($id: ID!) { song(id: $id) { beats { swing } } }""")
+                .variable("id", ids.songId())
+                .execute()
+                .path("song.beats[0].swing").entity(Double.class).isEqualTo(0.5);
+
+        // A listener hears the same room and the same groove.
+        String token = graphQl.document("""
+                        mutation Enable($songId: ID!) { enableListenLink(songId: $songId) }""")
+                .variable("songId", ids.songId())
+                .execute()
+                .path("enableListenLink").entity(String.class).get();
+        anonymousGraphQl().document("""
+                        query Listen($token: String!) {
+                            listen(token: $token) { beats { swing tracks { reverb delay } } }
+                        }""")
+                .variable("token", token)
+                .execute()
+                .path("listen.beats[0].swing").entity(Double.class).isEqualTo(0.5)
+                .path("listen.beats[0].tracks[0].reverb").entity(Double.class).isEqualTo(0.35)
+                .path("listen.beats[0].tracks[0].delay").entity(Double.class).isEqualTo(0.2);
+
+        // Out of range is a 400 from the domain guard, never a 500 from the
+        // CHECK constraint behind it.
+        assertThat(patch(owner.token(), "/api/tracks/" + ids.trackId(), Map.of("reverb", 1.2)))
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(patch(owner.token(), "/api/beats/" + ids.beatId(), Map.of("swing", -0.5)))
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
     void outOfRangeValuesAndEmptyPatchesAreRejected() {
         AuthPayload owner = registerFreshUser();
         Ids ids = createSongBeatAndTrack(graphQl(owner.token()));
@@ -92,7 +143,7 @@ class TrackMixerIntegrationTest extends AbstractIntegrationTest {
 
     // ---- plumbing ----------------------------------------------------------
 
-    private record Ids(UUID songId, UUID trackId) {
+    private record Ids(UUID songId, UUID beatId, UUID trackId) {
     }
 
     /** WebTestClient, not TestRestTemplate: the JDK's HttpURLConnection
@@ -101,10 +152,15 @@ class TrackMixerIntegrationTest extends AbstractIntegrationTest {
      *  asserted through the GraphQL re-read, where clients actually look. */
     private org.springframework.http.HttpStatusCode patchTrack(
             String token, UUID trackId, Map<String, Object> body) {
+        return patch(token, "/api/tracks/" + trackId, body);
+    }
+
+    private org.springframework.http.HttpStatusCode patch(
+            String token, String path, Map<String, Object> body) {
         return WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port)
                 .build()
-                .patch().uri("/api/tracks/" + trackId)
+                .patch().uri(path)
                 .headers(headers -> headers.setBearerAuth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(body)
@@ -117,7 +173,7 @@ class TrackMixerIntegrationTest extends AbstractIntegrationTest {
     private Map<String, Object> readTrack(HttpGraphQlTester graphQl, UUID songId) {
         return graphQl.document("""
                         query Song($id: ID!) {
-                            song(id: $id) { beats { tracks { volume pan } } }
+                            song(id: $id) { beats { tracks { volume pan reverb delay } } }
                         }""")
                 .variable("id", songId)
                 .execute()
@@ -149,6 +205,6 @@ class TrackMixerIntegrationTest extends AbstractIntegrationTest {
                 .variable("input", Map.of("beatId", beatId, "name", "Kick", "instrument", "DRUMS"))
                 .execute()
                 .path("addTrack.id").entity(UUID.class).get();
-        return new Ids(songId, trackId);
+        return new Ids(songId, beatId, trackId);
     }
 }

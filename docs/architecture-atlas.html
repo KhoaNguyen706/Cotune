@@ -347,7 +347,7 @@ graph TB
       API["<b>Backend</b><br/>Java 21 · Spring Boot<br/><i>REST + GraphQL + STOMP</i>"]
     end
 
-    DB[("<b>Database</b><br/>PostgreSQL<br/><i>Flyway V1–V15</i>")]
+    DB[("<b>Database</b><br/>PostgreSQL<br/><i>Flyway V1–V17</i>")]
     RD[("<b>Relay</b><br/>Redis pub/sub<br/><i>optional, multi-instance</i>")]
     OBJ[("<b>Object store</b><br/>Supabase Storage<br/><i>audio bytes</i>")]
     GEM["<b>Gemini</b><br/><i>external</i>"]
@@ -872,11 +872,21 @@ erDiagram
         text listen_token "V12 — unguessable public link"
         bigint version "optimistic lock"
     }
+    beats {
+        uuid id PK
+        uuid song_id FK
+        int bars "CHECK 1..8"
+        double swing "V16 groove, CHECK 0..1"
+    }
     tracks {
         uuid id PK
         uuid beat_id FK
         text instrument
         jsonb pattern "THE Step array — source of truth"
+        double volume "V14 mix"
+        double pan "V14 mix"
+        double reverb "V17 send, CHECK 0..1"
+        double delay "V17 send, CHECK 0..1"
         int position
         bigint version
     }
@@ -903,7 +913,7 @@ erDiagram
 
       <div class="note">
         <span class="lab">Say this about Flyway</span>
-        <p>Schema is owned by versioned migrations, not by Hibernate's <code>ddl-auto</code>. The migration files are the history of the product: V5 added ownership, V10 added sharing, V12 the listen link, V13 AI access, V15 the activity feed. You can read the feature timeline straight off the filenames — and every environment gets the identical schema in the identical order.</p>
+        <p>Schema is owned by versioned migrations, not by Hibernate's <code>ddl-auto</code>. The migration files are the history of the product: V5 added ownership, V10 added sharing, V12 the listen link, V13 AI access, V15 the activity feed, V16 swing, V17 the effect sends. You can read the feature timeline straight off the filenames — and every environment gets the identical schema in the identical order.</p>
       </div>
     </section>
 
@@ -932,8 +942,8 @@ graph TB
       <p class="caption"><b>Two debounces, paying for different things.</b> Live, 90ms coalesces a fast drag while still feeling instant to the other person. Offline, 1000ms batches a whole gesture into one full-grid save, because that path is expensive and version-guarded. The diff always baselines from <b>the last server-confirmed state</b>, so if an ack never arrives the next diff re-derives the same op — self-healing, no retry queue.</p>
 
       <div class="note client">
-        <span class="lab">Fix your notes</span>
-        <p><code>LEARNING.md</code> §4.2 says "a 1-second debounce" flatly. The code (<code>useAutoSave.ts:84</code>) is <code>realtime.live ? 90 : 1000</code>. The nuance is better material than the flat claim — it shows you tuned the live path separately.</p>
+        <span class="lab">The other road: the mix</span>
+        <p>Notes ride the delta pipeline above. The mix (volume, pan, reverb and delay sends) and a beat's swing do not: they are single-field REST PATCHes sent when a slider is released. Those go through <code>useSongData → saveLatest</code>, one request in flight per control with only the newest value queued behind it, because parallel PATCHes can finish out of order and the server would keep the slower one. Latest-value-wins, not a longer debounce.</p>
       </div>
     </section>
 

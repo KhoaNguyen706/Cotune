@@ -168,7 +168,7 @@ class TrackServiceImplTest {
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
 
         TrackDto dto = service.patch(trackId,
-                new com.cotune.track.dto.UpdateTrackPatch("  Kick 808  ", null, null));
+                new com.cotune.track.dto.UpdateTrackPatch("  Kick 808  ", null, null, null, null));
 
         // The entity strips whitespace; instrument, position AND the mix
         // untouched — null means "leave alone", not "reset".
@@ -180,7 +180,7 @@ class TrackServiceImplTest {
 
         // And the mix alone, without renaming.
         TrackDto mixed = service.patch(trackId,
-                new com.cotune.track.dto.UpdateTrackPatch(null, 0.5, -1.0));
+                new com.cotune.track.dto.UpdateTrackPatch(null, 0.5, -1.0, null, null));
         assertThat(mixed.name()).isEqualTo("Kick 808");
         assertThat(mixed.volume()).isEqualTo(0.5);
         assertThat(mixed.pan()).isEqualTo(-1.0);
@@ -192,7 +192,7 @@ class TrackServiceImplTest {
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.empty());
 
         assertThatThrownBy(() -> service.patch(trackId,
-                new com.cotune.track.dto.UpdateTrackPatch("New Name", null, null)))
+                new com.cotune.track.dto.UpdateTrackPatch("New Name", null, null, null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         // Blank is stopped by the entity's domain guard, even if Bean
@@ -200,12 +200,12 @@ class TrackServiceImplTest {
         Track track = new Track(beat, "Kick", Instrument.DRUMS, 0);
         when(trackRepository.findById(trackId)).thenReturn(java.util.Optional.of(track));
         assertThatThrownBy(() -> service.patch(trackId,
-                new com.cotune.track.dto.UpdateTrackPatch("   ", null, null)))
+                new com.cotune.track.dto.UpdateTrackPatch("   ", null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         // A patch that changes nothing is a caller bug, not a no-op.
         assertThatThrownBy(() -> service.patch(trackId,
-                new com.cotune.track.dto.UpdateTrackPatch(null, null, null)))
+                new com.cotune.track.dto.UpdateTrackPatch(null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

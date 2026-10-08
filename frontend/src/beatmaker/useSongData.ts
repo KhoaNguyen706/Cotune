@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import * as Tone from "tone";
 import { ApiError, gql, rest } from "../api/client";
+import type { Mix } from "../audio/instruments";
 import type { AiAction, AudioFile, Beat, Clip, Song, SongEvent, Step } from "../types";
 import {
   ADD_BEAT,
@@ -84,17 +85,21 @@ export interface SongData {
   /** Resolves to the new beat's id, so the caller can select it. */
   addBeat: () => Promise<string | null>;
   removeBeat: (beatId: string) => Promise<boolean>;
-  patchBeat: (beatId: string, body: { name?: string; bars?: number }) => Promise<boolean>;
+  patchBeat: (beatId: string, body: { name?: string; bars?: number; swing?: number }) => Promise<boolean>;
+  /** Local-only beat update — what the swing slider calls mid-drag. */
+  patchBeatLocal: (beatId: string, body: { swing?: number }) => void;
   addTrack: (beatId: string, name: string, instrument: string) => Promise<boolean>;
   removeTrack: (trackId: string) => Promise<boolean>;
   renameTrack: (trackId: string, name: string) => Promise<boolean>;
   /** Local-only mix update — what a slider calls MID-DRAG, possibly dozens
    *  of times a second. State only; the caller pushes the same values into
    *  the audio graph, and nothing touches the server. */
-  setTrackMixLocal: (trackId: string, mix: { volume?: number; pan?: number }) => void;
-  /** Persist the mix at gesture end (pointer-up): ONE PATCH per drag, the
-   *  same REST pattern as renames. */
-  saveTrackMix: (trackId: string, mix: { volume?: number; pan?: number }) => Promise<boolean>;
+  setTrackMixLocal: (trackId: string, mix: Partial<Mix>) => void;
+  /** Persist the mix at gesture end: ONE PATCH per drag, the same REST
+   *  pattern as renames — serialized per control, see saveLatest. */
+  saveTrackMix: (trackId: string, mix: Partial<Mix>) => void;
+  /** Persist a beat's swing at gesture end — same serialization. */
+  saveBeatSwing: (beatId: string, swing: number) => void;
   /** Resolves to whether the change actually landed. A lone control can
    *  ignore that (the banner already said so); a caller applying an AI plan
    *  cannot — see composeInto. */
@@ -116,7 +121,7 @@ export function useSongData(params: {
   onError: (message: string) => void;
   /** The audio engine owns instrument lifecycles, but lanes appear and vanish
    *  HERE, so this hook is what tells it (mix included — server truth). */
-  ensureInstrument: (laneId: string, instrument: string, mix?: { volume?: number; pan?: number }) => void;
+  ensureInstrument: (laneId: string, instrument: string, mix?: Partial<Mix>) => void;
   disposeInstrument: (laneId: string) => void;
   /** Server truth replaces local state, so stale undo targets go with it. */
   resetHistory: () => void;
@@ -143,6 +148,43 @@ export function useSongData(params: {
   const trackVersionsRef = useRef<Map<string, number>>(new Map());
   const serverNotesRef = useRef<Record<string, Step[]>>({});
 
+  /**
+   * LATEST VALUE WINS, one request in flight per control.
+   *
+   * A slider commits on every key-up, so ten arrow presses are ten PATCHes —
+   * and parallel requests can complete in any order. The server then keeps
+   * whichever finished LAST, which is not necessarily the value the knob was
+   * left on (caught in testing: twenty presses saved swing 0.11, not 0.20).
+   * So per control key: if a save is running, the new value just replaces
+   * the one waiting behind it; when the running save finishes, only the
+   * newest waiting value is sent. Ten presses become at most two requests,
+   * and the last one sent is always the last one set.
+   */
+  const saveQueuesRef = useRef(new Map<string, { running: boolean; next: (() => Promise<unknown>) | null }>());
+  function saveLatest(key: string, what: string, run: () => Promise<unknown>) {
+    let queue = saveQueuesRef.current.get(key);
+    if (!queue) {
+      queue = { running: false, next: null };
+      saveQueuesRef.current.set(key, queue);
+    }
+    queue.next = run;
+    if (queue.running) return;
+    queue.running = true;
+    const drain = queue;
+    void (async () => {
+      while (drain.next) {
+        const job = drain.next;
+        drain.next = null;
+        try {
+          await job();
+        } catch (e) {
+          onError(e instanceof ApiError ? e.message : what);
+        }
+      }
+      drain.running = false;
+    })();
+  }
+
   const load = useCallback(async () => {
     try {
       const data = await gql<{ song: Song }>(SONG_QUERY, { id: songId });
@@ -160,7 +202,12 @@ export function useSongData(params: {
         for (const lane of beat.tracks) {
           next[lane.id] = lane.pattern;
           trackVersionsRef.current.set(lane.id, lane.version);
-          ensureInstrument(lane.id, lane.instrument, { volume: lane.volume, pan: lane.pan });
+          ensureInstrument(lane.id, lane.instrument, {
+            volume: lane.volume,
+            pan: lane.pan,
+            reverb: lane.reverb,
+            delay: lane.delay,
+          });
         }
       }
       setNotes(next);
@@ -327,6 +374,12 @@ export function useSongData(params: {
         await load(); // also refreshes clips — the server cascaded them
       }),
 
+    patchBeatLocal: (beatId, body) => {
+      const patch = (beats: Beat[]) => beats.map((b) => (b.id === beatId ? { ...b, ...body } : b));
+      beatsRef.current = patch(beatsRef.current);
+      setSong((prev) => (prev ? { ...prev, beats: patch(prev.beats) } : prev));
+    },
+
     patchBeat: (beatId, body) =>
       mutate("Failed to update beat", async () => {
         // The shrink guard's message ("delete them first") surfaces here.
@@ -376,13 +429,18 @@ export function useSongData(params: {
       setSong((prev) => (prev ? { ...prev, beats: patch(prev.beats) } : prev));
     },
 
+    // Local state was already updated live during the drag — the server
+    // just needs the final value. One queue per lane AND field, so a volume
+    // save never waits behind (or replaces) a pan save.
     saveTrackMix: (trackId, mix) =>
-      mutate("Failed to save the mix", async () => {
-        // Local state was already updated live during the drag — the
-        // server just needs the final values. Reload is the recovery if
-        // this fails (the error banner says so via mutate).
-        await rest(`/api/tracks/${trackId}`, { method: "PATCH", body: mix });
-      }),
+      saveLatest(`track:${trackId}:${Object.keys(mix).sort().join(",")}`, "Failed to save the mix", () =>
+        rest(`/api/tracks/${trackId}`, { method: "PATCH", body: mix }),
+      ),
+
+    saveBeatSwing: (beatId, swing) =>
+      saveLatest(`beat:${beatId}:swing`, "Failed to save the swing", () =>
+        rest(`/api/beats/${beatId}`, { method: "PATCH", body: { swing } }),
+      ),
 
     patchSong: (patch) =>
       mutate("Failed to update song", async () => {

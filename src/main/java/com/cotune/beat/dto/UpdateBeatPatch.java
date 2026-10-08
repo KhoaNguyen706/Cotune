@@ -15,10 +15,13 @@ public record UpdateBeatPatch(
 
         Integer bars,
 
+        /** Off-beat lateness as a fraction 0..1 (0 = straight). */
+        Double swing,
+
         /** Optional optimistic-concurrency guard — see UpdateSongPatch. */
         Long expectedVersion
 ) {
     public boolean isEmpty() {
-        return name == null && bars == null;
+        return name == null && bars == null && swing == null;
     }
 }

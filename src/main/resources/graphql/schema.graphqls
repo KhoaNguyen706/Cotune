@@ -189,6 +189,10 @@ type Beat {
     # REST PATCH /api/beats/{id}; shrinking is rejected while notes would
     # be cut.
     bars: Int!
+    # Groove (V16): off-beat 16ths land this fraction of half a step late.
+    # 0 = straight, ~0.67 = triplet swing, 1 = dotted. Changed via REST
+    # PATCH /api/beats/{id}.
+    swing: Float!
     version: Int!
     createdAt: DateTime!
     updatedAt: DateTime!
@@ -212,6 +216,10 @@ type Track {
     # /api/tracks/{id} like renames (single-field, high-frequency).
     volume: Float!  # linear gain 0..1 (1 = unity)
     pan: Float!     # -1 hard left .. 1 hard right, 0 = center
+    # Effect sends (V17): how much of the lane feeds the song's shared
+    # reverb / delay, 0 (dry) .. 1. Same PATCH as volume and pan.
+    reverb: Float!
+    delay: Float!
     version: Int!
     createdAt: DateTime!
     updatedAt: DateTime!
@@ -452,6 +460,7 @@ type ListenBeat {
     name: String!
     position: Int!
     bars: Int!
+    swing: Float!
     tracks: [ListenTrack!]!
 }
 
@@ -465,6 +474,8 @@ type ListenTrack {
     # balanced it. Playback-shaped data — no identity leaks here.
     volume: Float!
     pan: Float!
+    reverb: Float!
+    delay: Float!
 }
 
 type ListenClip {

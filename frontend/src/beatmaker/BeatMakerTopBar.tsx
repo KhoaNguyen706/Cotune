@@ -7,7 +7,8 @@ import {
   BackIcon,
   ChatIcon,
   ClockIcon,
-  HeadphonesIcon,
+  LoopIcon,
+  MetronomeIcon,
   MenuIcon,
   PlayIcon,
   RedoIcon,
@@ -34,6 +35,15 @@ interface BeatMakerTopBarProps {
   dirtyCount: number;
   sidebarCollapsed: boolean;
   playing: boolean;
+  /** Is there anything to hear? False = Play (and export) are disabled,
+   *  with a tooltip that says what to add. */
+  canPlay: boolean;
+  metronome: boolean;
+  onToggleMetronome: () => void;
+  /** Arrangement loop — the button only exists in the Arrange view; the
+   *  Beats view always loops the beat you are editing. */
+  loopOn: boolean;
+  onToggleLoop: () => void;
   historyPast: number;
   historyFuture: number;
   volume: number;
@@ -49,7 +59,6 @@ interface BeatMakerTopBarProps {
   onRedo: () => void;
   onTogglePlay: () => void;
   onVolumeChange: (volume: number) => void;
-  onTestSound: () => void;
   onSave: () => void;
   onExport: (format: "wav" | "mp3") => void;
   onToggleChat: () => void;
@@ -80,6 +89,11 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
     dirtyCount,
     sidebarCollapsed,
     playing,
+    canPlay,
+    metronome,
+    onToggleMetronome,
+    loopOn,
+    onToggleLoop,
     historyPast,
     historyFuture,
     volume,
@@ -95,7 +109,6 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
     onRedo,
     onTogglePlay,
     onVolumeChange,
-    onTestSound,
     onSave,
     onExport,
     onToggleChat,
@@ -197,10 +210,39 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
               tone="solid"
               className="min-w-16"
               onClick={onTogglePlay}
-              title={mode === "arrange" ? "Play the arrangement (Space)" : "Loop the selected beat (Space)"}
+              disabled={!playing && !canPlay}
+              title={
+                canPlay || playing
+                  ? mode === "arrange"
+                    ? "Play the arrangement (Space)"
+                    : "Loop the selected beat (Space)"
+                  : mode === "arrange"
+                    ? "Nothing on the timeline yet — place a beat to play it"
+                    : "This beat has no notes yet — click the grid to add some"
+              }
             >
               {playing ? <StopIcon className={ICON} /> : <PlayIcon className={ICON} />}
               {playing ? "Stop" : "Play"}
+            </IconButton>
+            {mode === "arrange" && (
+              <IconButton
+                active={loopOn}
+                aria-pressed={loopOn}
+                className={loopOn ? "!text-accent" : undefined}
+                onClick={onToggleLoop}
+                title={loopOn ? "Loop on — drag on the ruler to change the range (L)" : "Loop a range of bars (L)"}
+              >
+                <LoopIcon className={ICON} />
+              </IconButton>
+            )}
+            <IconButton
+              active={metronome}
+              aria-pressed={metronome}
+              className={metronome ? "!text-accent" : undefined}
+              onClick={onToggleMetronome}
+              title={metronome ? "Metronome on (M)" : "Metronome (M)"}
+            >
+              <MetronomeIcon className={ICON} />
             </IconButton>
           </ToolGroup>
           <ToolGroup>
@@ -235,9 +277,6 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
                 onChange={(event) => onVolumeChange(Number(event.target.value))}
               />
             </label>
-            <IconButton onClick={onTestSound} title="Play a test blip — if you can't hear this, check your tab/OS volume">
-              <HeadphonesIcon className={ICON} />
-            </IconButton>
           </ToolGroup>
           {!readOnly && !autoSave && (
             <Button variant="ghost" size="sm" onClick={onSave} disabled={saving || dirtyCount === 0}>
@@ -246,10 +285,10 @@ export function BeatMakerTopBar(props: BeatMakerTopBarProps) {
           )}
           {mode === "arrange" && (
             <ToolGroup>
-              <IconButton onClick={() => onExport("wav")} disabled={exporting} title="Render the arrangement to a WAV file (lossless)">
+              <IconButton onClick={() => onExport("wav")} disabled={exporting || !canPlay} title="Render the arrangement to a WAV file (lossless)">
                 {exporting ? "…" : "WAV"}
               </IconButton>
-              <IconButton onClick={() => onExport("mp3")} disabled={exporting} title="Render the arrangement to an MP3 file (192 kbps)">
+              <IconButton onClick={() => onExport("mp3")} disabled={exporting || !canPlay} title="Render the arrangement to an MP3 file (192 kbps)">
                 {exporting ? "…" : "MP3"}
               </IconButton>
             </ToolGroup>

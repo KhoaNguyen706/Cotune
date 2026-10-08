@@ -69,6 +69,9 @@ public class BeatServiceImpl implements BeatService {
             }
             beat.changeBars(patch.bars());
         }
+        if (patch.swing() != null) {
+            beat.changeSwing(patch.swing());
+        }
         // Managed entity + dirty checking — no save(); flush so the DTO
         // carries the bumped version/updatedAt (see SongServiceImpl.update).
         beatRepository.flush();

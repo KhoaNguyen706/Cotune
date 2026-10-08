@@ -1,10 +1,8 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
 import { ApiError, gql } from "../api/client";
-import { Button, Card, Field, TextInput, Wordmark } from "../ui/kit";
-import { BookIcon, ListIcon, ShieldIcon } from "../ui/icons";
-import { AppShell, Canvas, NavItem, NavRail, Workspace } from "../ui/shell";
+import { AppNav } from "../ui/AppNav";
+import { Button, Card, Field, TextInput } from "../ui/kit";
+import { AppShell, Canvas, Workspace } from "../ui/shell";
 
 // The two ADMIN-gated mutations already exist server-side (AiAccessGraphql
 // Controller) and take an EMAIL directly — a UUID isn't something an admin
@@ -32,8 +30,6 @@ type Result = { kind: "ok" | "err"; text: string } | null;
  * surface in the app).
  */
 export function AdminPage() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result>(null);
@@ -66,45 +62,9 @@ export function AdminPage() {
   return (
     <AppShell>
       <Workspace>
-        <NavRail
-          footer={
-            <>
-              <div className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3">
-                <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-accent/15 text-[13px] font-semibold text-accent">
-                  {user?.displayName?.[0]?.toUpperCase() ?? "?"}
-                </span>
-                <span className="min-w-0 leading-tight">
-                  <span className="block truncate text-sm font-bold">{user?.displayName}</span>
-                  <span className="block font-mono text-[10.5px] text-muted">Admin</span>
-                </span>
-              </div>
-              <button
-                onClick={logout}
-                className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-muted transition-colors hover:bg-surface-2/60 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-              >
-                Sign out
-              </button>
-            </>
-          }
-        >
-          <div className="mb-4 px-1 py-2">
-            <Wordmark />
-          </div>
+        <AppNav />
 
-          <NavItem
-            icon={<ListIcon className="h-[17px] w-[17px]" />}
-            label="My songs"
-            onClick={() => navigate("/songs")}
-          />
-          <NavItem
-            icon={<BookIcon className="h-[17px] w-[17px]" />}
-            label="Handbook"
-            onClick={() => navigate("/handbook")}
-          />
-          <NavItem icon={<ShieldIcon className="h-[17px] w-[17px]" />} label="Admin" active />
-        </NavRail>
-
-        <Canvas className="p-8">
+        <Canvas className="p-8 max-md:p-4">
           <div className="mx-auto max-w-2xl">
             <div className="mb-8">
               <h1 className="text-3xl font-extrabold tracking-tight">Admin</h1>

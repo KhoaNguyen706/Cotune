@@ -4,9 +4,10 @@ import { downloadBlob, evictAudioBuffer, secondsPerStep, STEPS_PER_BAR, uploadAu
 import { beatColor, colorFor } from "../ui/trackColors";
 import { INSTRUMENTS, instrumentLabel } from "../audio/instrumentList";
 import { EmptyState } from "../ui/kit";
-import { CloseIcon, DownloadIcon, HeadphonesIcon, TimelineMark } from "../ui/icons";
+import { CloseIcon, DownloadIcon, HeadphonesIcon, PlusIcon, TimelineMark } from "../ui/icons";
 import { IconButton, SidebarSection } from "../ui/shell";
 import type { AudioFile, Beat, Clip } from "../types";
+import type { LoopRegion } from "../beatmaker/usePlayback";
 
 /**
  * The arrangement, split across the shell: the PALETTE (material — beats
@@ -171,7 +172,7 @@ export function ArrangementPalette({
       <SidebarSection title="Beats">
         <div className="flex flex-col gap-1">
           {beats.length === 0 && (
-            <p className="text-xs text-muted">No beats yet — build one in the Beats tab.</p>
+            <p className="text-xs text-muted">No beats yet.</p>
           )}
           {beats.map((beat) => {
             const isArmed = armed?.kind === "BEAT" && armed.beatId === beat.id;
@@ -222,10 +223,6 @@ export function ArrangementPalette({
       {canEdit && (
         <SidebarSection title="Instruments">
           <div className="flex flex-col gap-2">
-            <p className="text-[0.68rem] leading-snug text-muted">
-              Add an instrument as a region, click a lane to drop it, then double-click it to write
-              its notes.
-            </p>
             <div className="grid grid-cols-2 gap-1">
               {INSTRUMENTS.map((value) => (
                 <button
@@ -268,7 +265,7 @@ export function ArrangementPalette({
               onClick={() => fileInputRef.current?.click()}
               title="Upload a wav/mp3"
             >
-              {uploading ? "…" : "+"}
+              {uploading ? "…" : <PlusIcon className="h-[15px] w-[15px]" />}
             </IconButton>
           ) : undefined
         }
@@ -282,11 +279,7 @@ export function ArrangementPalette({
         />
         <div className="flex flex-col gap-1">
           {audioFiles.length === 0 && (
-            <p className="text-xs text-muted">
-              {canEdit
-                ? "Upload a wav/mp3 to place it on the timeline."
-                : "No audio uploaded yet."}
-            </p>
+            <p className="text-xs text-muted">No audio yet.</p>
           )}
           {audioFiles.map((file) => {
             const isArmed = armed?.kind === "AUDIO" && armed.audioId === file.id;
@@ -361,6 +354,9 @@ export function ArrangementTimeline({
   onOpenBeat,
   onDraggingChange,
   canEdit,
+  loopRegion,
+  loopOn,
+  onLoopRegionChange,
 }: {
   songId: string;
   bpm: number;
@@ -385,6 +381,11 @@ export function ArrangementTimeline({
    *  like the piano roll's: not attached, rather than attached-and-failing.
    *  Double-click to open a beat stays — navigation is reading. */
   canEdit: boolean;
+  /** The arrangement loop (a personal transport setting — anyone may set
+   *  one, viewers included, since it changes nothing on the song). */
+  loopRegion: LoopRegion | null;
+  loopOn: boolean;
+  onLoopRegionChange: (region: LoopRegion) => void;
 }) {
   const lanesRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -423,6 +424,45 @@ export function ArrangementTimeline({
 
   const beatById = new Map(beats.map((b) => [b.id, b]));
   const audioById = new Map(audioFiles.map((a) => [a.id, a]));
+
+  /**
+   * Drag across the ruler to draw the loop, in whole bars — the gesture
+   * every DAW uses for the loop brace. The range is held locally while you
+   * drag and handed up once on release, so the transport isn't re-pointed
+   * on every pixel.
+   */
+  const [loopDraft, setLoopDraft] = useState<LoopRegion | null>(null);
+  const shownLoop = loopDraft ?? loopRegion;
+
+  function onRulerMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const barAt = (clientX: number) =>
+      Math.max(0, Math.min(bars - 1, Math.floor((clientX - rect.left) / BAR_W)));
+    const anchor = barAt(e.clientX);
+    const regionTo = (clientX: number): LoopRegion => {
+      const bar = barAt(clientX);
+      return {
+        startStep: Math.min(anchor, bar) * STEPS_PER_BAR,
+        endStep: (Math.max(anchor, bar) + 1) * STEPS_PER_BAR,
+      };
+    };
+    let draft = regionTo(e.clientX);
+    setLoopDraft(draft);
+    const onMove = (event: MouseEvent) => {
+      draft = regionTo(event.clientX);
+      setLoopDraft(draft);
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      setLoopDraft(null);
+      onLoopRegionChange(draft);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
 
   function snapBar(steps: number): number {
     return Math.round(steps / STEPS_PER_BAR) * STEPS_PER_BAR;
@@ -689,7 +729,21 @@ export function ArrangementTimeline({
 
         <div className="border-r border-edge">
           {/* ruler */}
-          <div className="tl-ruler" style={{ width: bars * BAR_W }}>
+          <div
+            className="tl-ruler"
+            style={{ width: bars * BAR_W }}
+            onMouseDown={onRulerMouseDown}
+            title="Drag across bars to loop them (L toggles the loop)"
+          >
+            {shownLoop && (
+              <div
+                className={"tl-loop" + (loopOn || loopDraft ? " on" : "")}
+                style={{
+                  left: shownLoop.startStep * STEP_W,
+                  width: (shownLoop.endStep - shownLoop.startStep) * STEP_W,
+                }}
+              />
+            )}
             {Array.from({ length: bars }, (_, bar) => (
               <span
                 key={bar}
@@ -718,8 +772,8 @@ export function ArrangementTimeline({
                   title="Empty timeline"
                   hint={
                     canEdit
-                      ? "Add an instrument or arm a beat in the left panel, then click a lane to place it — as many times as you like."
-                      : "Nothing arranged yet — you're viewing this song, so the timeline fills in as its editors work."
+                      ? "Pick a beat or an instrument on the left, then click a lane to place it."
+                      : "Nothing arranged yet."
                   }
                 />
               </div>
@@ -780,6 +834,15 @@ export function ArrangementTimeline({
                 </div>
               );
             })}
+            {shownLoop && (loopOn || loopDraft) && (
+              <div
+                className="tl-loop-shade"
+                style={{
+                  left: shownLoop.startStep * STEP_W,
+                  width: (shownLoop.endStep - shownLoop.startStep) * STEP_W,
+                }}
+              />
+            )}
             {playheadStep >= 0 && (
               <div className="tl-playhead" style={{ left: playheadStep * STEP_W }} />
             )}

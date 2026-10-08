@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import { CloseIcon } from "./icons";
 
 /**
  * The UI kit: every interactive atom owns its full state set — hover,
@@ -18,12 +19,12 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 /* ---------- Button ---------- */
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "ghost" | "danger";
+  variant?: "primary" | "ghost" | "danger" | "destructive";
   size?: "md" | "sm";
 };
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-lg font-semibold " +
+  "inline-flex items-center justify-center gap-2 rounded-md font-semibold " +
   "transition-[transform,box-shadow,filter,border-color,color] duration-150 cursor-pointer " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg " +
   "active:scale-[0.97] disabled:opacity-55 disabled:cursor-default disabled:active:scale-100";
@@ -36,13 +37,16 @@ const buttonVariants: Record<NonNullable<ButtonProps["variant"]>, string> = {
   // rather than a colour. The designs use one flat lime for the one primary
   // action, which is also the more honest signal — a gradient says "look at
   // me twice".
-  primary: "bg-accent text-bg hover:not-disabled:brightness-110 hover:not-disabled:shadow-glow",
+  primary: "bg-accent text-bg hover:not-disabled:brightness-110",
   ghost:
     "border border-edge-strong text-text bg-transparent " +
     "hover:not-disabled:border-accent hover:not-disabled:text-text",
   danger:
     "border border-transparent text-muted bg-transparent " +
     "hover:not-disabled:text-danger hover:not-disabled:border-danger",
+  // The confirm button of an irreversible action: solid, so the dialog's
+  // last word is unmistakably the dangerous one.
+  destructive: "bg-danger text-bg hover:not-disabled:brightness-110",
 };
 
 const buttonSizes: Record<NonNullable<ButtonProps["size"]>, string> = {
@@ -73,7 +77,7 @@ export function Button({ variant = "primary", size = "md", className, ...props }
  * is that a session is LIVE and someone else is in it. A pulsing dot says
  * that; a music note glyph says "audio software", which you already knew.
  */
-export function Wordmark({ size = "md" }: { size?: "md" | "lg" }) {
+export function Wordmark({ size = "md", compactOnPhone }: { size?: "md" | "lg"; compactOnPhone?: boolean }) {
   const lg = size === "lg";
   return (
     <span className="flex items-center gap-2.5">
@@ -94,7 +98,14 @@ export function Wordmark({ size = "md" }: { size?: "md" | "lg" }) {
           style={{ boxShadow: "0 0 10px -1px var(--color-accent)" }}
         />
       </span>
-      <span className={cx("font-bold tracking-[-0.01em]", lg ? "text-2xl" : "text-[17px]")}>
+      <span
+        className={cx(
+          "font-bold tracking-[-0.01em]",
+          lg ? "text-2xl" : "text-[17px]",
+          // In the phone-width nav rail the name would set the rail's width.
+          compactOnPhone && "max-md:hidden",
+        )}
+      >
         Cotune
       </span>
     </span>
@@ -131,8 +142,90 @@ export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInput
   return <input className={cx(controlBase, className)} {...props} />;
 }
 
+/** A native select (keyboard, mobile pickers and a11y for free) with the
+ *  OS arrow replaced: appearance-none plus our own chevron, so it matches
+ *  the inputs next to it instead of rendering as a grey system widget. */
 export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={cx(controlBase, "cursor-pointer", className)} {...props} />;
+  return (
+    <span className="relative inline-flex min-w-0">
+      <select className={cx(controlBase, "cursor-pointer appearance-none pr-8", className)} {...props} />
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden
+        className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+    </span>
+  );
+}
+
+/* ---------- Mixer slider ---------- */
+
+/**
+ * A labelled range with a live readout — every fader, knob and send in the
+ * editor. Two callbacks because a mix control has two audiences: `onChange`
+ * fires on every pixel of a drag (local state + the audio graph, so you hear
+ * it move), `onCommit` fires once when the gesture ends (one PATCH per drag).
+ *
+ * The commit listens to pointer-up AND key-up. The sliders this replaced
+ * only committed on pointer-up, so nudging one with the arrow keys changed
+ * the sound and then silently never saved it.
+ */
+export function RangeField({
+  label,
+  value,
+  min,
+  max,
+  format,
+  disabled,
+  title,
+  onChange,
+  onCommit,
+  resetTo,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  format: (value: number) => string;
+  disabled?: boolean;
+  title?: string;
+  onChange: (value: number) => void;
+  onCommit: (value: number) => void;
+  /** Double-click returns here — the DAW convention for "back to default". */
+  resetTo?: number;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-xs text-muted" title={title}>
+      <span className="w-12 shrink-0">{label}</span>
+      <input
+        type="range"
+        className="min-w-0 flex-1"
+        min={min}
+        max={max}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(Number(event.target.value))}
+        onPointerUp={(event) => onCommit(Number(event.currentTarget.value))}
+        onKeyUp={(event) => onCommit(Number(event.currentTarget.value))}
+        onDoubleClick={
+          resetTo === undefined
+            ? undefined
+            : () => {
+                onChange(resetTo);
+                onCommit(resetTo);
+              }
+        }
+      />
+      <span className="w-9 shrink-0 text-right font-mono tabular-nums text-text">{format(value)}</span>
+    </label>
+  );
 }
 
 /* ---------- Inline rename ---------- */
@@ -145,13 +238,25 @@ type EditableNameProps = {
   /** Styles the DISPLAY text; the edit input inherits it so the swap
    *  doesn't jump. Size/weight come from the call site (h1 vs chip). */
   className?: string;
+  /** Mount already editing — for an explicit "Rename" action, where a
+   *  double-click would fight a click that means "open". */
+  startEditing?: boolean;
+  /** Editing ended, committed or cancelled. */
+  onDone?: () => void;
 };
 
 /** Double-click-to-rename text. Enter/blur commits, Escape cancels; a
  *  blank draft is a cancel, not a rename — blank names are invalid
  *  everywhere in the domain, so the UI never even sends them. */
-export function EditableName({ value, onRename, maxLength = 80, className }: EditableNameProps) {
-  const [draft, setDraft] = useState<string | null>(null); // null = not editing
+export function EditableName({
+  value,
+  onRename,
+  maxLength = 80,
+  className,
+  startEditing,
+  onDone,
+}: EditableNameProps) {
+  const [draft, setDraft] = useState<string | null>(startEditing ? value : null); // null = not editing
 
   if (draft === null) {
     return (
@@ -171,7 +276,12 @@ export function EditableName({ value, onRename, maxLength = 80, className }: Edi
   const commit = () => {
     const next = draft.trim();
     setDraft(null);
+    onDone?.();
     if (next && next !== value) void onRename(next);
+  };
+  const cancel = () => {
+    setDraft(null);
+    onDone?.();
   };
 
   return (
@@ -190,7 +300,7 @@ export function EditableName({ value, onRename, maxLength = 80, className }: Edi
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit();
-        if (e.key === "Escape") setDraft(null);
+        if (e.key === "Escape") cancel();
       }}
     />
   );
@@ -202,7 +312,7 @@ export function Card({ className, children }: { className?: string; children: Re
   return (
     <section
       className={cx(
-        "rounded-2xl border border-edge bg-gradient-to-b from-surface-2 to-surface p-6 shadow-card",
+        "rounded-xl border border-edge bg-surface p-6",
         className,
       )}
     >
@@ -228,14 +338,26 @@ export function Chip({ tone = "default", children }: { tone?: "default" | "accen
 
 /* ---------- Feedback ---------- */
 
-export function ErrorBanner({ children }: { children: ReactNode }) {
+/** `onDismiss` adds a close control. Editor errors are one-off reports
+ *  ("couldn't save that rename") that otherwise sat above the canvas until
+ *  the next error replaced them. */
+export function ErrorBanner({ children, onDismiss }: { children: ReactNode; onDismiss?: () => void }) {
   return (
-    <p
+    <div
       role="alert"
-      className="my-2 rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm text-danger"
+      className="my-2 flex items-start gap-3 rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm text-danger"
     >
-      {children}
-    </p>
+      <p className="min-w-0 flex-1">{children}</p>
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="-mr-2 shrink-0 cursor-pointer rounded px-1 text-danger/80 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/60"
+        >
+          <CloseIcon className="h-4 w-4" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -287,25 +409,28 @@ export function AiThinkingPanel({ label }: { label: string }) {
   );
 }
 
+/** An empty view says what is missing and offers the way to fix it —
+ *  `action` is a button, not a paragraph of instructions. */
 export function EmptyState({
   icon,
   title,
   hint,
+  action,
 }: {
-  /** ReactNode, not string: a drawn mark can take the accent and look the
-   *  same on every machine, which an emoji cannot (see icons.tsx). Still
-   *  accepts a string, so the emoji call sites keep working. */
+  /** A drawn mark (icons.tsx), never an emoji. */
   icon: ReactNode;
   title: string;
-  hint: string;
+  hint?: string;
+  action?: ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center gap-2 py-8 text-center">
-      <span className="text-4xl" aria-hidden>
+      <span className="text-muted" aria-hidden>
         {icon}
       </span>
-      <p className="font-semibold text-text">{title}</p>
-      <p className="max-w-xs text-sm text-muted">{hint}</p>
+      <p className="mt-1 font-semibold text-text">{title}</p>
+      {hint && <p className="max-w-xs text-sm text-muted">{hint}</p>}
+      {action && <div className="mt-3 flex flex-wrap justify-center gap-2">{action}</div>}
     </div>
   );
 }

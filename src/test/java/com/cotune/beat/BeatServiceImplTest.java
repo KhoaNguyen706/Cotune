@@ -54,7 +54,7 @@ class BeatServiceImplTest {
         Beat beat = new Beat(song, "Beat 1", 3);
         when(beatRepository.findById(beatId)).thenReturn(Optional.of(beat));
 
-        BeatDto dto = service.patch(beatId, new UpdateBeatPatch("  Drop  ", null, null));
+        BeatDto dto = service.patch(beatId, new UpdateBeatPatch("  Drop  ", null, null, null));
 
         assertThat(dto.name()).isEqualTo("Drop");
         assertThat(dto.position()).isEqualTo(3);
@@ -66,17 +66,17 @@ class BeatServiceImplTest {
         UUID beatId = UUID.randomUUID();
         when(beatRepository.findById(beatId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch("Drop", null, null)))
+        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch("Drop", null, null, null)))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(beatId.toString());
 
-        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch(null, null, null)))
+        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch(null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("at least one field");
 
         Beat beat = new Beat(song, "Beat 1", 0);
         when(beatRepository.findById(beatId)).thenReturn(Optional.of(beat));
-        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch("   ", null, null)))
+        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch("   ", null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -89,7 +89,7 @@ class BeatServiceImplTest {
                 .thenReturn(List.of());
 
         // Growing always works (no notes can be cut).
-        assertThat(service.patch(beatId, new UpdateBeatPatch(null, 4, null)).bars()).isEqualTo(4);
+        assertThat(service.patch(beatId, new UpdateBeatPatch(null, 4, null, null)).bars()).isEqualTo(4);
 
         // A lane with a note ending at step 40 blocks shrinking to 2 bars
         // (32 steps) but not to 3 (48 steps).
@@ -98,14 +98,40 @@ class BeatServiceImplTest {
         when(trackRepository.findByBeatIdInOrderByPositionAsc(List.of(beatId)))
                 .thenReturn(List.of(lane));
 
-        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch(null, 2, null)))
+        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch(null, 2, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("shrink");
-        assertThat(service.patch(beatId, new UpdateBeatPatch(null, 3, null)).bars()).isEqualTo(3);
+        assertThat(service.patch(beatId, new UpdateBeatPatch(null, 3, null, null)).bars()).isEqualTo(3);
 
         // Out-of-range bars is stopped by the entity guard.
-        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch(null, 9, null)))
+        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch(null, 9, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("bars");
+    }
+
+    @Test
+    void patchSetsSwingAloneAndGuardsItsRange() {
+        UUID beatId = UUID.randomUUID();
+        Beat beat = new Beat(song, "Beat 1", 0);
+        when(beatRepository.findById(beatId)).thenReturn(Optional.of(beat));
+
+        // New beats are straight — the sound every beat had before V16.
+        assertThat(beat.getSwing()).isZero();
+
+        // Swing on its own is a valid patch (isEmpty must know the field),
+        // and it leaves name and bars alone.
+        BeatDto dto = service.patch(beatId, new UpdateBeatPatch(null, null, 0.67, null));
+        assertThat(dto.swing()).isEqualTo(0.67);
+        assertThat(dto.name()).isEqualTo("Beat 1");
+        assertThat(dto.bars()).isEqualTo(1);
+
+        // Both ends inclusive; past them the entity refuses, as the V16
+        // CHECK would.
+        assertThat(service.patch(beatId, new UpdateBeatPatch(null, null, 1.0, null)).swing()).isEqualTo(1.0);
+        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch(null, null, 1.01, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("swing");
+        assertThatThrownBy(() -> service.patch(beatId, new UpdateBeatPatch(null, null, -0.1, null)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

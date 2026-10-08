@@ -62,13 +62,81 @@ export function ShareIcon(props: IconProps) {
   );
 }
 
-/** Library — samples, as a rack of bars. */
+/** Library — stacked layers: ready-made parts you pull from. (It was two
+ *  bars and a slash, which at 16px read as a broken glyph, not a shelf.) */
 export function LibraryIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <rect x="4" y="5" width="4" height="14" rx="1" />
-      <rect x="10" y="5" width="4" height="14" rx="1" />
-      <line x1="18" y1="6" x2="20.5" y2="18" />
+      <path d="M12 3 L21 8 L12 13 L3 8 Z" />
+      <path d="M3 12.5 L12 17.5 L21 12.5" />
+      <path d="M3 17 L12 22 L21 17" />
+    </Icon>
+  );
+}
+
+/** Lanes — three rows of a channel rack, each with its step. */
+export function LanesIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+      <circle cx="8" cy="6" r="1.4" />
+      <circle cx="15" cy="12" r="1.4" />
+      <circle cx="11" cy="18" r="1.4" />
+    </Icon>
+  );
+}
+
+/** Sign out — an arrow leaving the frame. */
+export function SignOutIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 21 H5 a2 2 0 0 1 -2 -2 V5 a2 2 0 0 1 2 -2 h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </Icon>
+  );
+}
+
+/** Plus / minus — the "+" and "−" text glyphs sat on the font's baseline,
+ *  a pixel or two off-center inside a 32px button. */
+export function PlusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </Icon>
+  );
+}
+
+export function MinusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </Icon>
+  );
+}
+
+/** Metronome — the pyramid body and its arm. */
+export function MetronomeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 3 h6 l4 18 H5 Z" />
+      <line x1="12" y1="15" x2="17" y2="6" />
+      <line x1="7" y1="16" x2="17" y2="16" />
+    </Icon>
+  );
+}
+
+/** Loop — two arrows chasing each other. */
+export function LoopIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <polyline points="17 2 21 6 17 10" />
+      <path d="M3 11 V10 a4 4 0 0 1 4 -4 h14" />
+      <polyline points="7 22 3 18 7 14" />
+      <path d="M21 13 v1 a4 4 0 0 1 -4 4 H3" />
     </Icon>
   );
 }

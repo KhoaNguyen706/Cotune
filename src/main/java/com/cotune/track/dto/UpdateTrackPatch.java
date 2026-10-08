@@ -17,9 +17,14 @@ public record UpdateTrackPatch(
         Double volume,
 
         /** Stereo position -1..1 (0 = center). */
-        Double pan
+        Double pan,
+
+        /** Effect sends 0..1 (V17). */
+        Double reverb,
+
+        Double delay
 ) {
     public boolean isEmpty() {
-        return name == null && volume == null && pan == null;
+        return name == null && volume == null && pan == null && reverb == null && delay == null;
     }
 }

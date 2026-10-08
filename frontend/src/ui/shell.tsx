@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { CloseIcon } from "./icons";
 
 /**
@@ -40,11 +40,11 @@ export function TopBar({
 }) {
   return (
     <header
-      className="flex h-14 shrink-0 items-center gap-4 border-b border-edge bg-surface/80 px-4 backdrop-blur-md max-md:gap-2 max-md:overflow-x-auto max-md:px-2"
-      // A translucent bar over a scrolling canvas needs the blur, or the
-      // clips sliding underneath turn the text into soup. On phones the bar
-      // scrolls horizontally: a command bar that WRAPS steals canvas height,
-      // and one that truncates hides commands — sideways scroll loses nothing.
+      className="flex h-14 shrink-0 items-center gap-4 border-b border-edge bg-surface px-4 max-md:gap-2 max-md:overflow-x-auto max-md:px-2"
+      // Opaque, like every DAW's transport: the bar is chrome, and nothing
+      // scrolls under it. On phones it scrolls horizontally: a command bar
+      // that WRAPS steals canvas height, and one that truncates hides
+      // commands — sideways scroll loses nothing.
     >
       <div className="flex min-w-0 flex-1 items-center gap-3 max-md:gap-2">{left}</div>
       {center && <div className="flex shrink-0 items-center gap-2">{center}</div>}
@@ -84,31 +84,23 @@ export function NavItem({
   icon,
   label,
   active,
-  soon,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   active?: boolean;
-  /** Not built yet. Rendered, but visibly inert — an honest "coming", not
-   *  a dead link that pretends to work. */
-  soon?: boolean;
   onClick?: () => void;
 }) {
   return (
     <button
-      disabled={soon}
       onClick={onClick}
       aria-label={label}
-      title={soon ? "Coming soon" : label}
+      aria-current={active ? "page" : undefined}
+      title={label}
       className={cx(
-        "flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors duration-150 " +
+        "flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors duration-150 " +
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
-        soon
-          ? "cursor-default text-muted/45"
-          : active
-            ? "cursor-pointer bg-surface-2 text-text"
-            : "cursor-pointer text-muted hover:bg-surface-2/60 hover:text-text",
+        active ? "bg-surface-2 text-text" : "text-muted hover:bg-surface-2/60 hover:text-text",
       )}
     >
       <span aria-hidden className="w-4 text-center">
@@ -116,11 +108,6 @@ export function NavItem({
       </span>
       {/* Icon-only on phones — the aria-label above keeps it accessible. */}
       <span className="max-md:hidden">{label}</span>
-      {soon && (
-        <span className="ml-auto rounded-full border border-edge px-1.5 py-0.5 text-[0.55rem] font-bold uppercase tracking-wider max-md:hidden">
-          soon
-        </span>
-      )}
     </button>
   );
 }
@@ -181,7 +168,7 @@ export function Canvas({ children, className }: { children: ReactNode; className
  *  bar count, velocity) — the "inspector" row every DAW has. */
 export function CanvasBar({ children }: { children: ReactNode }) {
   return (
-    <div className="sticky top-0 z-3 flex h-11 shrink-0 items-center gap-3 border-b border-edge bg-bg/90 px-4 backdrop-blur-md">
+    <div className="sticky top-0 z-3 flex h-11 shrink-0 items-center gap-3 border-b border-edge bg-bg px-4">
       {children}
     </div>
   );
@@ -267,16 +254,30 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
+  // Escape closes, like every dialog on the platform. Through a ref because
+  // callers pass inline lambdas — re-binding the listener on every render
+  // would be churn for nothing. A busy dialog passes a no-op onClose, so
+  // "can't close mid-request" is respected here for free.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCloseRef.current();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6 max-md:p-4"
       onMouseDown={onClose} // click-outside closes
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md rounded-2xl border border-edge bg-gradient-to-b from-surface-2 to-surface p-6 shadow-card"
+        className="flex max-h-full w-full max-w-md flex-col rounded-xl border border-edge bg-surface p-6 shadow-card max-md:p-4"
         onMouseDown={(e) => e.stopPropagation()} // ...but clicks inside don't
       >
         <div className="mb-6 flex items-center justify-between">

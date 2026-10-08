@@ -92,6 +92,7 @@ public class ListenServiceImpl implements ListenService {
                         beat.getName(),
                         beat.getPosition(),
                         beat.getBars(),
+                        beat.getSwing(),
                         lanesByBeat.getOrDefault(beat.getId(), List.of()).stream()
                                 .map(ListenServiceImpl::toTrackDto)
                                 .toList()
@@ -150,6 +151,8 @@ public class ListenServiceImpl implements ListenService {
                         .map(step -> new StepDto(step.step(), step.pitch(), step.velocity(), step.length()))
                         .toList(),
                 track.getVolume(),
-                track.getPan());
+                track.getPan(),
+                track.getReverb(),
+                track.getDelay());
     }
 }

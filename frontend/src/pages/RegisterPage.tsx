@@ -53,8 +53,7 @@ export function RegisterPage() {
       </Link>
 
       <Card>
-        <h2 className="mb-1 font-semibold">Create account</h2>
-        <p className="mb-6 text-sm text-muted">One form away from your first beat.</p>
+        <h1 className="mb-6 text-lg font-semibold">Create account</h1>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <Field label="Display name" error={fieldErrors.displayName}>
             <TextInput

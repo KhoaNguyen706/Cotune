@@ -16,6 +16,9 @@ public record TrackDto(
         // The lane's mix (V14): linear gain 0..1 and stereo pan -1..1.
         double volume,
         double pan,
+        // Effect sends (V17), 0..1.
+        double reverb,
+        double delay,
         long version,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt

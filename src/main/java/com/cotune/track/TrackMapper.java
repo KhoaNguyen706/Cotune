@@ -29,6 +29,8 @@ public class TrackMapper {
                         .toList(),
                 track.getVolume(),
                 track.getPan(),
+                track.getReverb(),
+                track.getDelay(),
                 track.getVersion(),
                 Timestamps.utc(track.getCreatedAt()),
                 Timestamps.utc(track.getUpdatedAt())

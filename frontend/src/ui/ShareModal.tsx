@@ -260,7 +260,7 @@ export function ShareModal({
 
 function Avatar({ name }: { name: string }) {
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-2 text-xs font-bold text-bg">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-semibold text-text">
       {name[0]?.toUpperCase() ?? "?"}
     </span>
   );

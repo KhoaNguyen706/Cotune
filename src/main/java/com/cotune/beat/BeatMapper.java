@@ -14,6 +14,7 @@ public class BeatMapper {
                 beat.getName(),
                 beat.getPosition(),
                 beat.getBars(),
+                beat.getSwing(),
                 beat.getVersion(),
                 Timestamps.utc(beat.getCreatedAt()),
                 Timestamps.utc(beat.getUpdatedAt())

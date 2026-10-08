@@ -59,6 +59,11 @@ public class Beat {
     @Column(nullable = false)
     private int bars = 1;
 
+    // Off-beat 16ths land this fraction of half a step late (V16):
+    // 0 = straight. Part of the beat, so a reused beat keeps its groove.
+    @Column(nullable = false)
+    private double swing = 0.0;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -104,6 +109,14 @@ public class Beat {
                     "bars must be 1..%d, got %d".formatted(MAX_BARS, newBars));
         }
         this.bars = newBars;
+    }
+
+    /** Range mirrored by the V16 CHECK constraint — change both. */
+    public void changeSwing(double newSwing) {
+        if (newSwing < 0.0 || newSwing > 1.0) {
+            throw new IllegalArgumentException("swing must be in [0, 1], got " + newSwing);
+        }
+        this.swing = newSwing;
     }
 
     @Override

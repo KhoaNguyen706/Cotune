@@ -96,6 +96,12 @@ public class TrackServiceImpl implements TrackService {
         if (patch.pan() != null) {
             track.changePan(patch.pan());
         }
+        if (patch.reverb() != null) {
+            track.changeReverb(patch.reverb());
+        }
+        if (patch.delay() != null) {
+            track.changeDelay(patch.delay());
+        }
         trackRepository.flush();
         return trackMapper.toDto(track);
     }

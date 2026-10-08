@@ -1,5 +1,6 @@
 import * as Tone from "tone";
 import { fetchBinary, upload } from "../api/client";
+import { fxBusFor } from "./fx";
 import { createInstrument, type TrackInstrument } from "./instruments";
 import type { AudioFile, ClipType, Step } from "../types";
 
@@ -17,6 +18,22 @@ export function secondsPerStep(bpm: number): number {
   return 60 / bpm / 4;
 }
 
+/**
+ * How late a note on `step` lands under `swing` (V16), in seconds.
+ *
+ * Swing delays the OFF-beat 16ths — every odd step — and leaves the
+ * on-beats alone, so the pulse holds while the space between hits goes
+ * long-short. `swing` is the fraction of HALF a step: 0 is straight, ~0.67
+ * puts the off-beat on the triplet, 1 is the dotted (75/25) extreme.
+ *
+ * `step` is the ABSOLUTE step on the song grid, not the step within the
+ * beat: swing is a property of the grid, so a beat clip placed on an odd
+ * step still swings the song's off-beats, not its own.
+ */
+export function swingOffset(step: number, swing: number | undefined, perStep: number): number {
+  return swing && step % 2 === 1 ? swing * 0.5 * perStep : 0;
+}
+
 /** The structural MINIMUM scheduling reads — declared here, not imported
  *  from types.ts, so both the editor's full Beat/Clip shapes and the
  *  listen page's public shapes (which deliberately carry less) satisfy
@@ -30,10 +47,15 @@ export interface PlayableTrack {
    *  its instruments with it — the WAV honors the mix by construction. */
   volume?: number;
   pan?: number;
+  /** Effect sends (V17); optional for the same reason. */
+  reverb?: number;
+  delay?: number;
 }
 export interface PlayableBeat {
   id: string;
   bars: number;
+  /** Groove (V16). Absent = straight. */
+  swing?: number;
   tracks: PlayableTrack[];
 }
 export interface PlayableClip {
@@ -164,7 +186,8 @@ export function scheduleArrangement(options: ScheduleOptions): Tone.Player[] {
             if (localStep >= clip.lengthSteps) continue;
             const stepsLeft = clip.lengthSteps - localStep;
             const duration = Math.min(note.length, stepsLeft) * perStep;
-            const at = (clip.startStep + localStep) * perStep;
+            const absolute = clip.startStep + localStep;
+            const at = absolute * perStep + swingOffset(absolute, beat.swing, perStep);
             const laneId = lane.id;
             transport.schedule((time) => {
               if (audible && !audible(laneId)) return;
@@ -226,13 +249,28 @@ export async function renderArrangement(
   sources: ArrangementSources,
   buffers: Map<string, AudioBuffer>,
 ): Promise<AudioBuffer> {
-  // +1.5s tail so releases/decays aren't clipped at the last step.
-  const seconds = arrangementEndSeconds(sources) + 1.5;
+  // +3s tail so releases, the reverb's decay and the last echoes aren't
+  // clipped at the final step.
+  const seconds = arrangementEndSeconds(sources) + 3;
   const rendered = await Tone.Offline(async () => {
+    // The offline context gets its OWN reverb and delay (see fx.ts), and the
+    // reverb's impulse response must exist before time 0 — otherwise the
+    // export's first second is dry while the play button's is not.
+    const fx = fxBusFor();
+    fx.setTempo(sources.bpm);
+    await fx.ready;
     const instruments = new Map<string, TrackInstrument>();
     for (const beat of sources.beats) {
       for (const lane of beat.tracks) {
-        instruments.set(lane.id, createInstrument(lane.instrument, { volume: lane.volume, pan: lane.pan }));
+        instruments.set(
+          lane.id,
+          createInstrument(lane.instrument, {
+            volume: lane.volume,
+            pan: lane.pan,
+            reverb: lane.reverb,
+            delay: lane.delay,
+          }),
+        );
       }
     }
     scheduleArrangement({ sources, instruments, buffers });

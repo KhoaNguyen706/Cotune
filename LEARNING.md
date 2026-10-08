@@ -103,14 +103,65 @@ one detail that proves you understand it.
   steps; a beat can span multiple bars.
 - Notes have step, pitch (scientific notation like `C2`, `F#4`), velocity,
   length.
-- Edits mark a lane *dirty* and flush on a **1-second debounce** — the mouse
+- Edits mark a lane *dirty* and flush on a debounce — **90ms while the
+  socket is live, 1000ms on the HTTP fallback** (`useAutoSave.ts`). The mouse
   code never talks to the network directly.
+- The piano roll shows **two octaves** (the lane's octave at the bottom) with
+  a **velocity lane** under it: press and sweep to paint how hard each note
+  hits.
+- **Multi-note editing** (Shift-drag box select, Shift-click, drag the whole
+  selection, Ctrl+C/X/V/D, arrows nudge a step/semitone, Shift = beat/octave)
+  is a set of *pure functions* in `beatmaker/noteOps.ts`, unit-tested in
+  `noteOps.test.ts`. Two rules worth defending:
+  - Notes are identified by **(step, pitch)**, never by array index — the same
+    key the server uses. An index shifts when a collaborator's note lands
+    mid-drag; a key doesn't.
+  - A block move is **all-or-nothing**: if one note would leave the beat or
+    land on a note that isn't moving, the whole move is refused (the block
+    stops at the wall). Paste is an **upsert**, exactly like the server's ADD.
+  Every command goes through the same `setNotes → dirty → diffNotes` path as a
+  mouse edit, so a paste reaches collaborators as ordinary ADD ops and is
+  undoable with Ctrl+Z.
+- **Swing** is per beat (V16, `beats.swing` 0..1): every *odd* 16th lands
+  `swing × half a step` late (`engine.ts → swingOffset`). Parity is taken from
+  the ABSOLUTE song step, so swing belongs to the grid, not to a clip's start.
 - Saves are guarded by **optimistic locking**: mutations carry
   `expectedVersion`, and a stale write is *refused*, never silently clobbered.
 - Sound: `frontend/src/audio/engine.ts` + `instruments.ts` schedule Tone.js
   synths from the pattern data. `mp3.ts` handles export. (Worth opening
   `engine.ts` before the demo — it's the bridge between "data" and "sound",
   and a likely interview question: "so where does the audio come from?")
+
+### 4.2b The mixer, effects and transport
+
+- **Channel strip per lane** (beat sidebar): volume, pan (V14) and **reverb /
+  delay sends** (V17, `tracks.reverb` / `tracks.delay`, 0..1). All four are
+  song data — saved on release, heard by collaborators *and* by listen-link
+  visitors, and baked into the WAV/MP3 export.
+- **Send/return, not per-lane effects** (`audio/fx.ts`): one shared reverb and
+  one shared delay; each lane taps its channel *post-fader* into them through a
+  gain. One room for the whole beat (it sounds like one performance) and one
+  reverb's CPU however many lanes. The delay is a dotted eighth re-timed to
+  the BPM.
+- **One FX bus per audio context** (a `WeakMap` keyed by context). Live
+  playback and offline export are different Web Audio contexts, and a node
+  can't connect across them — which is also why Tone's global
+  `Channel.send/receive` registry wasn't used. Export `await`s the reverb's
+  impulse response before time 0, or the first second renders dry.
+- **Slider saves are "latest value wins"** (`useSongData → saveLatest`): one
+  request in flight per control; while it runs, only the newest value waits.
+  Parallel PATCHes can finish out of order — caught in testing when twenty
+  arrow presses saved swing 0.11 instead of 0.20.
+- **Metronome and count-in** are device settings (localStorage), not song
+  data. The click is scheduled on the transport's *position* (so it stays on
+  the grid through loops); the count-in clicks go straight onto the audio
+  clock and the transport is started four beats later, so nothing in the song
+  schedule has to be shifted.
+- **Loop region** (drag across the timeline ruler, `L` toggles): deliberately
+  *personal* transport state, like mute/solo — a loop saved on the song would
+  move every collaborator's playback whenever you moved yours. The playhead
+  reads the transport position (`getTicksAtTime`) instead of counting, so it
+  wraps with the loop.
 
 ### 4.3 Real-time collaboration ⭐ (the headline feature — know this cold)
 
@@ -435,7 +486,15 @@ reason you can defend.
    localStorage, so a page navigation arrives anonymous → Spring's
    AuthenticationEntryPoint answers "who are you?". Great story: symptom,
    root cause, why the status code was the misleading part.
-8. **Deploy war stories** (Heroku container stack): buildpack silently skips
+8. **Effects across two audio contexts** → send/return architecture with one
+   bus per Web Audio context, because the live graph and the offline export
+   graph can't share nodes; the export waits for the reverb's impulse response.
+   Same scheduling function for both, so "the WAV sounds like the play button"
+   holds by construction. (§4.2b)
+9. **Out-of-order autosave** → a slider that PATCHes on every key-up can lose
+   the final value to a slower earlier request; fixed with a per-control
+   latest-value-wins queue instead of debouncing harder. (§4.2b)
+10. **Deploy war stories** (Heroku container stack): buildpack silently skips
    Lombok's annotation processor (~100 phantom errors) and never runs the
    Node stage; `ENTRYPOINT` gets shell-mangled so `$PORT` dies (fix: CMD +
    `heroku.yml` `run:`); unconstrained JVM heap blows the 512MB dyno quota
@@ -469,6 +528,14 @@ there are no gaps.
   pre-flagged account.
 - **Single simple broker by default** — multi-instance requires opting into
   `REALTIME_RELAY=redis`.
+- **Mix, swing and sends aren't pushed live**: a collaborator hears your new
+  mix after a reload; only notes, presence and chat travel over the socket.
+  Same "manual reload until WebSocket push" decision as above.
+- **The grid is 16 steps per bar regardless of time signature**, and the
+  metronome accents bars the same way — 3/4 and 6/8 songs are labelled, not
+  modelled.
+- **No recording** — count-in exists for playing along, not for capturing
+  MIDI or audio.
 - **No audio rendering server-side** — export happens in the browser
   (`mp3.ts`); fine for the scope, worth naming as a known boundary.
 

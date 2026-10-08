@@ -51,15 +51,14 @@ export function LoginPage() {
       </Link>
 
       <Card>
-        <h2 className="mb-1 font-semibold">Sign in</h2>
-        <p className="mb-6 text-sm text-muted">Make beats in the browser. Your bandmates are waiting.</p>
+        <h1 className="mb-6 text-lg font-semibold">Sign in</h1>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <Field label="Email">
             <TextInput
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@band.com"
+              placeholder="you@example.com"
               required
               autoComplete="email"
             />

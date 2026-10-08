@@ -13,8 +13,8 @@ export const SONG_QUERY = `
       id title bpm timeSignature ownerId myRole listenToken
       collaborators { userId email displayName role }
       beats {
-        id name position bars
-        tracks { id name instrument position volume pan version pattern { step pitch velocity length } }
+        id name position bars swing
+        tracks { id name instrument position volume pan reverb delay version pattern { step pitch velocity length } }
       }
       clips { id lane startStep lengthSteps type beatId audioId }
       audioFiles { id filename contentType sizeBytes durationSeconds }
